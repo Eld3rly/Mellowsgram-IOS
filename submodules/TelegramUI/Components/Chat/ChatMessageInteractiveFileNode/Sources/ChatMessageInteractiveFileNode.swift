@@ -30,6 +30,7 @@ import ChatControllerInteraction
 import ChatMessageDateAndStatusNode
 import ChatHistoryEntry
 import ChatMessageItemCommon
+import ChatMessageInteractiveMediaBadge
 import TelegramStringFormatting
 import AnimatedCountLabelNode
 import AudioWaveform
@@ -207,6 +208,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
     private var streamingCacheStatusFrame: CGRect?
     private var fileIconImage: UIImage?
     private var viewOnceIconImage: UIImage?
+    private var mellowsgramAutoremoveBadgeNode: ChatMessageInteractiveMediaBadge?
     
     public var audioTranscriptionState: AudioTranscriptionButtonComponent.TranscriptionState = .collapsed
     public var forcedAudioTranscriptionText: TranscribedText?
@@ -624,7 +626,13 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 
                 if mediaUpdated {
                     if hasThumbnailImage {
-                        updateImageSignal = chatMessageImageFile(account: arguments.context.account, userLocation: .peer(arguments.message.id.peerId), fileReference: .message(message: MessageReference(arguments.message), media: arguments.file), thumbnail: true)
+                        let fileReference: FileMediaReference
+                        if engineMellowsgramMessageIsDeleted(arguments.message) {
+                            fileReference = .standalone(media: arguments.file)
+                        } else {
+                            fileReference = .message(message: MessageReference(arguments.message), media: arguments.file)
+                        }
+                        updateImageSignal = chatMessageImageFile(account: arguments.context.account, userLocation: .peer(arguments.message.id.peerId), fileReference: fileReference, thumbnail: true)
                     }
                     
                     updatedFetchControls = FetchControls(fetch: { [weak self] userInitiated in
@@ -973,6 +981,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         context: arguments.context,
                         presentationData: arguments.presentationData,
                         edited: edited && !arguments.presentationData.isPreview,
+                        deleted: engineMellowsgramMessageIsDeleted(arguments.message) && !arguments.presentationData.isPreview,
                         impressionCount: !arguments.presentationData.isPreview ? viewCount : nil,
                         dateText: dateText,
                         type: statusType,
@@ -1877,7 +1886,13 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         }
                     }
                     
-                    image = playerAlbumArt(engine: context.engine, fileReference: .message(message: MessageReference(message), media: file), albumArt: .init(thumbnailResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(message), media: file), title: title ?? "", performer: performer ?? "", isThumbnail: false)), thumbnail: true, overlayColor: UIColor(white: 0.0, alpha: 0.3), drawPlaceholderWhenEmpty: false, attemptSynchronously: !animated)
+                    let fileReference: FileMediaReference
+                    if engineMellowsgramMessageIsDeleted(message) {
+                        fileReference = .standalone(media: file)
+                    } else {
+                        fileReference = .message(message: MessageReference(message), media: file)
+                    }
+                    image = playerAlbumArt(engine: context.engine, fileReference: fileReference, albumArt: .init(thumbnailResource: ExternalMusicAlbumArtResource(file: fileReference, title: title ?? "", performer: performer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: fileReference, title: title ?? "", performer: performer ?? "", isThumbnail: false)), thumbnail: true, overlayColor: UIColor(white: 0.0, alpha: 0.3), drawPlaceholderWhenEmpty: false, attemptSynchronously: !animated)
                 }
             }
             let statusNode = SemanticStatusNode(backgroundNodeColor: backgroundNodeColor, foregroundNodeColor: foregroundNodeColor, image: image, overlayForegroundNodeColor: presentationData.theme.theme.chat.message.mediaOverlayControlColors.foregroundColor)
@@ -2087,6 +2102,42 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         self.fetchingTextNode.frame = CGRect(origin: self.descriptionNode.frame.origin, size: fetchingInfo.size)
         self.fetchingCompactTextNode.frame = CGRect(origin: self.descriptionNode.frame.origin, size: fetchingCompactSize)
         self.countNode.frame = CGRect(origin: self.descriptionNode.frame.origin, size: countSize)
+
+        if let autoremoveAttribute = engineMellowsgramAutoremoveBypassAttribute(message), autoremoveAttribute.timeout != nil || autoremoveAttribute.isViewOnce {
+            let badgeNode: ChatMessageInteractiveMediaBadge
+            if let current = self.mellowsgramAutoremoveBadgeNode {
+                badgeNode = current
+            } else {
+                badgeNode = ChatMessageInteractiveMediaBadge()
+                badgeNode.isUserInteractionEnabled = false
+                self.mellowsgramAutoremoveBadgeNode = badgeNode
+                self.addSubnode(badgeNode)
+            }
+
+            let isViewOnce = autoremoveAttribute.isViewOnce || autoremoveAttribute.timeout == viewOnceTimeout
+            let text: String
+            let iconName: String
+            if isViewOnce {
+                text = "1"
+                iconName = "Chat/Message/SecretMediaOnce"
+            } else if let timeout = autoremoveAttribute.timeout {
+                text = presentationData.strings.MessageTimer_ShortSeconds(max(1, timeout))
+                iconName = "Chat/Message/SecretMediaPlay"
+            } else {
+                text = ""
+                iconName = "Chat/Message/SecretMediaPlay"
+            }
+            badgeNode.update(
+                theme: presentationData.theme.theme,
+                content: .text(inset: 10.0, backgroundColor: presentationData.theme.theme.chat.message.mediaDateAndStatusFillColor, foregroundColor: presentationData.theme.theme.chat.message.mediaDateAndStatusTextColor, text: NSAttributedString(string: text), iconName: iconName),
+                mediaDownloadState: nil,
+                animated: false
+            )
+            badgeNode.frame = CGRect(x: progressFrame.minX + 5.0, y: progressFrame.minY + 5.0, width: 60.0, height: 18.0)
+        } else if let badgeNode = self.mellowsgramAutoremoveBadgeNode {
+            self.mellowsgramAutoremoveBadgeNode = nil
+            badgeNode.removeFromSupernode()
+        }
     }
     
     public typealias Apply = (Bool, ListViewItemUpdateAnimation, ListViewItemApply?) -> ChatMessageInteractiveFileNode

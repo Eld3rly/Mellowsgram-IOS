@@ -102,7 +102,7 @@ func _internal_applyMaxReadIndexInteractively(transaction: Transaction, stateMan
                 }
             }
         }
-    } else if index.id.peerId.namespace == Namespaces.Peer.CloudUser || index.id.peerId.namespace == Namespaces.Peer.CloudGroup || index.id.peerId.namespace == Namespaces.Peer.CloudChannel {
+    } else if !transaction.mellowsgramGhostModeReadReceiptsEnabled && (index.id.peerId.namespace == Namespaces.Peer.CloudUser || index.id.peerId.namespace == Namespaces.Peer.CloudGroup || index.id.peerId.namespace == Namespaces.Peer.CloudChannel) {
         stateManager.notifyAppliedIncomingReadMessages([index.id])
     }
 }

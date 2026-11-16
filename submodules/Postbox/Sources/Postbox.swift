@@ -179,6 +179,24 @@ public final class Transaction {
         assert(!self.disposed)
         self.postbox?.deleteMessages(messageIds, forEachMedia: forEachMedia)
     }
+
+    public func mellowsgramArchiveRecords(peerId: PeerId, threadId: Int64?) -> [MellowsgramMessageArchiveRecord] {
+        assert(!self.disposed)
+        return self.postbox?.mellowsgramArchiveRecords(peerId: peerId, threadId: threadId) ?? []
+    }
+
+    public func mellowsgramArchiveRecord(messageId: MessageId) -> MellowsgramMessageArchiveRecord? {
+        assert(!self.disposed)
+        return self.postbox?.mellowsgramArchiveRecord(messageId: messageId)
+    }
+
+    public var mellowsgramGhostModeEnabled: Bool {
+        return self.postbox?.mellowsgramGhostModeEnabled ?? false
+    }
+
+    public var mellowsgramGhostModeReadReceiptsEnabled: Bool {
+        return self.postbox?.mellowsgramGhostModeReadReceiptsEnabled ?? false
+    }
     
     public func deleteMessagesInRange(peerId: PeerId, namespace: MessageId.Namespace, minId: MessageId.Id, maxId: MessageId.Id, forEachMedia: ((Media) -> Void)?) {
         assert(!self.disposed)
@@ -1764,6 +1782,12 @@ final class PostboxImpl {
     private var currentInvalidateMessageTagSummaries: [InvalidatedMessageHistoryTagsSummaryEntryOperation] = []
     private var currentUpdatedPendingPeerNotificationSettings = Set<PeerId>()
     private var currentGroupIdsWithUpdatedReadStats = Set<PeerGroupId>()
+
+    private let mellowsgramArchiveEventsPipe = ValuePipe<PeerId>()
+    private var mellowsgramArchiveEnabled = true
+    private var mellowsgramSaveEditedMessagesEnabled = true
+    var mellowsgramGhostModeEnabled = false
+    var mellowsgramGhostModeReadReceiptsEnabled = false
     
     private var currentChatListOperations: [PeerGroupId: [ChatListOperation]] = [:]
     private var currentReplaceRemoteContactCount: Int32?
@@ -1998,6 +2022,7 @@ final class PostboxImpl {
     let storyItemsTable: StoryItemsTable
     let storyTopItemsTable: StoryTopItemsTable
     let storyTable: StoryTable
+    let mellowsgramMessageArchiveTable: MellowsgramMessageArchiveTable
     
     //temporary
     let peerRatingTable: RatingTable<PeerId>
@@ -2105,6 +2130,7 @@ final class PostboxImpl {
         self.storyItemsTable = StoryItemsTable(valueBox: self.valueBox, table: StoryItemsTable.tableSpec(69), useCaches: useCaches)
         self.storyTopItemsTable = StoryTopItemsTable(valueBox: self.valueBox, table: StoryTopItemsTable.tableSpec(80), useCaches: useCaches)
         self.storyTable = StoryTable(valueBox: self.valueBox, table: StoryTable.tableSpec(70), useCaches: useCaches)
+        self.mellowsgramMessageArchiveTable = MellowsgramMessageArchiveTable(valueBox: self.valueBox, table: MellowsgramMessageArchiveTable.tableSpec(86), useCaches: useCaches)
         
         var tables: [Table] = []
         tables.append(self.metadataTable)
@@ -2183,6 +2209,7 @@ final class PostboxImpl {
         tables.append(self.storyItemsTable)
         tables.append(self.storyTopItemsTable)
         tables.append(self.storyTable)
+        tables.append(self.mellowsgramMessageArchiveTable)
         
         self.tables = tables
         
@@ -2428,12 +2455,70 @@ final class PostboxImpl {
     fileprivate func addChatListHole(groupId: PeerGroupId, hole: ChatListHole) {
         self.chatListTable.addHole(groupId: groupId, hole: hole, operations: &self.currentChatListOperations)
     }
+
+    func setMellowsgramArchiveSettings(saveDeletedMessages: Bool, saveEditedMessages: Bool) {
+        assert(self.queue.isCurrent())
+        self.mellowsgramArchiveEnabled = saveDeletedMessages
+        self.mellowsgramSaveEditedMessagesEnabled = saveEditedMessages
+    }
+
+    func setMellowsgramGhostMode(_ value: Bool) {
+        assert(self.queue.isCurrent())
+        self.mellowsgramGhostModeEnabled = value
+    }
+
+    func setMellowsgramGhostModeReadReceipts(_ value: Bool) {
+        assert(self.queue.isCurrent())
+        self.mellowsgramGhostModeReadReceiptsEnabled = value
+    }
+
+    func mellowsgramArchiveRecords(peerId: PeerId, threadId: Int64?) -> [MellowsgramMessageArchiveRecord] {
+        assert(self.queue.isCurrent())
+        return self.mellowsgramMessageArchiveTable.records(peerId: peerId, threadId: threadId)
+    }
+
+    func mellowsgramArchiveRecord(messageId: MessageId) -> MellowsgramMessageArchiveRecord? {
+        assert(self.queue.isCurrent())
+        return self.mellowsgramMessageArchiveTable.get(messageId)
+    }
+
+    func mellowsgramArchiveEvents(peerId: PeerId) -> Signal<Void, NoError> {
+        return self.mellowsgramArchiveEventsPipe.signal()
+        |> filter { $0 == peerId }
+        |> map { _ in () }
+    }
+
+    private func archiveMellowsgramMessagesBeforeDeletion(_ indices: [MessageIndex]) {
+        guard self.mellowsgramArchiveEnabled else {
+            return
+        }
+        let timestamp = Int32(Date().timeIntervalSince1970)
+        for index in indices {
+            guard index.id.namespace == 0 || index.id.namespace == 1 else {
+                continue
+            }
+            if let message = self.messageHistoryTable.getMessage(index) {
+                let media = self.messageHistoryTable.renderMessageMedia(referencedMedia: message.referencedMedia, embeddedMediaData: message.embeddedMediaData)
+                self.mellowsgramMessageArchiveTable.archiveDeletedMessage(message, timestamp: timestamp, media: media)
+                self.addAfterCommitAction { [weak self] in
+                    self?.mellowsgramArchiveEventsPipe.putNext(index.id.peerId)
+                }
+            }
+        }
+    }
+
+    private func archiveMellowsgramMessagesBeforeDeletion(_ messageIds: [MessageId]) {
+        let indices = messageIds.compactMap { self.messageHistoryIndexTable.getIndex($0) }
+        self.archiveMellowsgramMessagesBeforeDeletion(indices)
+    }
     
     fileprivate func deleteMessages(_ messageIds: [MessageId], forEachMedia: ((Media) -> Void)?) {
+        self.archiveMellowsgramMessagesBeforeDeletion(messageIds)
         self.messageHistoryTable.removeMessages(messageIds, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
     }
     
     fileprivate func deleteMessagesInRange(peerId: PeerId, namespace: MessageId.Namespace, minId: MessageId.Id, maxId: MessageId.Id, forEachMedia: ((Media) -> Void)?) {
+        self.archiveMellowsgramMessagesBeforeDeletion(self.messageHistoryTable.allMessageIndices(peerId: peerId, namespace: namespace).filter { $0.id.id >= minId && $0.id.id <= maxId })
         self.messageHistoryTable.removeMessagesInRange(peerId: peerId, namespace: namespace, minId: minId, maxId: maxId, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
     }
     
@@ -2450,6 +2535,16 @@ final class PostboxImpl {
     }
     
     fileprivate func clearHistory(_ peerId: PeerId, threadId: Int64?, minTimestamp: Int32?, maxTimestamp: Int32?, namespaces: MessageIdNamespaces, forEachMedia: ((Media) -> Void)?) {
+        var archiveIndices = self.messageHistoryTable.allMessageIndices(peerId: peerId).filter { namespaces.contains($0.id.namespace) }
+        if let threadId = threadId {
+            archiveIndices = archiveIndices.filter { index in
+                return self.messageHistoryTable.getMessage(index)?.threadId == threadId
+            }
+        }
+        if let minTimestamp = minTimestamp, let maxTimestamp = maxTimestamp {
+            archiveIndices = archiveIndices.filter { $0.timestamp >= minTimestamp && $0.timestamp <= maxTimestamp }
+        }
+        self.archiveMellowsgramMessagesBeforeDeletion(archiveIndices)
         if let minTimestamp = minTimestamp, let maxTimestamp = maxTimestamp {
             self.messageHistoryTable.clearHistoryInRange(peerId: peerId, threadId: threadId, minTimestamp: minTimestamp, maxTimestamp: maxTimestamp, namespaces: namespaces, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
         } else {
@@ -2461,14 +2556,24 @@ final class PostboxImpl {
     }
     
     fileprivate func removeAllMessagesWithAuthor(_ peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {
+        self.archiveMellowsgramMessagesBeforeDeletion(self.messageHistoryTable.allIndicesWithAuthor(peerId: peerId, authorId: authorId, namespace: namespace))
         self.messageHistoryTable.removeAllMessagesWithAuthor(peerId: peerId, authorId: authorId, namespace: namespace, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
     }
     
     fileprivate func removeAllMessagesWithGlobalTag(tag: GlobalMessageTags) {
+        let indices = self.messageHistoryTable.allIndicesWithGlobalTag(tag: tag).compactMap { entry -> MessageIndex? in
+            if case let .message(index) = entry {
+                return index
+            } else {
+                return nil
+            }
+        }
+        self.archiveMellowsgramMessagesBeforeDeletion(indices)
         self.messageHistoryTable.removeAllMessagesWithGlobalTag(tag: tag, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: { _ in })
     }
     
     fileprivate func removeAllMessagesWithForwardAuthor(_ peerId: PeerId, forwardAuthorId: PeerId, namespace: MessageId.Namespace, forEachMedia: ((Media) -> Void)?) {
+        self.archiveMellowsgramMessagesBeforeDeletion(self.messageHistoryTable.allIndicesWithForwardAuthor(peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace))
         self.messageHistoryTable.removeAllMessagesWithForwardAuthor(peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, forEachMedia: forEachMedia)
     }
     
@@ -3202,6 +3307,12 @@ final class PostboxImpl {
         if let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) {
             let message = self.renderIntermediateMessage(intermediateMessage)
             if case let .update(updatedMessage) = update(message) {
+                if self.mellowsgramSaveEditedMessagesEnabled && (id.namespace == 0 || id.namespace == 1) {
+                    self.mellowsgramMessageArchiveTable.archiveRevision(previousMessage: intermediateMessage, updatedMessage: updatedMessage, timestamp: Int32(Date().timeIntervalSince1970))
+                    self.addAfterCommitAction { [weak self] in
+                        self?.mellowsgramArchiveEventsPipe.putNext(id.peerId)
+                    }
+                }
                 self.messageHistoryTable.updateMessage(id, message: updatedMessage, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations)
                 
                 if let bag = self.installedStoreOrUpdateMessageActionsByPeerId[id.peerId] {
@@ -4820,6 +4931,8 @@ public class Postbox {
     public let mediaBox: MediaBox
     
     private let isInTransaction = Atomic<Bool>(value: false)
+    public let mellowsgramGhostModeCoordinator: MellowsgramGhostModeCoordinator
+    public let mellowsgramAutoremoveTimersCoordinator: MellowsgramAutoremoveTimersCoordinator
 
     init(
         queue: Queue,
@@ -4833,6 +4946,9 @@ public class Postbox {
         useCaches: Bool
     ) {
         self.queue = queue
+
+        self.mellowsgramGhostModeCoordinator = MellowsgramGhostModeCoordinator()
+        self.mellowsgramAutoremoveTimersCoordinator = MellowsgramAutoremoveTimersCoordinator()
 
         self.seedConfiguration = seedConfiguration
 
@@ -4867,6 +4983,57 @@ public class Postbox {
         self.impl.with { impl in
             impl.setKeychainEntryForKey(key, value: value)
         }
+    }
+
+    public var mellowsgramGhostMode: Signal<Bool, NoError> {
+        return self.mellowsgramGhostModeCoordinator.signal
+    }
+
+    public var mellowsgramGhostModeReadReceipts: Signal<Bool, NoError> {
+        return self.mellowsgramGhostModeCoordinator.readReceiptsSuppressedSignal
+    }
+
+    public var mellowsgramGhostModeStories: Signal<Bool, NoError> {
+        return self.mellowsgramGhostModeCoordinator.storyReadsSuppressedSignal
+    }
+
+    public var mellowsgramGhostModeOnlinePresence: Signal<Bool, NoError> {
+        return self.mellowsgramGhostModeCoordinator.onlinePresenceSuppressedSignal
+    }
+
+    public var mellowsgramGhostModeEnabled: Bool {
+        return self.mellowsgramGhostModeCoordinator.isEnabled
+    }
+
+    public func setMellowsgramGhostMode(_ value: Bool) {
+        self.mellowsgramGhostModeCoordinator.setEnabled(value)
+        self.impl.with { impl in
+            impl.setMellowsgramGhostMode(value)
+            impl.setMellowsgramGhostModeReadReceipts(self.mellowsgramGhostModeCoordinator.isReadReceiptsSuppressed)
+        }
+    }
+
+    public var mellowsgramGhostModeReadReceiptsEnabled: Bool {
+        return self.mellowsgramGhostModeCoordinator.isReadReceiptsSuppressed
+    }
+
+    public func setMellowsgramGhostModeOptions(_ value: MellowsgramGhostModeOptions) {
+        self.mellowsgramGhostModeCoordinator.setOptions(value)
+        self.impl.with { impl in
+            impl.setMellowsgramGhostModeReadReceipts(self.mellowsgramGhostModeCoordinator.isReadReceiptsSuppressed)
+        }
+    }
+
+    public var mellowsgramIgnoreAutoremoveTimers: Signal<Bool, NoError> {
+        return self.mellowsgramAutoremoveTimersCoordinator.signal
+    }
+
+    public var mellowsgramIgnoreAutoremoveTimersEnabled: Bool {
+        return self.mellowsgramAutoremoveTimersCoordinator.isEnabled
+    }
+
+    public func setMellowsgramIgnoreAutoremoveTimers(_ value: Bool) {
+        self.mellowsgramAutoremoveTimersCoordinator.setEnabled(value)
     }
     public func removeKeychainEntryForKey(_ key: String) {
         self.impl.with { impl in
@@ -5461,5 +5628,23 @@ public class Postbox {
 
             return disposable
         }
+    }
+
+    public func setMellowsgramArchiveSettings(saveDeletedMessages: Bool, saveEditedMessages: Bool) {
+        self.impl.with { impl in
+            impl.setMellowsgramArchiveSettings(saveDeletedMessages: saveDeletedMessages, saveEditedMessages: saveEditedMessages)
+        }
+    }
+
+    public func mellowsgramArchiveRecords(peerId: PeerId, threadId: Int64?) -> Signal<[MellowsgramMessageArchiveRecord], NoError> {
+        let initial = self.transaction { transaction in
+            return transaction.mellowsgramArchiveRecords(peerId: peerId, threadId: threadId)
+        }
+        let updates: Signal<[MellowsgramMessageArchiveRecord], NoError> = self.impl.signalWith { (impl, subscriber: Subscriber<[MellowsgramMessageArchiveRecord], NoError>) in
+            return impl.mellowsgramArchiveEvents(peerId: peerId).start(next: { _ in
+                subscriber.putNext(impl.mellowsgramArchiveRecords(peerId: peerId, threadId: threadId))
+            })
+        }
+        return initial |> then(updates)
     }
 }

@@ -47,13 +47,29 @@ extension ChatControllerImpl {
             }
 
             let canBypassReactionRestrictions = canBypassRestrictions(chatPresentationInterfaceState: self.presentationInterfaceState)
+            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message._asMessage())
+
+            let allowedReactionsSignal: Signal<(allowedReactions: AllowedReactions?, areStarsEnabled: Bool), NoError>
+            let selectedReactionsSignal: Signal<(reactions: Set<MessageReaction.Reaction>, files: Set<EngineMedia.Id>), NoError>
+            let topReactionsSignal: Signal<[ReactionItem], NoError>
+            if isMellowsgramDeletedMessage {
+                // A tombstone is a local projection, not a server message. It
+                // must never open reaction state or send reaction requests.
+                allowedReactionsSignal = .single((nil, false))
+                selectedReactionsSignal = .single((reactions: Set(), files: Set()))
+                topReactionsSignal = .single([])
+            } else {
+                allowedReactionsSignal = peerMessageAllowedReactions(context: self.context, message: topMessage, ignoreDefault: canBypassReactionRestrictions)
+                selectedReactionsSignal = peerMessageSelectedReactions(context: self.context, message: EngineMessage(topMessage))
+                topReactionsSignal = topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init), ignoreDefault: canBypassReactionRestrictions)
+            }
 
             let _ = combineLatest(queue: .mainQueue(),
                 self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId)),
                 contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState: self.presentationInterfaceState, context: self.context, messages: updatedMessages, controllerInteraction: self.controllerInteraction, selectAll: selectAll, interfaceInteraction: self.interfaceInteraction, messageNode: node as? ChatMessageItemView),
-                peerMessageAllowedReactions(context: self.context, message: topMessage, ignoreDefault: canBypassReactionRestrictions),
-                peerMessageSelectedReactions(context: self.context, message: EngineMessage(topMessage)),
-                topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init), ignoreDefault: canBypassReactionRestrictions),
+                allowedReactionsSignal,
+                selectedReactionsSignal,
+                topReactionsSignal,
                 ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager)
             ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips in
                 guard let self else {

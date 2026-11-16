@@ -26,6 +26,7 @@ private final class SynchronizePeerReadStatesContextImpl {
     private let stateManager: AccountStateManager
     
     private var disposable: Disposable?
+    private var ghostModeDisposable: Disposable?
     
     private var currentState: [PeerId : PeerReadStateSynchronizationOperation] = [:]
     private var activeOperations: [PeerId: Operation] = [:]
@@ -45,10 +46,15 @@ private final class SynchronizePeerReadStatesContextImpl {
             strongSelf.currentState = view.operations
             strongSelf.update()
         })
+        self.ghostModeDisposable = (postbox.mellowsgramGhostModeReadReceipts
+        |> deliverOn(self.queue)).start(next: { [weak self] _ in
+            self?.update()
+        })
     }
     
     deinit {
         self.disposable?.dispose()
+        self.ghostModeDisposable?.dispose()
     }
     
     func dispose() {
@@ -56,6 +62,24 @@ private final class SynchronizePeerReadStatesContextImpl {
     
     private func update() {
         let peerIds = Set(self.currentState.keys).union(Set(self.pendingOperations.keys))
+
+        if self.postbox.mellowsgramGhostModeReadReceiptsEnabled {
+            // Consume queued synchronization intents while Ghost Mode is active.
+            // This preserves the local read state but prevents old receipts from
+            // being replayed when the mode is disabled later.
+            self.currentState.removeAll()
+            for (_, activeOperation) in self.activeOperations {
+                activeOperation.disposable.dispose()
+            }
+            self.activeOperations.removeAll()
+            self.pendingOperations.removeAll()
+            for peerId in peerIds {
+                let _ = self.postbox.transaction { transaction -> Void in
+                    transaction.confirmSynchronizedIncomingReadState(peerId)
+                }.start()
+            }
+            return
+        }
         
         for peerId in peerIds {
             var maybeOperation: PeerReadStateSynchronizationOperation?

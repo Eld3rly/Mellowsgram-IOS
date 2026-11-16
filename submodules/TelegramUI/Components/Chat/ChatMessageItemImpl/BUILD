@@ -26,6 +26,8 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageItem",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItemCommon",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItemView",
+        "//submodules/ChatMessageBackground",
+        "//submodules/TextFormat",
         "//submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode",

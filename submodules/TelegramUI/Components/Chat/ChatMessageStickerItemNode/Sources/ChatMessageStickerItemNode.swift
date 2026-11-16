@@ -354,7 +354,13 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                     let signal = chatMessageSticker(account: item.context.account, userLocation: .peer(item.message.id.peerId), file: telegramFile, small: false, onlyFullSize: self.telegramFile != nil, synchronousLoad: synchronousLoad)
                     self.telegramFile = telegramFile
                     self.imageNode.setSignal(signal, attemptSynchronously: synchronousLoad)
-                    self.fetchDisposable.set(freeMediaFileInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: .message(message: MessageReference(item.message), media: telegramFile)).startStrict())
+                    let fileReference: FileMediaReference
+                    if engineMellowsgramMessageIsDeleted(item.message) {
+                        fileReference = .standalone(media: telegramFile)
+                    } else {
+                        fileReference = .message(message: MessageReference(item.message), media: telegramFile)
+                    }
+                    self.fetchDisposable.set(freeMediaFileInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: fileReference).startStrict())
                 }
                 
                 break
@@ -702,6 +708,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 context: item.context,
                 presentationData: item.presentationData,
                 edited: edited,
+                deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                 impressionCount: viewCount,
                 dateText: dateText,
                 type: statusType,

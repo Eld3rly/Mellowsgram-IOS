@@ -284,7 +284,36 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             }
             self.canDeleteMessagesDisposable.set(nil)
         } else if let context = self.context {
-            self.canDeleteMessagesDisposable.set((context.sharedContext.chatAvailableMessageActions(engine: context.engine, accountPeerId: context.account.peerId, messageIds: self.selectedMessages, keepUpdated: true)
+            let selectedMessages = self.selectedMessages
+            let archiveRecordsSignal: Signal<[EngineMellowsgramMessageArchiveRecord], NoError>
+            if let interfaceState = self.presentationInterfaceState, let peerId = interfaceState.chatLocation.peerId {
+                archiveRecordsSignal = mellowsgramArchiveRecords(engine: context.engine, peerId: peerId, threadId: interfaceState.chatLocation.threadId)
+            } else {
+                archiveRecordsSignal = .single([])
+            }
+
+            self.canDeleteMessagesDisposable.set((combineLatest(
+                context.sharedContext.chatAvailableMessageActions(engine: context.engine, accountPeerId: context.account.peerId, messageIds: selectedMessages, keepUpdated: true),
+                archiveRecordsSignal
+            )
+            |> map { actions, archiveRecords -> ChatAvailableMessageActions in
+                var actions = actions
+                // An archive row is also created for edit history while the
+                // message is still alive. Only a committed deletion must
+                // disable Telegram's destructive actions.
+                let archivedIds = Set(archiveRecords.filter { $0.deletedAt != nil }.map { $0.messageId }).intersection(selectedMessages)
+                if !archivedIds.isEmpty {
+                    // Selection is still allowed for a tombstone, but it must
+                    // use the standalone Mellowsgram forward path. A deleted
+                    // projection cannot be deleted/reported as a Telegram id.
+                    actions.options.insert(.forward)
+                    actions.options.remove(.deleteLocally)
+                    actions.options.remove(.deleteGlobally)
+                    actions.options.remove(.report)
+                    actions.disableDelete = true
+                }
+                return actions
+            }
             |> deliverOnMainQueue).startStrict(next: { [weak self] actions in
                 if let strongSelf = self {
                     strongSelf.actions = actions
@@ -464,8 +493,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         
         let panelHeight = defaultHeight(metrics: metrics)
         
-        if self.presentationInterfaceState != interfaceState {
+        let interfaceStateChanged = self.presentationInterfaceState != interfaceState
+        if interfaceStateChanged {
             self.presentationInterfaceState = interfaceState
+            if !self.selectedMessages.isEmpty {
+                self.updateActions()
+            }
         }
         if let actions = self.actions {
             self.deleteButton.isEnabled = false

@@ -1,116 +1,169 @@
-# Telegram iOS Source Code Compilation Guide
+<div align="center">
+  <img src="docs/mellowsgram-icon.svg" width="160" alt="Mellowsgram icon">
 
-We welcome all developers to use our API and source code to create applications on our platform.
-There are several things we require from **all developers** for the moment.
+  <h1>Mellowsgram iOS</h1>
 
-# Creating your Telegram Application
+  <p>Telegram iOS client with local message history, configurable Ghost Mode and a privacy-first archive of deleted content.</p>
 
-1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
-2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
-3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
-3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
-4. Please remember to publish **your** code too in order to comply with the licences.
+  <p>
+    <a href="https://github.com/Eld3rly/Mellowsgram-IOS/actions/workflows/build.yml">
+      <img src="https://github.com/Eld3rly/Mellowsgram-IOS/actions/workflows/build.yml/badge.svg" alt="Build status">
+    </a>
+    <a href="https://github.com/TelegramMessenger/Telegram-iOS">
+      <img src="https://img.shields.io/badge/based%20on-Telegram%20iOS-2AABEE" alt="Based on Telegram iOS">
+    </a>
+    <a href="https://t.me/mellowsgram">
+      <img src="https://img.shields.io/badge/channel-@mellowsgram-2AABEE" alt="Mellowsgram channel">
+    </a>
+  </p>
+</div>
 
-# Quick Compilation Guide
+> **Status:** experimental work in progress. Mellowsgram is an unofficial Telegram client and is not affiliated with Telegram or AyuGram.
 
-## Get the Code
+<p><a href="README.md">English</a> · <a href="README-RU.md">Русский</a></p>
 
-```
-git clone --recursive -j8 https://github.com/TelegramMessenger/Telegram-iOS.git
-```
+## Overview
 
-## Setup Xcode
+Mellowsgram is an iOS-focused Telegram client built on top of the open-source Telegram iOS codebase. It brings a small, carefully scoped set of AyuGram-inspired features to the native iOS interface instead of trying to copy desktop-only UI one-to-one.
 
-Install Xcode (directly from https://developer.apple.com/download/applications or using the App Store).
+The project is designed around three principles:
 
-## Adjust Configuration
+- keep Telegram's native message renderer and interaction model;
+- keep Mellowsgram data local to the current account and device;
+- make network-side behavior explicit and configurable.
 
-1. Generate a random identifier:
-```
-openssl rand -hex 8
-```
-2. Create a new Xcode project. Use `Telegram` as the Product Name. Use `org.{identifier from step 1}` as the Organization Identifier.
-3. Open `Keychain Access` and navigate to `Certificates`. Locate `Apple Development: your@email.address (XXXXXXXXXX)` and double tap the certificate. Under `Details`, locate `Organizational Unit`. This is the Team ID.
-4. Edit `build-system/template_minimal_development_configuration.json`. Use data from the previous steps.
+## Features
 
-## Generate an Xcode project
+### Spy & Ghost
 
-```
-python3 build-system/Make/Make.py \
-    --cacheDir="$HOME/telegram-bazel-cache" \
-    generateProject \
-    --configurationPath=build-system/template_minimal_development_configuration.json \
-    --xcodeManagedCodesigning
-```
+- **Configurable Ghost Mode** with independent switches for:
+  - message read receipts;
+  - story reads;
+  - online presence;
+  - typing indicators and upload-progress activities;
+  - automatic offline behavior.
+- Local read state is preserved while receipts are suppressed.
+- Disabling Ghost Mode affects new actions only; suppressed receipts are not replayed automatically.
+- Message sending and file uploads themselves are not blocked.
+- The Ghost Mode coordinator applies these policies at the network boundary, so the same rules cover chat, stories and presence flows.
 
-# Advanced Compilation Guide
+### Deleted messages
 
-## Xcode
+- Deleted messages remain at their original position with the original MessageId, direction and timestamp.
+- The row uses Telegram's normal bubble and media renderer with a compact Deleted message marker.
+- Text, captions and available media descriptors are preserved for photos, videos, round videos, voice messages, audio, files, GIFs and stickers.
+- Available local media can still be opened, played, copied, forwarded or saved through the regular Telegram flows.
+- Long-press actions include reply, copy, forward, save and edit-history access where applicable.
+- Deleted rows never participate in Telegram synchronization, unread state, reactions or server-side message history.
 
-1. Copy and edit `build-system/appstore-configuration.json`.
-2. Copy `build-system/fake-codesigning`. Create and download provisioning profiles, using the `profiles` folder as a reference for the entitlements.
-3. Generate an Xcode project:
-```
-python3 build-system/Make/Make.py \
-    --cacheDir="$HOME/telegram-bazel-cache" \
-    generateProject \
-    --configurationPath=configuration_from_step_1.json \
-    --codesigningInformationPath=directory_from_step_2
-```
+### Edit history
 
-## IPA
+- Previous text and entities are saved locally before an edit is applied.
+- History is available from the message context menu.
+- The current version is shown together with older versions in newest-to-oldest order.
+- Media edit history is intentionally out of scope for the first version.
 
-1. Repeat the steps from the previous section. Use distribution provisioning profiles.
-2. Run:
-```
-python3 build-system/Make/Make.py \
-    --cacheDir="$HOME/telegram-bazel-cache" \
-    build \
-    --configurationPath=...see previous section... \
-    --codesigningInformationPath=...see previous section... \
-    --buildNumber=100001 \
-    --configuration=release_arm64
-```
+### Media timers
 
-# FAQ
+- Eligible cloud-chat media with auto-remove or view-once timers can be displayed and opened again as ordinary media when the option is enabled.
+- The original timer/view-once state remains visible as a badge instead of silently disappearing.
+- Secret chats and ephemeral messages keep Telegram's original privacy semantics.
 
-## Xcode is stuck at "build-request.json not updated yet"
+### Settings
 
-Occasionally, you might observe the following message in your build log:
-```
-"/Users/xxx/Library/Developer/Xcode/DerivedData/Telegram-xxx/Build/Intermediates.noindex/XCBuildData/xxx.xcbuilddata/build-request.json" not updated yet, waiting...
-```
+The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings and contains separate native screens for:
 
-Should this occur, simply cancel the ongoing build and initiate a new one.
+- Spy&Ghost;
+- Appearance;
+- Links.
 
-## Telegram_xcodeproj: no such package 
+Settings are stored per account through the MellowsgramSettings model.
 
-Following a system restart, the auto-generated Xcode project might encounter a build failure accompanied by this error:
-```
-ERROR: Skipping '@rules_xcodeproj_generated//generator/Telegram/Telegram_xcodeproj:Telegram_xcodeproj': no such package '@rules_xcodeproj_generated//generator/Telegram/Telegram_xcodeproj': BUILD file not found in directory 'generator/Telegram/Telegram_xcodeproj' of external repository @rules_xcodeproj_generated. Add a BUILD file to a directory to mark it as a package.
-```
+Mellowsgram allows up to **32 connected accounts** without making the account count depend on Telegram Premium. Each account keeps its own Telegram session and local data.
 
-If you encounter this issue, re-run the project generation steps in the README.
+## Privacy and limitations
 
+- Deleted-message and edit-history data is local, account-scoped and not synchronized between devices.
+- The archive stores text, entities, message metadata and media descriptors; it does not copy media bytes.
+- A media item can only be opened if its resource is still available locally or can be resolved by the current MediaBox.
+- Secret chats, ephemeral messages and other privacy-sensitive message types are excluded from the archive and timer bypass.
+- Ghost Mode is best-effort client behavior. It cannot change what Telegram has already received and may carry account or Terms of Service risks.
+- This project is experimental. Use a test account if you are not comfortable with those trade-offs.
 
-# Tips
+## Build model
 
-## Codesigning is not required for simulator-only builds
+The supported project workflow builds the simulator IPA through **GitHub Actions**. Generated configuration files, API credentials, signing data and IPA files must not be committed.
 
-Add `--disableProvisioningProfiles`:
-```
-python3 build-system/Make/Make.py \
-    --cacheDir="$HOME/telegram-bazel-cache" \
-    generateProject \
-    --configurationPath=path-to-configuration.json \
-    --codesigningInformationPath=path-to-provisioning-data \
-    --disableProvisioningProfiles
-```
+The workflow is defined in [build.yml](.github/workflows/build.yml). It:
 
-## Versions
+1. checks out the repository and submodules;
+2. generates an ignored Mellowsgram configuration;
+3. restores the Bazel disk cache;
+4. builds the simulator IPA;
+5. uploads Telegram.ipa as an artifact.
 
-Each release is built using a specific Xcode version (see `versions.json`). The helper script checks the versions of the installed software and reports an error if they don't match the ones specified in `versions.json`. It is possible to bypass these checks:
+There is intentionally no unit-test stage in the simulator workflow. Static checks and manual simulator verification are performed separately when needed.
 
-```
-python3 build-system/Make/Make.py --overrideXcodeVersion build ... # Don't check the version of Xcode
-```
+### Required Actions secrets
+
+Configure these repository secrets before starting a build:
+
+| Secret | Purpose |
+| --- | --- |
+| TELEGRAM_API_ID | Telegram application API ID |
+| TELEGRAM_API_HASH | Telegram application API hash |
+| APPLE_TEAM_ID | Optional for simulator-only output; required when generating pre-entitled device identifiers |
+
+The repository workflow uses com.mellowsgram.ios as the main bundle identifier and generates matching extension identifiers and app-group configuration.
+
+### Local configuration generation
+
+This command only creates the ignored JSON input. It does not build the application:
+
+    export TELEGRAM_API_ID="..."
+    export TELEGRAM_API_HASH="..."
+    export APPLE_TEAM_ID="XXXXXXXXXX"
+
+    python3 ci/mellowsgram_configuration.py \
+      --output build-input/mellowsgram-configuration.json \
+      --api-id "$TELEGRAM_API_ID" \
+      --api-hash "$TELEGRAM_API_HASH" \
+      --team-id "$APPLE_TEAM_ID" \
+      --bundle-id com.mellowsgram.ios \
+      --url-scheme mellowsgram
+
+For normal development, run the Mellowsgram iOS simulator IPA workflow from the Actions tab or trigger it with the GitHub CLI:
+
+    gh workflow run build.yml --ref indev
+
+Download the resulting artifact from the completed workflow. The simulator IPA can then be installed with simctl on a compatible iOS Simulator. No device signing is required for simulator testing.
+
+## Device sideloading
+
+A device IPA needs to be re-signed with the user's own Apple certificate and provisioning profile. AltStore or SideStore can perform that final signing step. The repository includes [mellowsgram_sideload.py](ci/mellowsgram_sideload.py) for preparing app-group entitlements before the final re-signing flow.
+
+Do not commit provisioning profiles, certificates, API hashes or generated configuration files.
+
+## Project layout
+
+| Path | Contents |
+| --- | --- |
+| submodules/Postbox | Local archive tables and account-scoped Ghost Mode coordination |
+| submodules/TelegramCore | Settings, archive projections, timer and network-side guards |
+| submodules/TelegramUI | Native chat rendering, media interaction, context menus and settings entry points |
+| submodules/SettingsUI | Mellowsgram root and category screens |
+| ci/ | Configuration generation and sideload preparation helpers |
+| .github/workflows/ | GitHub Actions simulator build |
+
+## Credits
+
+- [Telegram iOS](https://github.com/TelegramMessenger/Telegram-iOS) — the upstream client and platform foundation.
+- [AyuGram Desktop](https://github.com/AyuGram/AyuGramDesktop) — inspiration for Ghost Mode, local history and customization concepts.
+- [AyuGram documentation](https://github.com/AyuGram/AyuGramDocs) — reference material for the behavior of local deleted-message and edit-history features.
+
+## Links
+
+- Russian README: [README-RU.md](README-RU.md)
+- Channel: [@mellowsgram](https://t.me/mellowsgram)
+- Telegram: [telegram.org](https://telegram.org)
+- Upstream Telegram iOS: [TelegramMessenger/Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS)

@@ -304,6 +304,7 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                         context: item.context,
                         presentationData: item.presentationData,
                         edited: edited,
+                        deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                         impressionCount: viewCount,
                         dateText: dateText,
                         type: statusType,

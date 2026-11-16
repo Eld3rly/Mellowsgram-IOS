@@ -40,6 +40,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode",
         "//submodules/TelegramUI/Components/Chat/ChatHistoryEntry",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItemCommon",
+        "//submodules/ChatMessageInteractiveMediaBadge",
         "//submodules/TelegramUI/Components/Chat/ShimmeringLinkNode",
         "//submodules/AnimatedCountLabelNode",
         "//submodules/AudioWaveform",

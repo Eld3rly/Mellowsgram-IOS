@@ -28,6 +28,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
     public let disableDate: Bool
     public let effectiveAuthorId: EnginePeer.Id?
     public let additionalContent: ChatMessageItemAdditionalContent?
+    public let mellowsgramDeletedMessageHistory: (() -> Void)?
     public let bubbleStyle: ChatMessageBubbleStyle
     
     let dateHeader: ChatMessageDateHeader
@@ -105,7 +106,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
         }
     }
     
-    public init(presentationData: ChatPresentationData, context: AccountContext, chatLocation: ChatLocation, associatedData: ChatMessageItemAssociatedData, controllerInteraction: ChatControllerInteraction, content: ChatMessageItemContent, disableDate: Bool = false, additionalContent: ChatMessageItemAdditionalContent? = nil) {
+    public init(presentationData: ChatPresentationData, context: AccountContext, chatLocation: ChatLocation, associatedData: ChatMessageItemAssociatedData, controllerInteraction: ChatControllerInteraction, content: ChatMessageItemContent, disableDate: Bool = false, additionalContent: ChatMessageItemAdditionalContent? = nil, mellowsgramDeletedMessageHistory: (() -> Void)? = nil) {
         self.presentationData = presentationData
         self.context = context
         self.chatLocation = chatLocation
@@ -114,6 +115,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
         self.content = content
         self.disableDate = disableDate || !controllerInteraction.chatIsRotated
         self.additionalContent = additionalContent
+        self.mellowsgramDeletedMessageHistory = mellowsgramDeletedMessageHistory
         
         var isMessageOptions = false
         if case .messageOptions = associatedData.subject {
@@ -391,6 +393,11 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
         let configure = {
             let node = (viewClassName as! ChatMessageItemView.Type).init(rotated: self.controllerInteraction.chatIsRotated)
             node.setupItem(self, synchronousLoad: synchronousLoads)
+            if let deletedAttribute = self.message.attributes.compactMap({ $0 as? MellowsgramDeletedMessageAttribute }).first {
+                node.alpha = deletedAttribute.translucent ? 0.58 : 1.0
+            } else {
+                node.alpha = 1.0
+            }
             
             let nodeLayout = node.asyncLayout()
             let (top, bottom, dateAtBottom) = self.merged(with: ChatHistoryItemNeighbors(neighbors), isRotated: self.controllerInteraction.chatIsRotated)

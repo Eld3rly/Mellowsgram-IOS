@@ -6,6 +6,20 @@ import SwiftSignalKit
 func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messageId: MessageId) -> Signal<Void, NoError> {
     return postbox.transaction { transaction -> Void in
         if let message = transaction.getMessage(messageId), message.flags.contains(.Incoming) {
+            if postbox.mellowsgramIgnoreAutoremoveTimersEnabled,
+               message.id.peerId.namespace != Namespaces.Peer.SecretChat,
+               !Namespaces.Message.allEphemeral.contains(message.id.namespace),
+               !message.attributes.contains(where: { attribute in
+                   attribute is EphemeralMessageAttribute ||
+                   attribute is EphemeralOutgoingMessageAttribute
+               }),
+               message.attributes.contains(where: { attribute in
+                   attribute is AutoremoveTimeoutMessageAttribute ||
+                   attribute is AutoclearTimeoutMessageAttribute
+               }) {
+                return
+            }
+
             var updateMessage = false
             var updatedAttributes = message.attributes
             
@@ -173,8 +187,22 @@ func _internal_markReactionsOrPollVotesAsSeenInteractively(postbox: Postbox, mes
     }
 }
 
-func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: MessageId, consumeDate: Int32?) {
+func markMessageContentAsConsumedRemotely(transaction: Transaction, messageId: MessageId, consumeDate: Int32?, ignoreAutoremoveTimers: Bool = false) {
     if let message = transaction.getMessage(messageId) {
+        if ignoreAutoremoveTimers,
+           message.id.peerId.namespace != Namespaces.Peer.SecretChat,
+           !Namespaces.Message.allEphemeral.contains(message.id.namespace),
+           !message.attributes.contains(where: { attribute in
+               attribute is EphemeralMessageAttribute ||
+               attribute is EphemeralOutgoingMessageAttribute
+           }),
+           message.attributes.contains(where: { attribute in
+               attribute is AutoremoveTimeoutMessageAttribute ||
+               attribute is AutoclearTimeoutMessageAttribute
+           }) {
+            return
+        }
+
         var updateMessage = false
         var updatedAttributes = message.attributes
         var updatedMedia = message.media

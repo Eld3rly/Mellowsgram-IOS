@@ -503,11 +503,17 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     let dimensions = telegramFile.dimensions ?? PixelDimensions(width: 512, height: 512)
                     self.imageNode.setSignal(chatMessageAnimatedSticker(postbox: item.context.account.postbox, userLocation: .peer(item.message.id.peerId), file: telegramFile, small: false, size: dimensions.cgSize.aspectFitted(CGSize(width: 384.0, height: 384.0)), thumbnail: false, synchronousLoad: synchronousLoad), attemptSynchronously: synchronousLoad)
                     self.updateVisibility()
-                    self.disposable.set(freeMediaFileInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: .message(message: MessageReference(item.message), media: telegramFile)).startStrict())
+                    let fileReference: FileMediaReference
+                    if engineMellowsgramMessageIsDeleted(item.message) {
+                        fileReference = .standalone(media: telegramFile)
+                    } else {
+                        fileReference = .message(message: MessageReference(item.message), media: telegramFile)
+                    }
+                    self.disposable.set(freeMediaFileInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: fileReference).startStrict())
                     
                     if telegramFile.isPremiumSticker {
                         if let effect = telegramFile.videoThumbnails.first {
-                            self.disposables.add(freeMediaFileResourceInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: .message(message: MessageReference(item.message), media: telegramFile), resource: effect.resource).startStrict())
+                            self.disposables.add(freeMediaFileResourceInteractiveFetched(account: item.context.account, userLocation: .peer(item.message.id.peerId), fileReference: fileReference, resource: effect.resource).startStrict())
                         }
                     }
                 }
@@ -1231,6 +1237,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 context: item.context,
                 presentationData: item.presentationData,
                 edited: edited,
+                deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                 impressionCount: viewCount,
                 dateText: dateText,
                 type: statusType,

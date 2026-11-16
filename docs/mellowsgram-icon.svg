@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 256 256" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Mellowsgram</title>
+  <desc id="desc">Lilac paper plane on a dark rounded square.</desc>
+  <defs>
+    <linearGradient id="sky" x1="48" y1="0" x2="192" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#363342"/>
+      <stop offset="0.55" stop-color="#23202D"/>
+      <stop offset="1" stop-color="#14121C"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="104" y1="70" x2="154" y2="201" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0CEFF"/>
+      <stop offset="0.6" stop-color="#E0CEFF"/>
+      <stop offset="1" stop-color="#B69BEA"/>
+    </linearGradient>
+  </defs>
+  <path d="M84 0H172C202 0 217 0 231 10C237 14 242 19 246 25C256 39 256 54 256 84V172C256 202 256 217 246 231C242 237 237 242 231 246C217 256 202 256 172 256H84C54 256 39 256 25 246C19 242 14 237 10 231C0 217 0 202 0 172V84C0 54 0 39 10 25C14 19 19 14 25 10C39 0 54 0 84 0Z" fill="url(#sky)"/>
+  <path d="M74 143C59 143 48 133 48 120C48 108 57 98 70 97C71 81 83 70 98 70C108 70 116 74 122 82L188 56C200 51 207 58 204 71L177 185C174 199 164 203 153 195L128 177C125 175 124 175 121 178L107 190C98 198 88 192 91 179L97 151C98 148 99 147 102 145L178 84C182 81 180 78 176 81L95 135C87 140 81 143 74 143Z" fill="url(#cloud)"/>
+</svg>

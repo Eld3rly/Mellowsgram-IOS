@@ -705,6 +705,11 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
     
     open func setupItem(_ item: ChatMessageItem, synchronousLoad: Bool) {
         self.item = item
+        if let deletedAttribute = item.message.attributes.compactMap({ $0 as? MellowsgramDeletedMessageAttribute }).first {
+            self.alpha = deletedAttribute.translucent ? 0.58 : 1.0
+        } else {
+            self.alpha = 1.0
+        }
     }
     
     open func updateAccessibilityData(_ accessibilityData: ChatMessageAccessibilityData) {

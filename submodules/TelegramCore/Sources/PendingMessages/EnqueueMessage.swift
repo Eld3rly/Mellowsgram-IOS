@@ -1036,6 +1036,12 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
             
             switch message {
                 case let .message(text, requestedAttributes, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, _, _):
+                    var messageText = text
+                    let mellowsgramDeletedReplyRecord = replyToMessageId.flatMap { replyToMessageId in
+                        transaction.mellowsgramArchiveRecord(messageId: replyToMessageId.messageId)
+                    }.flatMap { record in
+                        record.deletedAt != nil ? record : nil
+                    }
                     for (_, file) in inlineStickers {
                         transaction.storeMediaIfNotPresent(media: file)
                     }
@@ -1089,7 +1095,30 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                     
                     attributes.append(contentsOf: outgoingMessageAttributes(requestedAttributes: requestedAttributes, isSecretChat: peer is TelegramSecretChat, peerAutoremoveTimeout: peerAutoremoveTimeout))
 
-                    if let replyToMessageId = replyToMessageId {
+                    if let record = mellowsgramDeletedReplyRecord, let formatting = mellowsgramDeletedReplyFormatting(record: record) {
+                        // A requested ReplyMessageAttribute can be present on a
+                        // resend or a transformed send. It is unsafe for a
+                        // tombstone target as well, so remove it regardless of
+                        // where it came from.
+                        attributes.removeAll(where: { $0 is ReplyMessageAttribute })
+                        if !messageText.hasPrefix(formatting.prefix) {
+                            let prefixLength = formatting.prefix.utf16.count
+                            let entities = attributes.compactMap { attribute in
+                                (attribute as? TextEntitiesMessageAttribute)?.entities
+                            }.flatMap { $0 }
+                            let shiftedEntities = entities.map { entity in
+                                return MessageTextEntity(
+                                    range: (entity.range.lowerBound + prefixLength) ..< (entity.range.upperBound + prefixLength),
+                                    type: entity.type
+                                )
+                            }
+                            attributes.removeAll(where: { $0 is TextEntitiesMessageAttribute })
+                            messageText = formatting.prefix + messageText
+                            attributes.append(TextEntitiesMessageAttribute(entities: shiftedEntities + [
+                                MessageTextEntity(range: 0 ..< formatting.quoteLength, type: .BlockQuote(isCollapsed: false))
+                            ]))
+                        }
+                    } else if let replyToMessageId = replyToMessageId {
                         var threadMessageId: MessageId?
                         var quote = replyToMessageId.quote
                         let isQuote = quote != nil
@@ -1145,7 +1174,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                                     if let maybeNsText = maybeNsText {
                                         nsText = maybeNsText
                                     } else {
-                                        nsText = text as NSString
+                                        nsText = messageText as NSString
                                         maybeNsText = nsText
                                     }
                                     var entityRange = NSRange(location: entity.range.lowerBound, length: entity.range.upperBound - entity.range.lowerBound)
@@ -1259,7 +1288,9 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                     
                     var threadId: Int64? = threadId
                     if threadId == nil {
-                        if let replyToMessageId = replyToMessageId {
+                        if let archivedRecord = mellowsgramDeletedReplyRecord, archivedRecord.messageId.peerId == peerId, let archivedThreadId = archivedRecord.threadId {
+                            threadId = archivedThreadId
+                        } else if let replyToMessageId = replyToMessageId {
                             if let message = transaction.getMessage(replyToMessageId.messageId) {
                                 if let threadIdValue = message.threadId {
                                     if threadIdValue == 1 {
@@ -1284,7 +1315,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         threadId = 1
                     }
                     
-                    storeMessages.append(StoreMessage(peerId: peerId, namespace: messageNamespace, customStableId: nil, globallyUniqueId: randomId, groupingKey: localGroupingKey, threadId: threadId, timestamp: effectiveTimestamp, flags: flags, tags: tags, globalTags: globalTags, localTags: localTags, forwardInfo: nil, authorId: authorId, text: text, attributes: attributes, media: mediaList))
+                    storeMessages.append(StoreMessage(peerId: peerId, namespace: messageNamespace, customStableId: nil, globallyUniqueId: randomId, groupingKey: localGroupingKey, threadId: threadId, timestamp: effectiveTimestamp, flags: flags, tags: tags, globalTags: globalTags, localTags: localTags, forwardInfo: nil, authorId: authorId, text: messageText, attributes: attributes, media: mediaList))
                 case let .forward(source, threadId, grouping, requestedAttributes, _):
                     let sourceMessage = transaction.getMessage(source)
                     if let sourceMessage = sourceMessage, let author = sourceMessage.author ?? sourceMessage.peers[sourceMessage.id.peerId] {

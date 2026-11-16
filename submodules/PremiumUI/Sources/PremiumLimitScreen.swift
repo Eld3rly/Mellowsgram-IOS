@@ -5,6 +5,7 @@ import AsyncDisplayKit
 import TelegramCore
 import SwiftSignalKit
 import AccountContext
+import AccountUtils
 import TelegramPresentationData
 import PresentationDataUtils
 import ComponentFlow
@@ -1068,8 +1069,8 @@ private final class LimitSheetContent: CombinedComponent {
                     string = strings.Premium_MaxFileSizeNoPremiumText(dataSizeString(premiumLimit, formatting: DataSizeStringFormatting(strings: environment.strings, decimalSeparator: environment.dateTimeFormat.decimalSeparator))).string
                 }
             case .accounts:
-                let limit = 3
-                let premiumLimit = limit + 1
+                let limit = maximumNumberOfAccounts
+                let premiumLimit = maximumPremiumNumberOfAccounts
                 iconName = "Premium/Account"
                 badgeText = "\(component.count)"
                 string = component.count >= premiumLimit ? strings.Premium_MaxAccountsFinalText("\(premiumLimit)").string : strings.Premium_MaxAccountsText("\(limit)").string

@@ -444,6 +444,14 @@ func updateChatPresentationInterfaceStateImpl(
                     return
                 }
                 if message != selfController.presentationInterfaceState.replyMessage.flatMap(EngineMessage.init) {
+                    // A Mellowsgram reply intentionally points at an in-memory
+                    // tombstone. The live Postbox lookup is expected to return
+                    // nil after deletion; do not clear the projection or the
+                    // composer will lose its reply target before enqueueing
+                    // the formatted local quote.
+                    if message == nil, let currentReplyMessage = selfController.presentationInterfaceState.replyMessage, engineMellowsgramMessageIsDeleted(currentReplyMessage) {
+                        return
+                    }
                     selfController.updateChatPresentationInterfaceState(interactive: false, { presentationInterfaceState in
                         return presentationInterfaceState.updatedReplyMessage(message?._asMessage())
                     })

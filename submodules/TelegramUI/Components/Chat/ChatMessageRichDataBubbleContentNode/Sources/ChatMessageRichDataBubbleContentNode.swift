@@ -389,10 +389,22 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
 
     /// The message-scoped media-reference closures for the render context. Extracted so the
     /// initial build and the Local→Cloud reference refresh construct identical closures.
-    private static func mediaReferenceClosures(messageReference: MessageReference) -> (image: (TelegramMediaImage) -> ImageMediaReference, file: (TelegramMediaFile) -> FileMediaReference) {
+    private static func mediaReferenceClosures(messageReference: MessageReference, standalone: Bool) -> (image: (TelegramMediaImage) -> ImageMediaReference, file: (TelegramMediaFile) -> FileMediaReference) {
         return (
-            image: { image in ImageMediaReference.message(message: messageReference, media: image) },
-            file: { file in FileMediaReference.message(message: messageReference, media: file) }
+            image: { image in
+                if standalone {
+                    return .standalone(media: image)
+                } else {
+                    return .message(message: messageReference, media: image)
+                }
+            },
+            file: { file in
+                if standalone {
+                    return .standalone(media: file)
+                } else {
+                    return .message(message: messageReference, media: file)
+                }
+            }
         )
     }
 
@@ -470,7 +482,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                 //    and there is no blink; a later scroll-recycle rebuilds them against the Cloud ref.
                 if isLocalToCloudFlip {
                     let messageReference = MessageReference(item.message)
-                    let closures = ChatMessageRichDataBubbleContentNode.mediaReferenceClosures(messageReference: messageReference)
+                    let closures = ChatMessageRichDataBubbleContentNode.mediaReferenceClosures(messageReference: messageReference, standalone: engineMellowsgramMessageIsDeleted(item.message))
                     existing.renderContext?.updateContent(webpage: webpage, message: messageReference, imageReference: closures.image, fileReference: closures.file)
                 } else {
                     existing.renderContext?.updateContent(webpage: webpage)
@@ -503,7 +515,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
         // render context which is owned by the V2View, so we must avoid making them retain
         // the bubble (`self`) or the message indirectly via `item`.
         let messageReference = MessageReference(item.message)
-        let closures = ChatMessageRichDataBubbleContentNode.mediaReferenceClosures(messageReference: messageReference)
+        let closures = ChatMessageRichDataBubbleContentNode.mediaReferenceClosures(messageReference: messageReference, standalone: engineMellowsgramMessageIsDeleted(item.message))
         let policyContext = item.context
         let autoDownloadSettings = item.controllerInteraction.automaticMediaDownloadSettings
         let autoDownloadPeerType = item.associatedData.automaticDownloadPeerType
@@ -1218,6 +1230,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                         context: item.context,
                         presentationData: item.presentationData,
                         edited: edited && !item.presentationData.isPreview,
+                        deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                         impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                         dateText: dateText,
                         type: statusType,

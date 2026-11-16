@@ -232,11 +232,12 @@ public func peerMessagesMediaPlaylistAndItemId(_ message: EngineMessage, isRecen
         // identity — not a PeerMessages one — is what the row must be compared against.
         return (RichMessagePlaylistId(messageId: richMessageQueueId), RichMessagePlaylistItemId(index: Int(message.id.id)))
     }
+    let mellowsgramDeleted = engineMellowsgramMessageIsDeleted(message._asMessage())
     if isSavedMusic {
         return (PeerMessagesMediaPlaylistId.savedMusic(message.id.peerId), PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index))
     } else if isAttachMusic || (isGlobalSearch && !isDownloadList) {
         return (PeerMessagesMediaPlaylistId.custom, PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index))
-    } else if isRecentActions && !isDownloadList {
+    } else if (isRecentActions || mellowsgramDeleted) && !isDownloadList {
         return (PeerMessagesMediaPlaylistId.recentActions(message.id.peerId), PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index))
     } else {
         return (PeerMessagesMediaPlaylistId.peer(message.id.peerId), PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index))

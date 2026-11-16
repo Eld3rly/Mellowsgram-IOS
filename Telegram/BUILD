@@ -547,17 +547,75 @@ aps_fragment = "" if telegram_aps_environment == "" else """
 <string>{telegram_aps_environment}</string>
 """.format(telegram_aps_environment=telegram_aps_environment)
 
+app_groups_signing_fragment = "" if telegram_team_id == "" else """
+    <key>application-identifier</key>
+    <string>{telegram_team_id}.{telegram_bundle_id}</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>{telegram_team_id}</string>
+""".format(
+    telegram_team_id=telegram_team_id,
+    telegram_bundle_id=telegram_bundle_id
+)
+
 app_groups_fragment = """
     <key>com.apple.security.application-groups</key>
     <array>
         <string>group.{telegram_bundle_id}</string>
     </array>
-    <key>application-identifier</key>
-    <string>{telegram_team_id}.{telegram_bundle_id}</string>
 """.format(
-    telegram_team_id=telegram_team_id,
+    telegram_bundle_id=telegram_bundle_id
+) + app_groups_signing_fragment
+
+extension_app_groups_fragment = """
+<key>com.apple.security.application-groups</key>
+<array>
+    <string>group.{telegram_bundle_id}</string>
+</array>
+""".format(
     telegram_bundle_id=telegram_bundle_id
 )
+
+share_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.Share</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
+
+notification_content_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.NotificationContent</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
+
+widget_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.Widget</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
+
+intents_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.SiriIntents</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
+
+broadcast_upload_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.BroadcastUpload</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
+
+notification_service_extension_entitlements = extension_app_groups_fragment + ("" if telegram_team_id == "" else """
+<key>application-identifier</key>
+<string>{telegram_team_id}.{telegram_bundle_id}.NotificationService</string>
+<key>com.apple.developer.team-identifier</key>
+<string>{telegram_team_id}</string>
+""".format(telegram_team_id=telegram_team_id, telegram_bundle_id=telegram_bundle_id))
 
 official_communication_notifications_fragment = """
 <key>com.apple.developer.usernotifications.communication</key>
@@ -641,7 +699,7 @@ plist_fragment(
     template =
     """
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     """
 )
 
@@ -1040,7 +1098,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Share</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1099,12 +1157,37 @@ swift_library(
 plist_fragment(
     name = "ShareExtensionEntitlements",
     extension = "entitlements",
-    template = """
-<key>com.apple.security.application-groups</key>
-<array>
-    <string>group.{telegram_bundle_id}</string>
-</array>
-""".format(telegram_bundle_id = telegram_bundle_id),
+    template = share_extension_entitlements,
+)
+
+plist_fragment(
+    name = "NotificationContentExtensionEntitlements",
+    extension = "entitlements",
+    template = notification_content_extension_entitlements,
+)
+
+plist_fragment(
+    name = "WidgetExtensionEntitlements",
+    extension = "entitlements",
+    template = widget_extension_entitlements,
+)
+
+plist_fragment(
+    name = "IntentsExtensionEntitlements",
+    extension = "entitlements",
+    template = intents_extension_entitlements,
+)
+
+plist_fragment(
+    name = "BroadcastUploadExtensionEntitlements",
+    extension = "entitlements",
+    template = broadcast_upload_extension_entitlements,
+)
+
+plist_fragment(
+    name = "NotificationServiceExtensionEntitlements",
+    extension = "entitlements",
+    template = notification_service_extension_entitlements,
 )
 
 ios_extension(
@@ -1145,7 +1228,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationContent</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1217,6 +1300,7 @@ swift_library(
 
 ios_extension(
     name = "NotificationContentExtension",
+    entitlements = ":NotificationContentExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.NotificationContent".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1253,7 +1337,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.Widget</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1322,6 +1406,7 @@ genrule(
 
 ios_extension(
     name = "WidgetExtension",
+    entitlements = ":WidgetExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.Widget".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1370,7 +1455,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.SiriIntents</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1495,6 +1580,7 @@ ios_unit_test(
 
 ios_extension(
     name = "IntentsExtension",
+    entitlements = ":IntentsExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.SiriIntents".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1533,7 +1619,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.BroadcastUpload</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1590,6 +1676,7 @@ swift_library(
 
 ios_extension(
     name = "BroadcastUploadExtension",
+    entitlements = ":BroadcastUploadExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.BroadcastUpload".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1627,7 +1714,7 @@ plist_fragment(
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}.NotificationService</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>NSExtension</key>
@@ -1651,6 +1738,7 @@ plist_fragment(
 
 ios_extension(
     name = "NotificationServiceExtension" + notificationServiceExtensionVersion,
+    entitlements = ":NotificationServiceExtensionEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.NotificationService".format(
         telegram_bundle_id = telegram_bundle_id,
     ),
@@ -1696,7 +1784,7 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Mellowsgram</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>

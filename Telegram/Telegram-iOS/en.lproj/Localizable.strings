@@ -5650,7 +5650,7 @@ Sorry for the inconvenience.";
 "Stats.GroupShowMoreTopInviters_any" = "Show %@ More";
 
 "Settings.AddAnotherAccount" = "Add Another Account";
-"Settings.AddAnotherAccount.Help" = "You can add up to three accounts with different phone numbers.";
+"Settings.AddAnotherAccount.Help" = "You can add up to 32 accounts with different phone numbers.";
 
 "ProfilePhoto.OpenGallery" = "Open Gallery";
 "ProfilePhoto.SearchWeb" = "Search Web";
@@ -7772,7 +7772,7 @@ Sorry for the inconvenience.";
 "Premium.SubscribedDescription" = "Thank you for subsribing to **Telegram Premium**. Here's what is now unlocked.";
 
 "Premium.DoubledLimits" = "Doubled Limits";
-"Premium.DoubledLimitsInfo" = "Up to 1000 channels, 20 folders, 10 pins, 20 public links, 4 accounts and more.";
+"Premium.DoubledLimitsInfo" = "Up to 1000 channels, 20 folders, 10 pins, 20 public links and more.";
 
 "Premium.UploadSize" = "4 GB Upload Size";
 "Premium.UploadSizeInfo" = "Increased upload size from 2 GB to 4 GB per document, unlimited storage overall.";
@@ -7858,7 +7858,7 @@ Sorry for the inconvenience.";
 "Premium.Limits.CaptionsInfo" = "Use longer descriptions for your photos and videos";
 "Premium.Limits.FoldersInfo" = "Organize your chats into 20 folders";
 "Premium.Limits.ChatsPerFolderInfo" = "Add up to 200 chats into each of your folders";
-"Premium.Limits.AccountsInfo" = "Connect 4 accounts with different mobile numbers";
+"Premium.Limits.AccountsInfo" = "Connect up to 32 accounts with different mobile numbers";
 
 "WebApp.Settings" = "Settings";
 
@@ -7885,7 +7885,7 @@ Sorry for the inconvenience.";
 
 "Settings.Premium" = "Telegram Premium";
 
-"Settings.AddAnotherAccount.PremiumHelp" = "You can add up to four accounts with different phone numbers.";
+"Settings.AddAnotherAccount.PremiumHelp" = "You can add up to 32 accounts with different phone numbers.";
 
 "Stickers.TrendingPremiumStickers" = "Trending Premium Stickers";
 
@@ -7901,8 +7901,8 @@ Sorry for the inconvenience.";
 "DeleteAccount.Options.ChangePhoneNumberText" = "Move your contacts, chats and media to a new number.";
 
 "DeleteAccount.Options.AddAccountTitle" = "Add Another Account";
-"DeleteAccount.Options.AddAccountText" = "You can use up to 3 accounts in one app at the same time.";
-"DeleteAccount.Options.AddAccountPremiumText" = "You can use up to 4 accounts in one app at the same time.";
+"DeleteAccount.Options.AddAccountText" = "You can use up to 32 accounts in one app at the same time.";
+"DeleteAccount.Options.AddAccountPremiumText" = "You can use up to 32 accounts in one app at the same time.";
 
 "DeleteAccount.Options.ChangePrivacyTitle" = "Change Your Privacy Settings";
 "DeleteAccount.Options.ChangePrivacyText" = "Choose who exactly can see which of your info.";

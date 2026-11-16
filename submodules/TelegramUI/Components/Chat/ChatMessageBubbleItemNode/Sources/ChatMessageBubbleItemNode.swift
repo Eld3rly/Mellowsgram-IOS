@@ -591,7 +591,7 @@ private func mapVisibility(_ visibility: ListViewItemNodeVisibility, boundsSize:
     }
 }
 
-public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode {
+open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewItemNode {
     public class ContentContainer {
         public let contentMessageStableId: UInt32
         public let sourceNode: ContextExtractedContentContainingNode
@@ -2983,6 +2983,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     context: item.context,
                     presentationData: item.presentationData,
                     edited: edited && !item.presentationData.isPreview,
+                    deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                     impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                     dateText: dateText,
                     type: statusType,
@@ -8524,7 +8525,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         return self.contentNodes.lazy.compactMap(\.resizeAnchor).first
     }
 
-    override public func openMessageContextMenu() {
+    override open func openMessageContextMenu() {
         guard let item = self.item else {
             return
         }

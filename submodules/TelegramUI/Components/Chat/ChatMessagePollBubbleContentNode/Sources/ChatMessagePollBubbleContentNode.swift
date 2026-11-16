@@ -1255,7 +1255,12 @@ private final class ChatMessagePollOptionNode: ASDisplayNode {
                         mediaNode.isHidden = false
                         mediaNode.frame = mediaFrame
 
-                        let mediaReference = AnyMediaReference.message(message: MessageReference(message), media: media)
+                        let mediaReference: AnyMediaReference
+                        if engineMellowsgramMessageIsDeleted(message) {
+                            mediaReference = .standalone(media: media)
+                        } else {
+                            mediaReference = .message(message: MessageReference(message), media: media)
+                        }
                         let mediaUpdated = previousMedia?.isEqual(to: media) != true
                         var imageSize = ChatMessagePollOptionNode.mediaSize
                         var isVideo = false
@@ -2749,6 +2754,7 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                         context: item.context,
                         presentationData: item.presentationData,
                         edited: edited,
+                        deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                         impressionCount: viewCount,
                         dateText: dateText,
                         type: statusType,

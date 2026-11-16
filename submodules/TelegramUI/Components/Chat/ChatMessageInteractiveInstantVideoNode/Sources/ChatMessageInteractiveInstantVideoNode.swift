@@ -25,6 +25,7 @@ import ChatMessageBubbleContentNode
 import ChatMessageReplyInfoNode
 import InstantVideoRadialStatusNode
 import ChatInstantVideoMessageDurationNode
+import ChatMessageInteractiveMediaBadge
 import ChatControllerInteraction
 import WallpaperBackgroundNode
 import TelegramStringFormatting
@@ -114,6 +115,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
     private var isBubblelessDurationGlass = false
     private var durationGlassView: StaticGlassBackgroundView?
     private var durationNode: ChatInstantVideoMessageDurationNode?
+    private var mellowsgramAutoremoveBadgeNode: ChatMessageInteractiveMediaBadge?
     public let dateAndStatusNode: ChatMessageDateAndStatusNode
     
     private let infoBackgroundNode: ASImageNode
@@ -600,6 +602,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                 context: item.context,
                 presentationData: item.presentationData,
                 edited: edited && !sentViaBot && !item.presentationData.isPreview,
+                deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                 impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                 dateText: dateText,
                 type: statusType,
@@ -727,7 +730,13 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                     
                     if let updatedFile = updatedFile, updatedMedia {
                         if let resource = updatedFile.previewRepresentations.first?.resource {
-                            strongSelf.fetchedThumbnailDisposable.set(item.context.engine.resources.fetch(reference: FileMediaReference.message(message: MessageReference(item.message), media: updatedFile).resourceReference(resource), userLocation: .peer(item.message.id.peerId), userContentType: .video).startStrict())
+                            let fileReference: FileMediaReference
+                            if engineMellowsgramMessageIsDeleted(item.message) {
+                                fileReference = .standalone(media: updatedFile)
+                            } else {
+                                fileReference = .message(message: MessageReference(item.message), media: updatedFile)
+                            }
+                            strongSelf.fetchedThumbnailDisposable.set(item.context.engine.resources.fetch(reference: fileReference.resourceReference(resource), userLocation: .peer(item.message.id.peerId), userContentType: .video).startStrict())
                         } else {
                             strongSelf.fetchedThumbnailDisposable.set(nil)
                         }
@@ -803,6 +812,12 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                                 })
                             }
                             let mediaManager = item.context.sharedContext.mediaManager
+                            let videoReference: FileMediaReference
+                            if engineMellowsgramMessageIsDeleted(item.message) {
+                                videoReference = .standalone(media: telegramFile)
+                            } else {
+                                videoReference = .message(message: MessageReference(item.message), media: telegramFile)
+                            }
                             let videoNode = UniversalVideoNode(context: item.context, postbox: item.context.account.postbox, audioSession: mediaManager.audioSession, manager: mediaManager.universalVideoManager, decoration: ChatBubbleInstantVideoDecoration(inset: 2.0, backgroundImage: instantVideoBackgroundImage, tapped: {
                                 if let strongSelf = self {
                                     if let item = strongSelf.item {
@@ -811,7 +826,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                                         }
                                     }
                                 }
-                            }), content: NativeVideoContent(id: .message(item.message.stableId, telegramFile.fileId), userLocation: .peer(item.message.id.peerId), fileReference: .message(message: MessageReference(item.message), media: telegramFile), streamVideo: streamVideo ? .conservative : .none, enableSound: false, fetchAutomatically: false, isAudioVideoMessage: true, captureProtected: item.associatedData.isCopyProtectionEnabled || item.message.isCopyProtected(), storeAfterDownload: nil), priority: item.associatedData.isStandalone ? .overlay : .embedded, autoplay: item.context.sharedContext.energyUsageSettings.autoplayVideo && !isViewOnceMessage)
+                            }), content: NativeVideoContent(id: .message(item.message.stableId, telegramFile.fileId), userLocation: .peer(item.message.id.peerId), fileReference: videoReference, streamVideo: streamVideo ? .conservative : .none, enableSound: false, fetchAutomatically: false, isAudioVideoMessage: true, captureProtected: item.associatedData.isCopyProtectionEnabled || item.message.isCopyProtected(), storeAfterDownload: nil), priority: item.associatedData.isStandalone ? .overlay : .embedded, autoplay: item.context.sharedContext.energyUsageSettings.autoplayVideo && !isViewOnceMessage)
                             if let previousVideoNode = previousVideoNode {
                                 videoNode.bounds = previousVideoNode.bounds
                                 videoNode.position = previousVideoNode.position
@@ -822,14 +837,14 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                             videoNode.canAttachContent = strongSelf.shouldAcquireVideoContext
                         
                             if isSecretMedia {
-                                let updatedSecretPlaceholderSignal = chatSecretMessageVideo(account: item.context.account, userLocation: .peer(item.message.id.peerId), videoReference: .message(message: MessageReference(item.message), media: telegramFile))
+                                let updatedSecretPlaceholderSignal = chatSecretMessageVideo(account: item.context.account, userLocation: .peer(item.message.id.peerId), videoReference: videoReference)
                                 strongSelf.secretVideoPlaceholder.setSignal(updatedSecretPlaceholderSignal)
                                 if strongSelf.secretVideoPlaceholder.supernode == nil {
                                     strongSelf.insertSubnode(strongSelf.secretVideoPlaceholderBackground, belowSubnode: videoNode)
                                     strongSelf.insertSubnode(strongSelf.secretVideoPlaceholder, belowSubnode: videoNode)
                                 }
                             } else if item.presentationData.isPreview {
-                                let updatedSecretPlaceholderSignal = chatMessageVideo(postbox: item.context.account.postbox, userLocation: .peer(item.message.id.peerId), videoReference: .message(message: MessageReference(item.message), media: telegramFile), synchronousLoad: true)
+                                let updatedSecretPlaceholderSignal = chatMessageVideo(postbox: item.context.account.postbox, userLocation: .peer(item.message.id.peerId), videoReference: videoReference, synchronousLoad: true)
                                 strongSelf.secretVideoPlaceholder.displaysAsynchronously = false
                                 strongSelf.secretVideoPlaceholder.setSignal(updatedSecretPlaceholderSignal, attemptSynchronously: true)
                                 if strongSelf.secretVideoPlaceholder.supernode == nil {
@@ -1555,6 +1570,43 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                 dustNode.frame = videoFrame
                 dustNode.update(size: videoFrame.size, color: .white, transition: .immediate)
             }
+        }
+
+        if let autoremoveAttribute = engineMellowsgramAutoremoveBypassAttribute(item.message), autoremoveAttribute.timeout != nil || autoremoveAttribute.isViewOnce {
+            let badgeNode: ChatMessageInteractiveMediaBadge
+            if let current = self.mellowsgramAutoremoveBadgeNode {
+                badgeNode = current
+            } else {
+                badgeNode = ChatMessageInteractiveMediaBadge()
+                badgeNode.isUserInteractionEnabled = false
+                self.mellowsgramAutoremoveBadgeNode = badgeNode
+                self.addSubnode(badgeNode)
+            }
+
+            let isViewOnce = autoremoveAttribute.isViewOnce || autoremoveAttribute.timeout == viewOnceTimeout
+            let text: String
+            let iconName: String
+            if isViewOnce {
+                text = "1"
+                iconName = "Chat/Message/SecretMediaOnce"
+            } else if let timeout = autoremoveAttribute.timeout {
+                text = item.presentationData.strings.MessageTimer_ShortSeconds(max(1, timeout))
+                iconName = "Chat/Message/SecretMediaPlay"
+            } else {
+                text = ""
+                iconName = "Chat/Message/SecretMediaPlay"
+            }
+            let messageTheme = item.presentationData.theme.theme.chat.message
+            badgeNode.update(
+                theme: item.presentationData.theme.theme,
+                content: .text(inset: 10.0, backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, text: NSAttributedString(string: text), iconName: iconName),
+                mediaDownloadState: nil,
+                animated: false
+            )
+            badgeNode.frame = CGRect(x: videoFrame.minX + 6.0, y: videoFrame.minY + 6.0, width: 60.0, height: 18.0)
+        } else if let badgeNode = self.mellowsgramAutoremoveBadgeNode {
+            self.mellowsgramAutoremoveBadgeNode = nil
+            badgeNode.removeFromSupernode()
         }
     }
     

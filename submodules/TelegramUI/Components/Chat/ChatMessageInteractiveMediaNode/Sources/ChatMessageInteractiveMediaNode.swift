@@ -896,6 +896,33 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
             let _ = peerType
             let message = engineMessage._asMessage()
             let media = engineMedia._asMedia()
+            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(EngineRawMessage(message))
+
+            // Deleted rows keep their original media descriptors but no longer
+            // have a live Postbox message to use as a media reference. Standalone
+            // references still use the same MediaBox resources and let the
+            // regular Telegram renderer/gallery operate normally.
+            func mellowsgramAnyMediaReference(_ media: Media) -> AnyMediaReference {
+                if isMellowsgramDeletedMessage {
+                    return .standalone(media: media)
+                } else {
+                    return .message(message: MessageReference(message), media: media)
+                }
+            }
+            func mellowsgramFileMediaReference(_ file: TelegramMediaFile) -> FileMediaReference {
+                if isMellowsgramDeletedMessage {
+                    return .standalone(media: file)
+                } else {
+                    return .message(message: MessageReference(message), media: file)
+                }
+            }
+            func mellowsgramImageMediaReference(_ image: TelegramMediaImage) -> ImageMediaReference {
+                if isMellowsgramDeletedMessage {
+                    return .standalone(media: image)
+                } else {
+                    return .message(message: MessageReference(message), media: image)
+                }
+            }
             
             #if DEBUG && false
             var media = media
@@ -1131,6 +1158,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                     context: context,
                     presentationData: presentationData,
                     edited: dateAndStatus.edited && !presentationData.isPreview,
+                    deleted: engineMellowsgramMessageIsDeleted(message) && !presentationData.isPreview,
                     impressionCount: !presentationData.isPreview ? dateAndStatus.viewCount : nil,
                     dateText: dateAndStatus.dateText,
                     type: dateAndStatus.type,
@@ -1370,14 +1398,14 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     }
                                     if isSecretMedia {
                                         updateImageSignal = { synchronousLoad, _ in
-                                            return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image))
+                                            return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image))
                                         }
                                     } else {
                                         updateImageSignal = { synchronousLoad, highQuality in
-                                            return storyPreviewWithAddedReactions(context: context, storyItem: item, signal: chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality))
+                                            return storyPreviewWithAddedReactions(context: context, storyItem: item, signal: chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), synchronousLoad: synchronousLoad, highQuality: highQuality))
                                         }
                                         updateBlurredImageSignal = { synchronousLoad, _ in
-                                            return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: true)
+                                            return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), ignoreFullSize: true, synchronousLoad: true)
                                         }
                                     }
                                     
@@ -1388,7 +1416,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                             }
                                         }
                                     }, cancel: {
-                                        chatMessagePhotoCancelInteractiveFetch(account: context.account, photoReference: .message(message: MessageReference(message), media: image))
+                                        chatMessagePhotoCancelInteractiveFetch(account: context.account, photoReference: mellowsgramImageMediaReference(image))
                                         if let resource = largestRepresentationForPhoto(image)?.resource {
                                             messageMediaImageCancelInteractiveFetch(context: context, messageId: message.id, image: image, resource: resource)
                                         }
@@ -1396,7 +1424,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 } else if var file = media as? TelegramMediaFile {
                                     if isSecretMedia {
                                         updateImageSignal = { synchronousLoad, _ in
-                                            return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
+                                            return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: mellowsgramFileMediaReference(file))
                                         }
                                     } else {
                                         if file.isAnimatedSticker {
@@ -1411,10 +1439,10 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         } else {
                                             onlyFullSizeVideoThumbnail = isSendingUpdated
                                             updateImageSignal = { synchronousLoad, _ in
-                                                return storyPreviewWithAddedReactions(context: context, storyItem: item, signal: mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true))
+                                                return storyPreviewWithAddedReactions(context: context, storyItem: item, signal: mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: mellowsgramFileMediaReference(file), onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true))
                                             }
                                             updateBlurredImageSignal = { synchronousLoad, _ in
-                                                return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: true)
+                                                return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: mellowsgramFileMediaReference(file), synchronousLoad: true)
                                             }
                                         }
                                     }
@@ -1428,7 +1456,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         loadHLSRangeVideoFile = file
                                         
                                         var passFile = true
-                                        if NativeVideoContent.isHLSVideo(file: file), let minimizedQualityFile = HLSVideoContent.minimizedHLSQuality(file: .message(message: MessageReference(message), media: file), codecConfiguration: HLSCodecConfiguration(context: context)) {
+                                        if NativeVideoContent.isHLSVideo(file: file), let minimizedQualityFile = HLSVideoContent.minimizedHLSQuality(file: mellowsgramFileMediaReference(file), codecConfiguration: HLSCodecConfiguration(context: context)) {
                                             if !useInlineHLS {
                                                 file = minimizedQualityFile.file.media
                                             }
@@ -1481,7 +1509,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     updatedFetchControls = FetchControls(fetch: { manual in
                                         if let strongSelf = self {
                                             if file.isAnimated {
-                                                strongSelf.fetchDisposable.set(context.engine.resources.fetch(reference: AnyMediaReference.message(message: MessageReference(message), media: file).resourceReference(file.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), statsCategory: statsCategoryForFileWithAttributes(file.attributes)).startStrict())
+                                                strongSelf.fetchDisposable.set(context.engine.resources.fetch(reference: mellowsgramAnyMediaReference(file).resourceReference(file.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), statsCategory: statsCategoryForFileWithAttributes(file.attributes)).startStrict())
                                             } else {
                                                 strongSelf.fetchDisposable.set(messageMediaFileInteractiveFetched(context: context, message: message, file: file, userInitiated: manual, storeToDownloadsPeerId: storeToDownloadsPeerId).startStrict())
                                             }
@@ -1504,14 +1532,14 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             }
                             if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true)
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), ignoreFullSize: true)
                                 }
                             } else {
                                 updateImageSignal = { synchronousLoad, highQuality in
-                                    return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
+                                    return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), synchronousLoad: synchronousLoad, highQuality: highQuality)
                                 }
                                 updateBlurredImageSignal = { synchronousLoad, _ in
-                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: true)
+                                    return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), ignoreFullSize: true, synchronousLoad: true)
                                 }
                             }
                             
@@ -1522,7 +1550,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     }
                                 }
                             }, cancel: {
-                                chatMessagePhotoCancelInteractiveFetch(account: context.account, photoReference: .message(message: MessageReference(message), media: image))
+                                chatMessagePhotoCancelInteractiveFetch(account: context.account, photoReference: mellowsgramImageMediaReference(image))
                                 if let resource = largestRepresentationForPhoto(image)?.resource {
                                     messageMediaImageCancelInteractiveFetch(context: context, messageId: message.id, image: image, resource: resource)
                                 }
@@ -1557,11 +1585,11 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 switch wallpaper.content {
                                     case let .file(file, _, _, _, isTheme, _):
                                         if isTheme {
-                                            return themeImage(account: context.account, accountManager: context.sharedContext.accountManager, source: .file(FileMediaReference.message(message: MessageReference(message), media: file)), synchronousLoad: synchronousLoad)
+                                            return themeImage(account: context.account, accountManager: context.sharedContext.accountManager, source: .file(mellowsgramFileMediaReference(file)), synchronousLoad: synchronousLoad)
                                         } else {
-                                            var representations: [ImageRepresentationWithReference] = file.previewRepresentations.map({ ImageRepresentationWithReference(representation: $0, reference: AnyMediaReference.message(message: MessageReference(message), media: file).resourceReference($0.resource)) })
+                                            var representations: [ImageRepresentationWithReference] = file.previewRepresentations.map({ ImageRepresentationWithReference(representation: $0, reference: mellowsgramAnyMediaReference(file).resourceReference($0.resource)) })
                                             if file.mimeType == "image/svg+xml" || file.mimeType == "application/x-tgwallpattern" {
-                                                representations.append(ImageRepresentationWithReference(representation: .init(dimensions: PixelDimensions(width: 1440, height: 2960), resource: file.resource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false), reference: AnyMediaReference.message(message: MessageReference(message), media: file).resourceReference(file.resource)))
+                                                representations.append(ImageRepresentationWithReference(representation: .init(dimensions: PixelDimensions(width: 1440, height: 2960), resource: file.resource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false), reference: mellowsgramAnyMediaReference(file).resourceReference(file.resource)))
                                             }
                                             if ["image/png", "image/svg+xml", "application/x-tgwallpattern"].contains(file.mimeType) {
                                                 return patternWallpaperImage(account: context.account, accountManager: context.sharedContext.accountManager, representations: representations, mode: .screen)
@@ -1573,7 +1601,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                                     }
                                                 }
                                             } else {
-                                                return wallpaperImage(account: context.account, accountManager: context.sharedContext.accountManager, fileReference: FileMediaReference.message(message: MessageReference(message), media: file), representations: representations, alwaysShowThumbnailFirst: false, thumbnail: true, autoFetchFullSize: true, synchronousLoad: synchronousLoad)
+                                                return wallpaperImage(account: context.account, accountManager: context.sharedContext.accountManager, fileReference: mellowsgramFileMediaReference(file), representations: representations, alwaysShowThumbnailFirst: false, thumbnail: true, autoFetchFullSize: true, synchronousLoad: synchronousLoad)
                                             }
                                         }
                                     case let .image(representations):
@@ -1612,7 +1640,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 loadHLSRangeVideoFile = file
                                 
                                 var passFile = true
-                                if NativeVideoContent.isHLSVideo(file: file), let minimizedQualityFile = HLSVideoContent.minimizedHLSQuality(file: .message(message: MessageReference(message), media: file), codecConfiguration: HLSCodecConfiguration(context: context)) {
+                                if NativeVideoContent.isHLSVideo(file: file), let minimizedQualityFile = HLSVideoContent.minimizedHLSQuality(file: mellowsgramFileMediaReference(file), codecConfiguration: HLSCodecConfiguration(context: context)) {
                                     if !useInlineHLS {
                                         file = minimizedQualityFile.file.media
                                     }
@@ -1665,21 +1693,21 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             if file.isDisplayablePass {
                                 let language = presentationData.strings.baseLanguageCode
                                 updateImageSignal = { _, _ in
-                                    return chatMessagePassImage(account: context.account, fileReference: .message(message: MessageReference(message), media: file), language: language)
+                                    return chatMessagePassImage(account: context.account, fileReference: mellowsgramFileMediaReference(file), language: language)
                                 }
                             } else if isSecretMedia {
                                 updateImageSignal = { synchronousLoad, _ in
-                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file))
+                                    return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: mellowsgramFileMediaReference(file))
                                 }
                             } else {
                                 if let _ = media as? TelegramMediaImage {
                                     
                                 } else if let image = file.videoCover {
                                     updateImageSignal = { synchronousLoad, highQuality in
-                                        return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), synchronousLoad: synchronousLoad, highQuality: highQuality)
+                                        return chatMessagePhoto(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), synchronousLoad: synchronousLoad, highQuality: highQuality)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
-                                        return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), ignoreFullSize: true, synchronousLoad: true)
+                                        return chatSecretPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: mellowsgramImageMediaReference(image), ignoreFullSize: true, synchronousLoad: true)
                                     }
                                 } else if file.isAnimatedSticker {
                                     let dimensions = file.dimensions ?? PixelDimensions(width: 512, height: 512)
@@ -1694,9 +1722,9 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     onlyFullSizeVideoThumbnail = isSendingUpdated
                                     let codecConfiguration = HLSCodecConfiguration(context: context)
                                     // When the chat preload below runs, the first frame comes from the quality it fetches.
-                                    let preferredHLSQualityFileId = automaticDownload != .none ? HLSVideoContent.minimizedHLSQuality(file: .message(message: MessageReference(message), media: file), codecConfiguration: codecConfiguration)?.file.media.fileId.id : nil
+                                    let preferredHLSQualityFileId = automaticDownload != .none ? HLSVideoContent.minimizedHLSQuality(file: mellowsgramFileMediaReference(file), codecConfiguration: codecConfiguration)?.file.media.fileId.id : nil
                                     updateImageSignal = { synchronousLoad, _ in
-                                        let videoReference: FileMediaReference = .message(message: MessageReference(message), media: file)
+                                        let videoReference: FileMediaReference = mellowsgramFileMediaReference(file)
                                         var hlsFiles: [(playlist: TelegramMediaFile, video: TelegramMediaFile)] = []
                                         if let qualitySet = HLSQualitySet(baseFile: videoReference, codecConfiguration: codecConfiguration) {
                                             for key in qualitySet.playlistFiles.keys.sorted() {
@@ -1708,7 +1736,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         return mediaGridMessageVideo(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), videoReference: videoReference, hlsFiles: hlsFiles, onlyFullSize: currentMedia?.id?.namespace == Namespaces.Media.LocalFile, autoFetchFullSizeThumbnail: true, preferredHLSQualityFileId: preferredHLSQualityFileId)
                                     }
                                     updateBlurredImageSignal = { synchronousLoad, _ in
-                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: .message(message: MessageReference(message), media: file), synchronousLoad: true)
+                                        return chatSecretMessageVideo(account: context.account, userLocation: .peer(message.id.peerId), videoReference: mellowsgramFileMediaReference(file), synchronousLoad: true)
                                     }
                                 }
                             }
@@ -1717,7 +1745,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 if let strongSelf = self {
                                     let disposableSet = DisposableSet()
                                     if file.isAnimated {
-                                        disposableSet.add(context.engine.resources.fetch(reference: AnyMediaReference.message(message: MessageReference(message), media: file).resourceReference(file.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), statsCategory: statsCategoryForFileWithAttributes(file.attributes)).startStrict())
+                                        disposableSet.add(context.engine.resources.fetch(reference: mellowsgramAnyMediaReference(file).resourceReference(file.resource), userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), statsCategory: statsCategoryForFileWithAttributes(file.attributes)).startStrict())
                                     } else if NativeVideoContent.isHLSVideo(file: file) {
                                         // fetchDisposable holds the chat preload of the preload quality: keep it.
                                         return
@@ -1768,7 +1796,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                         
                         if let image = media as? TelegramMediaImage {
                             if message.flags.isSending {
-                                updatedStatusSignal = combineLatest(chatMessagePhotoStatus(context: context, messageId: message.id, photoReference: .message(message: MessageReference(message), media: image)), context.account.pendingMessageManager.pendingMessageStatus(message.id) |> map { $0.0 })
+                                updatedStatusSignal = combineLatest(chatMessagePhotoStatus(context: context, messageId: message.id, photoReference: mellowsgramImageMediaReference(image)), context.account.pendingMessageManager.pendingMessageStatus(message.id) |> map { $0.0 })
                                 |> map { resourceStatus, pendingStatus -> (EngineMediaResourceStatus, EngineMediaResourceStatus?) in
                                     if let pendingStatus = pendingStatus {
                                         var progress: Float = pendingStatus.progress.progress
@@ -1782,7 +1810,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     }
                                 }
                             } else {
-                                updatedStatusSignal = chatMessagePhotoStatus(context: context, messageId: message.id, photoReference: .message(message: MessageReference(message), media: image), displayAtSize: nil)
+                                updatedStatusSignal = chatMessagePhotoStatus(context: context, messageId: message.id, photoReference: mellowsgramImageMediaReference(image), displayAtSize: nil)
                                 |> map { resourceStatus -> (EngineMediaResourceStatus, EngineMediaResourceStatus?) in
                                     return (resourceStatus, nil)
                                 }
@@ -1815,7 +1843,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         break
                                     }
                                     
-                                    return HLSVideoContent.minimizedHLSQualityPreloadData(postbox: postbox, file: .message(message: MessageReference(message), media: file), userLocation: .peer(message.id.peerId), prefixSeconds: 10, autofetchPlaylist: true, codecConfiguration: HLSCodecConfiguration(context: context))
+                                    return HLSVideoContent.minimizedHLSQualityPreloadData(postbox: postbox, file: mellowsgramFileMediaReference(file), userLocation: .peer(message.id.peerId), prefixSeconds: 10, autofetchPlaylist: true, codecConfiguration: HLSCodecConfiguration(context: context))
                                     |> mapToSignal { preloadData -> Signal<(EngineMediaResourceStatus, EngineMediaResourceStatus?), NoError> in
                                         guard let preloadData else {
                                             return .single((.Local, nil))
@@ -2051,7 +2079,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                         videoContent = HLSVideoContent(
                                             id: .message(message.stableId, updatedVideoFile.fileId),
                                             userLocation: .peer(message.id.peerId),
-                                            fileReference: .message(message: MessageReference(message), media: updatedVideoFile),
+                                            fileReference: mellowsgramFileMediaReference(updatedVideoFile),
                                             loopVideo: loopVideo,
                                             enableSound: false,
                                             fetchAutomatically: false,
@@ -2069,14 +2097,14 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                                 guard let context, let peerId else {
                                                     return
                                                 }
-                                                let _ = storeDownloadedMedia(storeManager: context.downloadedMediaStoreManager, media: .message(message: MessageReference(message), media: updatedVideoFile), peerId: peerId).startStandalone()
+                                                let _ = storeDownloadedMedia(storeManager: context.downloadedMediaStoreManager, media: mellowsgramAnyMediaReference(updatedVideoFile), peerId: peerId).startStandalone()
                                             }
                                         )
                                     } else {
                                         videoContent = NativeVideoContent(
                                             id: .message(message.stableId, updatedVideoFile.fileId),
                                             userLocation: .peer(message.id.peerId),
-                                            fileReference: .message(message: MessageReference(message), media: updatedVideoFile),
+                                            fileReference: mellowsgramFileMediaReference(updatedVideoFile),
                                             limitedFileRange: hlsInlinePlaybackRangeFileId == loadHLSRangeVideoFile?.fileId.id ? hlsInlinePlaybackRange : nil,
                                             streamVideo: streamVideo ? .conservative : .none,
                                             loopVideo: loopVideo,
@@ -2091,7 +2119,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                                 guard let context, let peerId else {
                                                     return
                                                 }
-                                                let _ = storeDownloadedMedia(storeManager: context.downloadedMediaStoreManager, media: .message(message: MessageReference(message), media: updatedVideoFile), peerId: peerId).startStandalone()
+                                                let _ = storeDownloadedMedia(storeManager: context.downloadedMediaStoreManager, media: mellowsgramAnyMediaReference(updatedVideoFile), peerId: peerId).startStandalone()
                                             }
                                         )
                                     }
@@ -2499,7 +2527,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 if automaticDownload != .none, let file = media as? TelegramMediaFile, NativeVideoContent.isHLSVideo(file: file) {
                                     let postbox = context.account.postbox
                                     let fetchSignal: Signal<Never, NoError>
-                                    fetchSignal = HLSVideoContent.minimizedHLSQualityPreloadData(postbox: context.account.postbox, file: .message(message: MessageReference(message), media: file), userLocation: .peer(message.id.peerId), prefixSeconds: 10, autofetchPlaylist: true, codecConfiguration: HLSCodecConfiguration(context: context))
+                                    fetchSignal = HLSVideoContent.minimizedHLSQualityPreloadData(postbox: context.account.postbox, file: mellowsgramFileMediaReference(file), userLocation: .peer(message.id.peerId), prefixSeconds: 10, autofetchPlaylist: true, codecConfiguration: HLSCodecConfiguration(context: context))
                                     |> mapToSignal { fileAndRange -> Signal<Never, NoError> in
                                         guard let fileAndRange else {
                                             return .complete()
@@ -2541,7 +2569,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     }
                                 } else if case .prefetch = automaticDownload, message.id.namespace != Namespaces.Message.SecretIncoming /*&& message.id.namespace != Namespaces.Message.Local*/ {
                                     if let file = media as? TelegramMediaFile {
-                                        let fetchSignal = preloadVideoResource(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), resourceReference: AnyMediaReference.message(message: MessageReference(message), media: file).resourceReference(file.resource), duration: 4.0)
+                                        let fetchSignal = preloadVideoResource(postbox: context.account.postbox, userLocation: .peer(message.id.peerId), userContentType: MediaResourceUserContentType(file: file), resourceReference: mellowsgramAnyMediaReference(file).resourceReference(file.resource), duration: 4.0)
                                         let visibilityAwareFetchSignal = strongSelf.visibilityPromise.get()
                                         |> mapToSignal { visibility -> Signal<Void, NoError> in
                                             if visibility {
@@ -2588,7 +2616,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                     })
                                     strongSelf.hlsInlinePlaybackRangeDisposable = (HLSVideoContent.minimizedHLSQualityPreloadData(
                                         postbox: context.account.postbox,
-                                        file: .message(message: MessageReference(message), media: loadHLSRangeVideoFile),
+                                        file: mellowsgramFileMediaReference(loadHLSRangeVideoFile),
                                         userLocation: .peer(message.id.peerId),
                                         prefixSeconds: 10,
                                         autofetchPlaylist: true,
@@ -3108,6 +3136,28 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
             if case .play = state {
                 state = .none
             }
+        }
+
+        // Mellowsgram removes the real autoremove/consumable attributes from
+        // this in-memory display copy so the ordinary Telegram renderer stays
+        // replayable. Re-add only the visual cue: the standard media badge
+        // tells the user whether the source was view-once or had a timer,
+        // without re-enabling the view-once overlay or consume path.
+        if let autoremoveAttribute = engineMellowsgramAutoremoveBypassAttribute(message), autoremoveAttribute.timeout != nil || autoremoveAttribute.isViewOnce {
+            let isViewOnce = autoremoveAttribute.isViewOnce || autoremoveAttribute.timeout == viewOnceTimeout
+            let text: String
+            let iconName: String
+            if isViewOnce {
+                text = "1"
+                iconName = "Chat/Message/SecretMediaOnce"
+            } else if let timeout = autoremoveAttribute.timeout {
+                text = strings.MessageTimer_ShortSeconds(max(1, timeout))
+                iconName = "Chat/Message/SecretMediaPlay"
+            } else {
+                text = ""
+                iconName = "Chat/Message/SecretMediaPlay"
+            }
+            badgeContent = .text(inset: 10.0, backgroundColor: messageTheme.mediaDateAndStatusFillColor, foregroundColor: messageTheme.mediaDateAndStatusTextColor, text: NSAttributedString(string: text), iconName: iconName)
         }
         
         if let statusNode = self.statusNode {

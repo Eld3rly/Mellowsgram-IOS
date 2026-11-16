@@ -193,6 +193,7 @@ enum PeerInfoSettingsSection {
     case emojiStatus
     case profileColor
     case powerSaving
+    case mellowsgram
     case businessSetup
     case profile
     case premiumManagement

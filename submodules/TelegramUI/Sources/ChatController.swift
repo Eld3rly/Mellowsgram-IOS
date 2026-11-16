@@ -961,7 +961,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             return false
                         }
                         
-                        if (file.isVoice || file.isInstantVideo) && message.minAutoremoveOrClearTimeout == viewOnceTimeout {
+                        if !engineMellowsgramMessageIsAutoremoveBypassed(message) && (file.isVoice || file.isInstantVideo) && message.minAutoremoveOrClearTimeout == viewOnceTimeout {
                             self.openViewOnceMediaMessage(EngineMessage(message))
                             return false
                         }

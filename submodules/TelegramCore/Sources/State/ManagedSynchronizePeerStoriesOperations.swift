@@ -69,6 +69,30 @@ private func withTakenOperation(postbox: Postbox, peerId: PeerId, tagLocalIndex:
 func managedSynchronizePeerStoriesOperations(postbox: Postbox, network: Network, stateManager: AccountStateManager) -> Signal<Void, NoError> {
     return Signal { _ in
         let helper = Atomic<ManagedSynchronizePeerStoriesOperationsHelper>(value: ManagedSynchronizePeerStoriesOperationsHelper())
+
+        let ghostModeDisposable = postbox.mellowsgramGhostModeStories.start(next: { enabled in
+            guard enabled else {
+                return
+            }
+            let disposables = helper.with { helper -> [Disposable] in
+                return helper.reset()
+            }
+            for disposable in disposables {
+                disposable.dispose()
+            }
+
+            // The operation-log view is independent from the helper's active
+            // disposables. Remove queued story-read intents as well, otherwise
+            // the first Ghost Mode toggle can replay them after it is disabled.
+            let _ = (postbox.mergedOperationLogView(tag: OperationLogTags.SynchronizePeerStories, limit: 10000)
+            |> take(1)).start(next: { view in
+                let _ = postbox.transaction { transaction -> Void in
+                    for entry in view.entries {
+                        let _ = transaction.operationLogRemoveEntry(peerId: entry.peerId, tag: OperationLogTags.SynchronizePeerStories, tagLocalIndex: entry.tagLocalIndex)
+                    }
+                }.start()
+            })
+        })
         
         let disposable = postbox.mergedOperationLogView(tag: OperationLogTags.SynchronizePeerStories, limit: 10).start(next: { view in
             let (disposeOperations, beginOperations) = helper.with { helper -> (disposeOperations: [Disposable], beginOperations: [(PeerMergedOperationLogEntry, MetaDisposable)]) in
@@ -83,6 +107,9 @@ func managedSynchronizePeerStoriesOperations(postbox: Postbox, network: Network,
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizePeerStoriesOperation {
+                            if postbox.mellowsgramGhostModeCoordinator.areStoryReadsSuppressed {
+                                return .complete()
+                            }
                             if let peer = transaction.getPeer(entry.peerId) {
                                 return pushStoriesAreSeen(postbox: postbox, network: network, stateManager: stateManager, peer: peer, operation: operation)
                             } else {
@@ -110,6 +137,7 @@ func managedSynchronizePeerStoriesOperations(postbox: Postbox, network: Network,
                 disposable.dispose()
             }
             disposable.dispose()
+            ghostModeDisposable.dispose()
         }
     }
 }

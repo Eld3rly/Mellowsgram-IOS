@@ -65,7 +65,7 @@ public struct MessageReference: PostboxCoding, Hashable, Equatable {
         }
     }
     
-    init(content: MessageReferenceContent) {
+    public init(content: MessageReferenceContent) {
         self.content = content
     }
     

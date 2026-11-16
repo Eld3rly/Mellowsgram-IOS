@@ -162,6 +162,26 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
                         if lhsMessage.stableVersion != rhsMessage.stableVersion {
                             return false
                         }
+
+                        // Mellowsgram deliberately keeps the original stable
+                        // identity and stable version when a live message is
+                        // turned into an in-memory tombstone. Message
+                        // attributes are not part of EngineRawMessage's
+                        // equality here, so compare the render-state marker
+                        // explicitly or the list would retain the old item.
+                        if engineMellowsgramMessageIsDeleted(lhsMessage) != engineMellowsgramMessageIsDeleted(rhsMessage) {
+                            return false
+                        }
+                        let lhsTranslucent = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
+                        let rhsTranslucent = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
+                        if lhsTranslucent != rhsTranslucent {
+                            return false
+                        }
+                        let lhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(lhsMessage)
+                        let rhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(rhsMessage)
+                        if lhsAutoremoveBypass?.timeout != rhsAutoremoveBypass?.timeout || lhsAutoremoveBypass?.isViewOnce != rhsAutoremoveBypass?.isViewOnce {
+                            return false
+                        }
                         
                         if lhsMessage.peers.count != rhsMessage.peers.count {
                             return false
@@ -243,6 +263,19 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
                             return false
                         }
                         if lhsMessage.stableVersion != rhsMessage.stableVersion {
+                            return false
+                        }
+                        if engineMellowsgramMessageIsDeleted(lhsMessage) != engineMellowsgramMessageIsDeleted(rhsMessage) {
+                            return false
+                        }
+                        let lhsTranslucent = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
+                        let rhsTranslucent = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
+                        if lhsTranslucent != rhsTranslucent {
+                            return false
+                        }
+                        let lhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(lhsMessage)
+                        let rhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(rhsMessage)
+                        if lhsAutoremoveBypass?.timeout != rhsAutoremoveBypass?.timeout || lhsAutoremoveBypass?.isViewOnce != rhsAutoremoveBypass?.isViewOnce {
                             return false
                         }
                         if lhsMessage.media.count != rhsMessage.media.count {

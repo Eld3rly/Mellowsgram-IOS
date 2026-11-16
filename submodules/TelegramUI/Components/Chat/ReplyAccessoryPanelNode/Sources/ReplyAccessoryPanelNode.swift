@@ -24,6 +24,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
     private let messageDisposable = MetaDisposable()
     public let chatPeerId: EnginePeer.Id
     public let messageId: EngineMessage.Id
+    private let fallbackMessage: Message?
     public let quote: EngineMessageReplyQuote?
     public let innerSubject: EngineMessageReplyInnerSubject?
     
@@ -46,9 +47,10 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
     
     private var validLayout: (size: CGSize, inset: CGFloat, interfaceState: ChatPresentationInterfaceState)?
     
-    public init(context: AccountContext, chatPeerId: EnginePeer.Id, messageId: EngineMessage.Id, quote: EngineMessageReplyQuote?, innerSubject: EngineMessageReplyInnerSubject?, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, animationCache: AnimationCache?, animationRenderer: MultiAnimationRenderer?) {
+    public init(context: AccountContext, chatPeerId: EnginePeer.Id, messageId: EngineMessage.Id, fallbackMessage: Message?, quote: EngineMessageReplyQuote?, innerSubject: EngineMessageReplyInnerSubject?, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, animationCache: AnimationCache?, animationRenderer: MultiAnimationRenderer?) {
         self.chatPeerId = chatPeerId
         self.messageId = messageId
+        self.fallbackMessage = fallbackMessage
         self.quote = quote
         self.innerSubject = innerSubject
         
@@ -112,17 +114,30 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
         self.addSubnode(self.imageNode)
         self.addSubnode(self.actionArea)
         
-        self.messageDisposable.set((context.account.postbox.messageView(messageId)
-        |> deliverOnMainQueue).startStrict(next: { [weak self] messageView in
+        let messageSignal: Signal<Message?, NoError> = context.account.postbox.messageView(messageId)
+        |> mapToSignal { messageView in
+            if let message = messageView.message {
+                return .single(message)
+            }
+            if let fallbackMessage {
+                return .single(fallbackMessage)
+            }
+            return context.account.postbox.transaction { transaction -> Message? in
+                guard let record = transaction.mellowsgramArchiveRecord(messageId: messageId), record.deletedAt != nil else {
+                    return nil
+                }
+                return engineMellowsgramDeletedMessage(record: record, translucent: false)
+            }
+        }
+        self.messageDisposable.set((messageSignal
+        |> deliverOnMainQueue).startStrict(next: { [weak self] message in
             if let strongSelf = self {
-                if messageView.message == nil {
+                if message == nil {
                     Queue.mainQueue().justDispatch {
                         strongSelf.interfaceInteraction?.setupReplyMessage(nil, nil, { _, _ in })
                     }
                     return
                 }
-
-                let message = messageView.message
 
                 var authorName = ""
                 var text = ""
@@ -185,13 +200,21 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
                 if let message = message, !message.containsSecretMedia {
                     for media in message.media {
                         if let image = media as? TelegramMediaImage {
-                            updatedMediaReference = .message(message: MessageReference(message), media: image)
+                            if engineMellowsgramMessageIsDeleted(message) {
+                                updatedMediaReference = .standalone(media: image)
+                            } else {
+                                updatedMediaReference = .message(message: MessageReference(message), media: image)
+                            }
                             if let representation = largestRepresentationForPhoto(image) {
                                 imageDimensions = representation.dimensions.cgSize
                             }
                             break
                         } else if let file = media as? TelegramMediaFile {
-                            updatedMediaReference = .message(message: MessageReference(message), media: file)
+                            if engineMellowsgramMessageIsDeleted(message) {
+                                updatedMediaReference = .standalone(media: file)
+                            } else {
+                                updatedMediaReference = .message(message: MessageReference(message), media: file)
+                            }
                             isRoundImage = file.isInstantVideo
                             if let representation = largestImageRepresentation(file.previewRepresentations), !file.isSticker && !file.isAnimatedSticker {
                                 imageDimensions = representation.dimensions.cgSize

@@ -223,20 +223,14 @@ extension PeerInfoScreenNode {
             let _ = (activeAccountsAndPeers(context: context)
             |> take(1)
             |> deliverOnMainQueue
-            ).startStandalone(next: { [weak self] accountAndPeer, accountsAndPeers in
+            ).startStandalone(next: { [weak self] _, accountsAndPeers in
                 guard let strongSelf = self else {
                     return
                 }
-                var maximumAvailableAccounts: Int = 3
-                if accountAndPeer?.1.isPremium == true && !strongSelf.context.account.testingEnvironment {
-                    maximumAvailableAccounts = 4
-                }
+                let maximumAvailableAccounts = maximumNumberOfAccounts
                 var count: Int = 1
-                for (accountContext, peer, _) in accountsAndPeers {
+                for (accountContext, _, _) in accountsAndPeers {
                     if !accountContext.account.testingEnvironment {
-                        if peer.isPremium {
-                            maximumAvailableAccounts = 4
-                        }
                         count += 1
                     }
                 }
@@ -281,6 +275,8 @@ extension PeerInfoScreenNode {
             self.interaction.editingOpenNameColorSetup()
         case .powerSaving:
             push(energySavingSettingsScreen(context: self.context))
+        case .mellowsgram:
+            push(mellowsgramSettingsController(context: self.context))
         case .businessSetup:
             guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
                 return

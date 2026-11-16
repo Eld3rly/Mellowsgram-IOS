@@ -261,6 +261,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 let textConstrainedSize = CGSize(width: min(maxTextWidth, constrainedSize.width - horizontalInset), height: constrainedSize.height)
                 
                 var edited = false
+                var deleted = false
                 if item.attributes.updatingMedia != nil {
                     edited = true
                 }
@@ -275,6 +276,8 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 for attribute in item.message.attributes {
                     if let attribute = attribute as? EditedMessageAttribute {
                         edited = !attribute.isHidden
+                    } else if attribute is MellowsgramDeletedMessageAttribute {
+                        deleted = true
                     } else if let attribute = attribute as? ViewCountMessageAttribute {
                         viewCount = attribute.count
                     } else if let attribute = attribute as? ReplyThreadMessageAttribute, case .peer = item.chatLocation {
@@ -699,6 +702,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                         context: item.context,
                         presentationData: item.presentationData,
                         edited: edited && !item.presentationData.isPreview,
+                        deleted: deleted && !item.presentationData.isPreview,
                         impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                         dateText: dateText,
                         type: statusType,

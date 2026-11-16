@@ -1355,7 +1355,12 @@ public class Account {
         
         self.mediaReferenceRevalidationContext = MediaReferenceRevalidationContext()
         
-        self.stateManager = AccountStateManager(accountPeerId: self.peerId, accountManager: accountManager, postbox: self.postbox, network: self.network, callSessionManager: self.callSessionManager, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods, ignoresShortSentMessages: supplementary)
+        let effectiveShouldKeepOnlinePresence = combineLatest(self.shouldKeepOnlinePresence.get(), self.postbox.mellowsgramGhostModeOnlinePresence)
+        |> map { shouldKeepOnlinePresence, ghostModeSuppressesOnlinePresence in
+            return shouldKeepOnlinePresence && !ghostModeSuppressesOnlinePresence
+        }
+        |> distinctUntilChanged
+        self.stateManager = AccountStateManager(accountPeerId: self.peerId, accountManager: accountManager, postbox: self.postbox, network: self.network, callSessionManager: self.callSessionManager, shouldKeepOnlinePresence: effectiveShouldKeepOnlinePresence, peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods, ignoresShortSentMessages: supplementary)
         
         self.viewTracker = AccountViewTracker(account: self)
         self.viewTracker.resetPeerHoleManagement = { [weak self] peerId in
@@ -1375,11 +1380,11 @@ public class Account {
         
         self.contactSyncManager = ContactSyncManager(postbox: postbox, network: network, accountPeerId: peerId, stateManager: self.stateManager)
         self.localInputActivityManager = PeerInputActivityManager()
-        self.accountPresenceManager = AccountPresenceManager(shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), network: network)
+        self.accountPresenceManager = AccountPresenceManager(shouldKeepOnlinePresence: effectiveShouldKeepOnlinePresence, network: network)
         #if os(iOS)
         // iOS only for now: the Rust engine is the macOS default, and its online keepalive cadence
         // (pings every 1-2 s while the account is in front) has not been measured there.
-        network.isUserOnline.set(self.shouldKeepOnlinePresence.get())
+        network.isUserOnline.set(effectiveShouldKeepOnlinePresence)
         #endif
         let _ = (postbox.transaction { transaction -> Void in
             transaction.updatePeerPresencesInternal(presences: [peerId: TelegramUserPresence(status: .present(until: Int32.max - 1), lastActivity: 0)], merge: { _, updated in return updated })
@@ -1401,6 +1406,15 @@ public class Account {
         }
         self.pendingUpdateMessageManager = PendingUpdateMessageManager(postbox: postbox, network: network, stateManager: self.stateManager, messageMediaPreuploadManager: self.messageMediaPreuploadManager, mediaReferenceRevalidationContext: self.mediaReferenceRevalidationContext)
         self.pendingPeerMediaUploadManager = PendingPeerMediaUploadManager(postbox: postbox, network: network, stateManager: self.stateManager, accountPeerId: self.peerId)
+
+        // Keep the account-local Postbox switches in sync with the persisted
+        // settings before any managed read/presence operation can react.
+        self.managedOperationsDisposable.add(mellowsgramSettings(postbox: postbox).start(next: { settings in
+            postbox.setMellowsgramGhostMode(settings.ghostMode)
+            postbox.setMellowsgramGhostModeOptions(settings.ghostModeOptions)
+            postbox.setMellowsgramArchiveSettings(saveDeletedMessages: settings.saveDeletedMessages, saveEditedMessages: settings.saveEditedMessages)
+            postbox.setMellowsgramIgnoreAutoremoveTimers(settings.ignoreAutoremoveTimers)
+        }))
         
         self.network.loggedOut = { [weak self] in
             Logger.shared.log("Account", "network logged out")

@@ -18,6 +18,7 @@ enum SettingsSection: Int, CaseIterable {
     case edit
     case phone
     case accounts
+    case mellowsgram
     case myProfile
     case wallet
     case proxy
@@ -149,6 +150,10 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             }))
         }
         
+        items[.mellowsgram]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "Mellowsgram", icon: PresentationResourcesSettings.effects, action: {
+            interaction.openSettings(.mellowsgram)
+        }))
+
         items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
             interaction.openSettings(.profile)
         }))
@@ -274,7 +279,6 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 6, label: .text(data.isPowerSavingEnabled == true ? presentationData.strings.Settings_PowerSavingOn : presentationData.strings.Settings_PowerSavingOff), text: presentationData.strings.Settings_PowerSaving, icon: PresentationResourcesSettings.powerSaving, action: {
         interaction.openSettings(.powerSaving)
     }))
-    
     let languageName = presentationData.strings.primaryComponent.localizedName
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
         interaction.openSettings(.language)

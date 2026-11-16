@@ -26,6 +26,45 @@ class ResolvedCodesigningData:
         self.use_xcode_managed_codesigning = use_xcode_managed_codesigning
 
 
+def patch_rules_apple_for_unsigned_device_build(base_path):
+    """Temporarily skip profile partials for an unsigned device build.
+
+    The pinned rules_apple revision still rejects a device target without a
+    provisioning profile even when disable_legacy_signing is enabled. AyuGram's
+    CI applies the same narrow temporary patch and restores the submodule after
+    the Bazel invocation, so the pinned dependency remains clean locally.
+    """
+    rules_path = os.path.join(
+        base_path,
+        'build-system/bazel-rules/rules_apple/apple/internal/ios_rules.bzl'
+    )
+    if not os.path.isfile(rules_path):
+        raise Exception('Could not find rules_apple iOS rules at {}'.format(rules_path))
+
+    original = open(rules_path, 'rb').read()
+    source = original.decode('utf-8')
+    old = '''    if platform_prerequisites.platform.is_device:\n        processor_partials.append(\n            partials.provisioning_profile_partial('''
+    new = '''    if platform_prerequisites.platform.is_device and "disable_legacy_signing" not in features:\n        processor_partials.append(\n            partials.provisioning_profile_partial('''
+    occurrences = source.count(old)
+    if occurrences == 0:
+        if '"disable_legacy_signing" not in features' in source:
+            return rules_path, original
+        raise Exception('Unexpected rules_apple revision: provisioning-profile guard was not found')
+    if occurrences != 6:
+        raise Exception('Unexpected rules_apple revision: found {} profile guards, expected 6'.format(occurrences))
+
+    with open(rules_path, 'w') as file:
+        file.write(source.replace(old, new))
+    return rules_path, original
+
+
+def restore_rules_apple(rules_backup):
+    if rules_backup is not None:
+        rules_path, original = rules_backup
+        with open(rules_path, 'wb') as file:
+            file.write(original)
+
+
 class BazelCommandLine:
     def __init__(self, bazel, override_bazel_version, override_xcode_version, bazel_user_root):
         self.build_environment = BuildEnvironment(
@@ -248,6 +287,12 @@ class BazelCommandLine:
         combined_arguments += self.common_debug_args
         combined_arguments += self.get_define_arguments()
 
+        if self.disable_provisioning_profiles:
+            combined_arguments += [
+                '--//Telegram:disableProvisioningProfiles',
+                '--features=disable_legacy_signing',
+            ]
+
         if self.remote_cache is not None:
             combined_arguments += [
                 '--remote_cache={}'.format(self.remote_cache),
@@ -303,6 +348,9 @@ class BazelCommandLine:
 
         if self.disable_provisioning_profiles:
             combined_arguments += ['--//Telegram:disableProvisioningProfiles']
+            # Device bundles can be packaged without an Apple certificate for later
+            # re-signing by a sideloading tool (AltStore, SideStore, etc.).
+            combined_arguments += ['--features=disable_legacy_signing']
 
         combined_arguments += self.common_args
         combined_arguments += self.common_build_args
@@ -516,6 +564,8 @@ def generate_project(bazel, arguments):
         bazel_command_line.add_remote_cache(arguments.cacheHost)
 
     bazel_command_line.set_continue_on_error(arguments.continueOnError)
+    if arguments.disableProvisioningProfiles:
+        bazel_command_line.set_disable_provisioning_profiles()
 
     resolve_configuration(
         base_path=os.getcwd(),
@@ -538,8 +588,6 @@ def generate_project(bazel, arguments):
         disable_provisioning_profiles = arguments.disableProvisioningProfiles
     if arguments.projectIncludeRelease is not None:
         project_include_release = arguments.projectIncludeRelease
-    if arguments.xcodeManagedCodesigning is not None and arguments.xcodeManagedCodesigning == True:
-        disable_extensions = True
     if arguments.generateDsym is not None:
         generate_dsym = arguments.generateDsym
     if arguments.target is not None:
@@ -547,15 +595,21 @@ def generate_project(bazel, arguments):
     
     call_executable(['killall', 'Xcode'], check_result=False)
 
-    xcodeproj_path = generate(
-        build_environment=bazel_command_line.build_environment,
-        disable_extensions=disable_extensions,
-        disable_provisioning_profiles=disable_provisioning_profiles,
-        include_release=project_include_release,
-        generate_dsym=generate_dsym,
-        bazel_app_arguments=bazel_command_line.get_project_generation_arguments(),
-        target_name=target_name
-    )
+    rules_backup = None
+    try:
+        if disable_provisioning_profiles:
+            rules_backup = patch_rules_apple_for_unsigned_device_build(os.getcwd())
+        xcodeproj_path = generate(
+            build_environment=bazel_command_line.build_environment,
+            disable_extensions=disable_extensions,
+            disable_provisioning_profiles=disable_provisioning_profiles,
+            include_release=project_include_release,
+            generate_dsym=generate_dsym,
+            bazel_app_arguments=bazel_command_line.get_project_generation_arguments(),
+            target_name=target_name
+        )
+    finally:
+        restore_rules_apple(rules_backup)
 
     call_executable(['open', xcodeproj_path])
 
@@ -634,6 +688,8 @@ def build(bazel, arguments):
     )
 
     bazel_command_line.set_configuration(arguments.configuration)
+    if arguments.disableProvisioningProfiles:
+        bazel_command_line.set_disable_provisioning_profiles()
     if arguments.embedWatchApp:
         if arguments.configuration in ('debug_arm64', 'release_arm64'):
             if arguments.watchApiId is None or arguments.watchApiHash is None:
@@ -656,7 +712,13 @@ def build(bazel, arguments):
 
     bazel_command_line.set_split_swiftmodules(arguments.enableParallelSwiftmoduleGeneration)
 
-    bazel_command_line.invoke_build()
+    rules_backup = None
+    try:
+        if arguments.disableProvisioningProfiles:
+            rules_backup = patch_rules_apple_for_unsigned_device_build(os.getcwd())
+        bazel_command_line.invoke_build()
+    finally:
+        restore_rules_apple(rules_backup)
 
     # App Store review rejects a non-public libicucore function, and nothing before it does (ICUImportCheck.py).
     # bazel-bin is this build's configuration now; a --target build makes no .ipa.
@@ -1075,6 +1137,13 @@ if __name__ == '__main__':
         action='store_true',
         default=False,
         help='Continue build process after an error.',
+    )
+
+    buildParser.add_argument(
+        '--disableProvisioningProfiles',
+        action='store_true',
+        default=False,
+        help='Build a device IPA without provisioning profiles or legacy Apple code signing.',
     )
     buildParser.add_argument(
         '--showActions',

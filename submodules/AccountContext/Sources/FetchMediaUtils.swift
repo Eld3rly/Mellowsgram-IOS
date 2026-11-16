@@ -35,11 +35,20 @@ private func fetchCategoryForFile(_ file: TelegramMediaFile) -> FetchManagerCate
 }
 
 public func messageMediaFileInteractiveFetched(context: AccountContext, message: Message, file: TelegramMediaFile, userInitiated: Bool, storeToDownloadsPeerId: EnginePeer.Id? = nil) -> Signal<Void, NoError> {
-    return messageMediaFileInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: MessageReference(message), file: file, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
+    let messageReference = engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) ? MessageReference(content: .none) : MessageReference(message)
+    return messageMediaFileInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: messageReference, file: file, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
 }
 
 public func messageMediaFileInteractiveFetched(fetchManager: FetchManager, messageId: MessageId, messageReference: MessageReference, file: TelegramMediaFile, ranges: RangeSet<Int64> = RangeSet<Int64>(0 ..< Int64.max), userInitiated: Bool, priority: FetchManagerPriority, storeToDownloadsPeerId: EnginePeer.Id? = nil) -> Signal<Void, NoError> {
-    let mediaReference = AnyMediaReference.message(message: messageReference, media: file)
+    // A Mellowsgram deleted row is an in-memory/archive projection. It keeps
+    // the file descriptor and MessageId, but its original peer/message
+    // reference is intentionally absent after Postbox deletion.
+    let mediaReference: AnyMediaReference
+    if messageReference.id == nil {
+        mediaReference = .standalone(media: file)
+    } else {
+        mediaReference = .message(message: messageReference, media: file)
+    }
     return fetchManager.interactivelyFetched(category: fetchCategoryForFile(file), location: .chat(messageId.peerId), locationKey: .messageId(messageId), mediaReference: mediaReference, resourceReference: mediaReference.resourceReference(file.resource), ranges: ranges, statsCategory: statsCategoryForFileWithAttributes(file.attributes), elevatedPriority: false, userInitiated: userInitiated, priority: priority, storeToDownloadsPeerId: storeToDownloadsPeerId)
 }
 
@@ -48,11 +57,17 @@ public func messageMediaFileCancelInteractiveFetch(context: AccountContext, mess
 }
 
 public func messageMediaImageInteractiveFetched(context: AccountContext, message: Message, image: TelegramMediaImage, resource: MediaResource, range: Range<Int64>? = nil, userInitiated: Bool = true, storeToDownloadsPeerId: EnginePeer.Id?) -> Signal<Void, NoError> {
-    return messageMediaImageInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: MessageReference(message), image: image, resource: resource, range: range, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
+    let messageReference = engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) ? MessageReference(content: .none) : MessageReference(message)
+    return messageMediaImageInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: messageReference, image: image, resource: resource, range: range, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
 }
 
 public func messageMediaImageInteractiveFetched(fetchManager: FetchManager, messageId: MessageId, messageReference: MessageReference, image: TelegramMediaImage, resource: MediaResource, range: Range<Int64>? = nil, userInitiated: Bool, priority: FetchManagerPriority, storeToDownloadsPeerId: EnginePeer.Id?) -> Signal<Void, NoError> {
-    let mediaReference = AnyMediaReference.message(message: messageReference, media: image)
+    let mediaReference: AnyMediaReference
+    if messageReference.id == nil {
+        mediaReference = .standalone(media: image)
+    } else {
+        mediaReference = .message(message: messageReference, media: image)
+    }
     let ranges: RangeSet<Int64>
     if let range = range {
         ranges = RangeSet(range.lowerBound ..< range.upperBound)

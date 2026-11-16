@@ -759,6 +759,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     let canSelect = !isAction && !hasEphemeralMessages
     
     let message = messages[0]
+    let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message)
     let isNonReplyableEphemeralMessage = Namespaces.Message.allEphemeral.contains(message.id.namespace) && !canReplyToEphemeralMessage(message)
     
     if case .peer = chatPresentationInterfaceState.chatLocation, let channel = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramChannel, channel.isForumOrMonoForum {
@@ -816,6 +817,16 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     
     if !canSendMessagesToChat(chatPresentationInterfaceState) && (chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()) {
         canReply = false
+    }
+
+    // A Mellowsgram tombstone keeps the original message id for positioning,
+    // but it is no longer a Telegram message that can be edited, pinned,
+    // deleted, or used for reactions. Local actions (reply projection, copy,
+    // forward, and saving already available media) remain valid.
+    if isMellowsgramDeletedMessage {
+        canPin = false
+        canReply = canReplyInChat(chatPresentationInterfaceState, accountPeerId: context.account.peerId)
+            && !message.id.peerId.isRepliesOrVerificationCodes
     }
     
     for media in messages[0].media {
@@ -892,6 +903,25 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     }
     
     let isScheduled = chatPresentationInterfaceState.subject == .scheduledMessages
+
+    let mellowsgramArchiveRecordSignal: Signal<EngineMellowsgramMessageArchiveRecord?, NoError>
+    if messages.count == 1 {
+        let message = messages[0]
+        if let record = message.attributes.compactMap({ ($0 as? MellowsgramDeletedMessageAttribute)?.record }).first {
+            // The in-memory tombstone may be presented during the same update
+            // that removes the live Postbox row. Prefer its carried record so
+            // edit history and local actions do not race the archive signal.
+            mellowsgramArchiveRecordSignal = .single(record)
+        } else {
+            mellowsgramArchiveRecordSignal = mellowsgramArchiveRecords(engine: context.engine, peerId: message.id.peerId, threadId: message.threadId)
+            |> take(1)
+            |> map { records in
+                return records.first(where: { $0.messageId == message.id })
+            }
+        }
+    } else {
+        mellowsgramArchiveRecordSignal = .single(nil)
+    }
     
     let dataSignal: Signal<(MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?), NoError> = combineLatest(
         loadLimits,
@@ -911,7 +941,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
     |> map { limitsAndAppConfig, stickerSaveStatus, resourceStatus, messageActions, updatingMessageMedia, infoSummaryData, isMessageRead, messageViewsPrivacyTips, availableReactions, sharedData, notificationSoundList, accountPeer -> (MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?) in
         let (limitsConfiguration, appConfig) = limitsAndAppConfig
         var canEdit = false
-        if !isAction {
+        if !isAction && !isMellowsgramDeletedMessage {
             let message = messages[0]
             canEdit = canEditMessage(context: context, limitsConfiguration: limitsConfiguration, message: message)
         }
@@ -945,6 +975,21 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             messageActions.setTag = false
             messageActions.editTags = Set()
         }
+
+        if isMellowsgramDeletedMessage {
+            // The normal action resolver cannot find a deleted id in Postbox.
+            // Expose only actions that operate on the in-memory projection or
+            // on a standalone MediaBox resource.
+            messageActions = ChatAvailableMessageActions(
+                options: [.forward],
+                banAuthor: nil,
+                banAuthors: [],
+                disableDelete: true,
+                isCopyProtected: messageActions.isCopyProtected,
+                setTag: false,
+                editTags: Set()
+            )
+        }
         
         let data = MessageContextMenuData(
             starStatus: stickerSaveStatus,
@@ -959,14 +1004,25 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         return (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer)
     }
     
-    return dataSignal
+    return combineLatest(dataSignal, mellowsgramArchiveRecordSignal)
     |> deliverOnMainQueue
-    |> map { [context] data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer -> ContextController.Items in
+    |> map { [context] menuData, mellowsgramArchiveRecord -> ContextController.Items in
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, _, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = menuData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
 
-        if isSharedMediaPolls && messages.count == 1 {
+        if let mellowsgramArchiveRecord, !mellowsgramArchiveRecord.revisions.isEmpty {
+            actions.append(.action(ContextMenuActionItem(text: "История редактирования", icon: { theme in
+                return generateTintedImage(image: UIImage(systemName: "clock.arrow.circlepath"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                f(.dismissWithoutContent)
+                controllerInteraction.navigationController()?.pushViewController(mellowsgramEditHistoryController(context: context, record: mellowsgramArchiveRecord))
+            })))
+            actions.append(.separator)
+        }
+
+        if !isMellowsgramDeletedMessage && isSharedMediaPolls && messages.count == 1 {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.SharedMedia_ViewInChat, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/GoToMessage"), color: theme.actionSheet.primaryTextColor)
             }, action: { c, _ in
@@ -1010,13 +1066,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 actions.append(.action(ContextMenuActionItem(text: starStatus ? chatPresentationInterfaceState.strings.Stickers_RemoveFromFavorites : chatPresentationInterfaceState.strings.Stickers_AddToFavorites, icon: { theme in
                     return generateTintedImage(image: starStatus ? UIImage(bundleImageName: "Chat/Context Menu/Unfave") : UIImage(bundleImageName: "Chat/Context Menu/Fave"), color: theme.actionSheet.primaryTextColor)
                 }, action: { _, f in
-                    interfaceInteraction.toggleMessageStickerStarred(messages[0].id)
+                    if isMellowsgramDeletedMessage,
+                       let file = messages[0].effectiveMedia.compactMap({ $0 as? TelegramMediaFile }).first(where: { $0.isSticker }) {
+                        let _ = context.engine.stickers.toggleStickerSaved(file: file, saved: !starStatus).startStandalone()
+                    } else {
+                        interfaceInteraction.toggleMessageStickerStarred(messages[0].id)
+                    }
                     f(.default)
                 })))
             }
         }
         
-        if data.messageActions.options.contains(.rateCall) {
+        if !isMellowsgramDeletedMessage && data.messageActions.options.contains(.rateCall) {
             var callId: CallId?
             var isVideo: Bool = false
             for media in message.media {
@@ -1085,7 +1146,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         }
         
         var hasRateTranscription = false
-        if hasExpandedAudioTranscription, let audioTranscription = audioTranscription, !didRateAudioTranscription {
+        if !isMellowsgramDeletedMessage, hasExpandedAudioTranscription, let audioTranscription = audioTranscription, !didRateAudioTranscription {
             hasRateTranscription = true
             actions.insert(.custom(ChatRateTranscriptionContextItem(context: context, message: message, action: { [weak context] value in
                 guard let context = context else {
@@ -1126,7 +1187,13 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             } else if Double(duration) > Double(settings.maxDuration) {
                                 controllerInteraction.displayUndo(.info(title: presentationData.strings.Notifications_UploadError_TooLong_Title(fileName).string, text: presentationData.strings.Notifications_UploadError_TooLong_Text(stringForDuration(Int32(settings.maxDuration))).string, timeout: nil, customUndoText: nil))
                             } else {
-                                let _ = (context.engine.peers.saveNotificationSound(file: .message(message: MessageReference(message), media: file))
+                                let fileReference: FileMediaReference
+                                if isMellowsgramDeletedMessage {
+                                    fileReference = .standalone(media: file)
+                                } else {
+                                    fileReference = .message(message: MessageReference(message), media: file)
+                                }
+                                let _ = (context.engine.peers.saveNotificationSound(file: fileReference)
                                          |> deliverOnMainQueue).startStandalone(completed: {
                                     controllerInteraction.displayUndo(.notificationSoundAdded(title: presentationData.strings.Notifications_UploadSuccess_Title, text: presentationData.strings.Notifications_SaveSuccess_Text, action: {
                                         controllerInteraction.navigationController()?.pushViewController(notificationsAndSoundsController(context: context, exceptionsList: nil))
@@ -1563,7 +1630,13 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                         actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveToFiles, icon: { theme in
                             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                         }, action: { _, f in
-                            controllerInteraction.saveMediaToFiles(message.id)
+                            if isMellowsgramDeletedMessage {
+                                let _ = saveMediaToFiles(context: context, fileReference: .standalone(media: file), present: { controller, arguments in
+                                    controllerInteraction.presentControllerInCurrent(controller, arguments)
+                                })
+                            } else {
+                                controllerInteraction.saveMediaToFiles(message.id)
+                            }
                             f(.default)
                         })))
                     }
@@ -1607,7 +1680,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if let _ = threadId, !isPinnedMessages {
+        if !isMellowsgramDeletedMessage, let _ = threadId, !isPinnedMessages {
             let text: String
             if threadMessageCount != 0 {
                 text = chatPresentationInterfaceState.strings.Conversation_ContextViewReplies(Int32(threadMessageCount))
@@ -1632,13 +1705,15 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         
         var activePoll: TelegramMediaPoll?
         var activeTodo: TelegramMediaTodo?
-        for media in message.media {
-            if let poll = media as? TelegramMediaPoll, !poll.isClosed, message.id.namespace == Namespaces.Message.Cloud, poll.pollId.namespace == Namespaces.Media.CloudPoll {
-                if !isPollEffectivelyClosed(message: EngineMessage(message), poll: poll) {
-                    activePoll = poll
+        if !isMellowsgramDeletedMessage {
+            for media in message.media {
+                if let poll = media as? TelegramMediaPoll, !poll.isClosed, message.id.namespace == Namespaces.Message.Cloud, poll.pollId.namespace == Namespaces.Media.CloudPoll {
+                    if !isPollEffectivelyClosed(message: EngineMessage(message), poll: poll) {
+                        activePoll = poll
+                    }
+                } else if let todo = media as? TelegramMediaTodo {
+                    activeTodo = todo
                 }
-            } else if let todo = media as? TelegramMediaTodo {
-                activeTodo = todo
             }
         }
         
@@ -1657,7 +1732,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
         
-        if let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, channel.isMonoForum {
+        if !isMellowsgramDeletedMessage, let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, channel.isMonoForum {
             var canSuggestPost = true
             for media in message.media {
                 if media is TelegramMediaAction {
@@ -1815,7 +1890,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if let message = messages.first, let copyLinkKind = chatMessageCopyLinkKind(message: message), let channel = message.peers[message.id.peerId] as? TelegramChannel, !isReplyThreadHead, !isMigrated {
+        if !isMellowsgramDeletedMessage, let message = messages.first, let copyLinkKind = chatMessageCopyLinkKind(message: message), let channel = message.peers[message.id.peerId] as? TelegramChannel, !isReplyThreadHead, !isMigrated {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuCopyLink, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Link"), color: theme.actionSheet.primaryTextColor)
             }, action: { _, f in
@@ -1901,7 +1976,13 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                                 }, action: { _, f in
                                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                                    let _ = (toggleGifSaved(account: context.account, fileReference: .message(message: MessageReference(message), media: file), saved: true)
+                                    let fileReference: FileMediaReference
+                                    if isMellowsgramDeletedMessage {
+                                        fileReference = .standalone(media: file)
+                                    } else {
+                                        fileReference = .message(message: MessageReference(message), media: file)
+                                    }
+                                    let _ = (toggleGifSaved(account: context.account, fileReference: fileReference, saved: true)
                                     |> deliverOnMainQueue).startStandalone(next: { result in
                                         Queue.mainQueue().after(0.2) {
                                             switch result {
@@ -1944,7 +2025,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 break
             }
         }
-        if let editStickerFile {
+        if !isMellowsgramDeletedMessage, let editStickerFile {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Stickers_EditSticker, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Draw"), color: theme.actionSheet.primaryTextColor)
             }, action: { _, f in
@@ -1979,7 +2060,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }, action: { controller, f in
                 interfaceInteraction.reportMessages(messages, controller)
             })))
-        } else if message.id.peerId.isReplies {
+        } else if !isMellowsgramDeletedMessage, message.id.peerId.isReplies {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuBlock, textColor: .destructive, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"), color: theme.actionSheet.destructiveActionTextColor)
             }, action: { controller, f in
@@ -1989,7 +2070,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         
         var clearCacheAsDelete = false
         var hasViewStats = false
-        if let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info, !isMigrated {
+        if !isMellowsgramDeletedMessage, let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info, !isMigrated {
             var views: Int = 0
             var forwards: Int = 0
             for attribute in message.attributes {
@@ -2015,7 +2096,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             clearCacheAsDelete = true
         }
         
-        if !hasViewStats, messages[0].forwardInfo == nil {
+        if !isMellowsgramDeletedMessage, !hasViewStats, messages[0].forwardInfo == nil {
             for media in message.media {
                 if let poll = media as? TelegramMediaPoll, message.id.namespace == Namespaces.Message.Cloud, poll.pollId.namespace == Namespaces.Media.CloudPoll, poll.results.canViewStats {
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ViewPollStats, icon: { theme in
@@ -2031,7 +2112,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info, canEditFactCheck(appConfig: appConfig) {
+        if !isMellowsgramDeletedMessage, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info, canEditFactCheck(appConfig: appConfig) {
             var canAddFactCheck = true
             if message.media.contains(where: { $0 is TelegramMediaAction || $0 is TelegramMediaGiveaway }) {
                 canAddFactCheck = false
@@ -2056,7 +2137,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if isReplyThreadHead {
+        if !isMellowsgramDeletedMessage, isReplyThreadHead {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ViewInChannel, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/GoToMessage"), color: theme.actionSheet.primaryTextColor)
             }, action: { c, _ in
@@ -2072,7 +2153,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
 
-        if !isReplyThreadHead, (!data.messageActions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty || clearCacheAsDelete) {
+        if !isMellowsgramDeletedMessage, !isReplyThreadHead, (!data.messageActions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty || clearCacheAsDelete) {
             var autoremoveDeadline: Int32?
             for attribute in message.attributes {
                 if let attribute = attribute as? AutoremoveTimeoutMessageAttribute {
@@ -2174,7 +2255,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         
         var canViewStats = false
         var canViewAuthor = false
-        if let channel = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramChannel, channel.isMonoForum, let associatedPeerId = channel.associatedPeerId {
+        if !isMellowsgramDeletedMessage, let channel = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramChannel, channel.isMonoForum, let associatedPeerId = channel.associatedPeerId {
             if message.effectivelyIncoming(context.account.peerId), message.author?.id == associatedPeerId {
                 canViewAuthor = true
                 for media in message.media {
@@ -2183,17 +2264,19 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     }
                 }
             }
-        } else if let messageReadStatsAreHidden = infoSummaryData.messageReadStatsAreHidden, !messageReadStatsAreHidden {
+        } else if !isMellowsgramDeletedMessage, let messageReadStatsAreHidden = infoSummaryData.messageReadStatsAreHidden, !messageReadStatsAreHidden {
             canViewStats = canViewReadStats(message: message, participantCount: infoSummaryData.participantCount, isMessageRead: isMessageRead, isPremium: isPremium, appConfig: appConfig)
         }
         
         var reactionCount = 0
-        for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
-            reactionCount += Int(reaction.count)
-        }
-        if let reactionsAttribute = message.reactionsAttribute {
-            if !reactionsAttribute.canViewList {
-                reactionCount = 0
+        if !isMellowsgramDeletedMessage {
+            for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
+                reactionCount += Int(reaction.count)
+            }
+            if let reactionsAttribute = message.reactionsAttribute {
+                if !reactionsAttribute.canViewList {
+                    reactionCount = 0
+                }
             }
         }
         

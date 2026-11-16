@@ -206,6 +206,14 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             let fontSize = floor(arguments.presentationData.fontSize.baseDisplaySize * 14.0 / 17.0)
             let titleFont = Font.semibold(fontSize)
             let textFont = Font.regular(fontSize)
+
+            func mellowsgramReplyMediaReference(_ media: Media, message: EngineRawMessage) -> AnyMediaReference {
+                if engineMellowsgramMessageIsDeleted(message) {
+                    return .standalone(media: media)
+                } else {
+                    return .message(message: MessageReference(message), media: media)
+                }
+            }
             
             // A target or story being fetched draws in the header's own geometry: shimmering bars where the
             // author and the text go (a quote shows its text, which the reply already holds), a shimmering
@@ -571,12 +579,12 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             var hasRoundImage = false
             if case let .pollOption(optionId) = arguments.innerSubject, let poll = arguments.message?.media.first(where: { $0 is TelegramMediaPoll }) as? TelegramMediaPoll, let pollOption = poll.options.first(where: { $0.opaqueIdentifier == optionId }), let media = pollOption.media {
                 if let image = media as? TelegramMediaImage {
-                    updatedMediaReference = .message(message: MessageReference(arguments.parentMessage), media: image)
+                    updatedMediaReference = mellowsgramReplyMediaReference(image, message: arguments.parentMessage)
                     if let representation = largestRepresentationForPhoto(image) {
                         imageDimensions = representation.dimensions.cgSize
                     }
                 } else if let file = media as? TelegramMediaFile, file.isVideo && !file.isVideoSticker {
-                    updatedMediaReference = .message(message: MessageReference(arguments.parentMessage), media: file)
+                    updatedMediaReference = mellowsgramReplyMediaReference(file, message: arguments.parentMessage)
                     
                     if let dimensions = file.dimensions {
                         imageDimensions = dimensions.cgSize
@@ -590,13 +598,13 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             } else if let message = arguments.message, !message.containsSecretMedia {
                 for media in message.media {
                     if let image = media as? TelegramMediaImage {
-                        updatedMediaReference = .message(message: MessageReference(message), media: image)
+                        updatedMediaReference = mellowsgramReplyMediaReference(image, message: message)
                         if let representation = largestRepresentationForPhoto(image) {
                             imageDimensions = representation.dimensions.cgSize
                         }
                         break
                     } else if let file = media as? TelegramMediaFile, !file.isVideoSticker {
-                        updatedMediaReference = .message(message: MessageReference(message), media: file)
+                        updatedMediaReference = mellowsgramReplyMediaReference(file, message: message)
                         
                         if let dimensions = file.dimensions {
                             imageDimensions = dimensions.cgSize
@@ -609,13 +617,13 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                         break
                     } else if let poll = media as? TelegramMediaPoll, let media = poll.attachedMedia {
                         if let image = media as? TelegramMediaImage {
-                            updatedMediaReference = .message(message: MessageReference(message), media: image)
+                            updatedMediaReference = mellowsgramReplyMediaReference(image, message: message)
                             if let representation = largestRepresentationForPhoto(image) {
                                 imageDimensions = representation.dimensions.cgSize
                             }
                             break
                         } else if let file = media as? TelegramMediaFile, !file.isVideoSticker {
-                            updatedMediaReference = .message(message: MessageReference(message), media: file)
+                            updatedMediaReference = mellowsgramReplyMediaReference(file, message: message)
                             
                             if let dimensions = file.dimensions {
                                 imageDimensions = dimensions.cgSize
@@ -648,12 +656,12 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 }
             } else if let replyForward = arguments.replyForward, let media = replyForward.quote?.media {
                 if let image = media as? TelegramMediaImage {
-                    updatedMediaReference = .message(message: MessageReference(arguments.parentMessage), media: image)
+                    updatedMediaReference = mellowsgramReplyMediaReference(image, message: arguments.parentMessage)
                     if let representation = largestRepresentationForPhoto(image) {
                         imageDimensions = representation.dimensions.cgSize
                     }
                 } else if let file = media as? TelegramMediaFile, file.isVideo && !file.isVideoSticker {
-                    updatedMediaReference = .message(message: MessageReference(arguments.parentMessage), media: file)
+                    updatedMediaReference = mellowsgramReplyMediaReference(file, message: arguments.parentMessage)
                     
                     if let dimensions = file.dimensions {
                         imageDimensions = dimensions.cgSize

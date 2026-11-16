@@ -1976,7 +1976,15 @@ extension ChatControllerImpl {
                 strongSelf.commitPurposefulAction()
                 if let forwardMessageIdsSet = strongSelf.presentationInterfaceState.interfaceState.selectionState?.selectedIds {
                     let forwardMessageIds = Array(forwardMessageIdsSet).sorted()
-                    strongSelf.forwardMessages(messageIds: forwardMessageIds)
+                    let selectedMessages = forwardMessageIds.compactMap { messageId in
+                        return strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?._asMessage()
+                    }
+                    if selectedMessages.count == forwardMessageIds.count,
+                       selectedMessages.contains(where: { engineMellowsgramMessageIsDeleted($0) }) {
+                        strongSelf.forwardMessages(messages: selectedMessages, resetCurrent: false)
+                    } else {
+                        strongSelf.forwardMessages(messageIds: forwardMessageIds)
+                    }
                 }
             }
         }, forwardCurrentForwardMessages: { [weak self] in
@@ -1993,8 +2001,12 @@ extension ChatControllerImpl {
                 }
                 
                 strongSelf.commitPurposefulAction()
-                let forwardMessageIds = messages.map { $0.id }.sorted()
-                strongSelf.forwardMessages(messageIds: forwardMessageIds)
+                if messages.contains(where: { engineMellowsgramMessageIsDeleted($0) }) {
+                    strongSelf.forwardMessages(messages: messages, resetCurrent: false)
+                } else {
+                    let forwardMessageIds = messages.map { $0.id }.sorted()
+                    strongSelf.forwardMessages(messageIds: forwardMessageIds)
+                }
             }
         }, updateForwardOptionsState: { [weak self] f in
             if let strongSelf = self {

@@ -293,6 +293,7 @@ public class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                         context: item.context,
                         presentationData: item.presentationData,
                         edited: edited,
+                        deleted: engineMellowsgramMessageIsDeleted(item.message) && !item.presentationData.isPreview,
                         impressionCount: !item.presentationData.isPreview ? viewCount : nil,
                         dateText: dateText,
                         type: statusType,

@@ -55,8 +55,9 @@ public final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
     public let isSavedMusic: Bool
 
     public init(message: EngineRawMessage, isSavedMusic: Bool) {
-        self.id = PeerMessagesMediaPlaylistItemId(messageId: message.id, messageIndex: message.index)
-        self.message = message
+        let displayMessage = engineMellowsgramMessageBypassingAutoremoveTimers(message)
+        self.id = PeerMessagesMediaPlaylistItemId(messageId: displayMessage.id, messageIndex: displayMessage.index)
+        self.message = displayMessage
         self.isSavedMusic = isSavedMusic
     }
     
@@ -67,12 +68,17 @@ public final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
     public lazy var playbackData: SharedMediaPlaybackData? = {
         if let file = extractFileMedia(self.message) {
             let fileReference: FileMediaReference
-            if self.isSavedMusic, let peer = self.message.peers[self.message.id.peerId], let peerReference = PeerReference(peer) {
+            if engineMellowsgramMessageIsDeleted(self.message) {
+                // Deleted Mellowsgram rows are local projections. Their original
+                // Postbox message (and therefore its peer reference) is gone, so
+                // playback must be rooted in the archived media descriptor.
+                fileReference = .standalone(media: file)
+            } else if self.isSavedMusic, let peer = self.message.peers[self.message.id.peerId], let peerReference = PeerReference(peer) {
                 fileReference = .savedMusic(peer: peerReference, media: file)
             } else {
                 fileReference = .message(message: MessageReference(self.message), media: file)
             }
-            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected(), isViewOnce: self.message.minAutoremoveOrClearTimeout == viewOnceTimeout)
+            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected(), isViewOnce: !engineMellowsgramMessageIsAutoremoveBypassed(self.message) && self.message.minAutoremoveOrClearTimeout == viewOnceTimeout)
             for attribute in file.attributes {
                 switch attribute {
                     case let .Audio(isVoice, _, _, _, _):
@@ -132,7 +138,13 @@ public final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
                         if file.fileName?.lowercased().hasSuffix(".ogg") == true {
                             albumArt = nil
                         } else {
-                            albumArt = SharedMediaPlaybackAlbumArt(thumbnailResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(self.message), media: file), title: updatedTitle ?? "", performer: updatedPerformer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: .message(message: MessageReference(self.message), media: file), title: updatedTitle ?? "", performer: updatedPerformer ?? "", isThumbnail: false))
+                            let albumArtReference: FileMediaReference
+                            if engineMellowsgramMessageIsDeleted(self.message) {
+                                albumArtReference = .standalone(media: file)
+                            } else {
+                                albumArtReference = .message(message: MessageReference(self.message), media: file)
+                            }
+                            albumArt = SharedMediaPlaybackAlbumArt(thumbnailResource: ExternalMusicAlbumArtResource(file: albumArtReference, title: updatedTitle ?? "", performer: updatedPerformer ?? "", isThumbnail: true), fullSizeResource: ExternalMusicAlbumArtResource(file: albumArtReference, title: updatedTitle ?? "", performer: updatedPerformer ?? "", isThumbnail: false))
                         }
                         
                         displayData = SharedMediaPlaybackDisplayData.music(title: updatedTitle, performer: updatedPerformer, albumArt: albumArt, long: CGFloat(duration) > 10.0 * 60.0, caption: caption)
@@ -183,7 +195,8 @@ private func aroundMessagesFromMessages(_ messages: [EngineRawMessage], centralI
 
 private func aroundMessagesFromView(view: EngineRawMessageHistoryView, centralIndex: EngineMessage.Index) -> [EngineRawMessage] {
     let filteredEntries = view.entries.filter { entry in
-        if entry.message.minAutoremoveOrClearTimeout == viewOnceTimeout {
+        let message = engineMellowsgramMessageBypassingAutoremoveTimers(entry.message)
+        if message.minAutoremoveOrClearTimeout == viewOnceTimeout {
             return false
         } else {
             return true
@@ -252,7 +265,8 @@ private func navigatedMessageFromView(_ view: EngineRawMessageHistoryView, ancho
     var index = 0
     
     let filteredEntries = view.entries.filter { entry in
-        if entry.message.minAutoremoveOrClearTimeout == viewOnceTimeout {
+        let message = engineMellowsgramMessageBypassingAutoremoveTimers(entry.message)
+        if message.minAutoremoveOrClearTimeout == viewOnceTimeout {
             return false
         } else {
             return true
@@ -911,6 +925,9 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
     
     public func onItemPlaybackStarted(_ item: SharedMediaPlaylistItem) {
         if let item = item as? MessageMediaPlaylistItem {
+            if engineMellowsgramMessageIsDeleted(item.message) || engineMellowsgramMessageIsAutoremoveBypassed(item.message) {
+                return
+            }
             switch self.messagesLocation {
                 case .recentActions:
                     return

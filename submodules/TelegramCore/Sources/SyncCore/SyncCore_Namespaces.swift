@@ -355,6 +355,7 @@ private enum PreferencesKeyValues: Int32 {
     case communitiesState = 50
     case unreadCounterTagsState = 51
     case stateSyncDebugSettings = 52
+    case mellowsgramSettings = 53
 }
 
 public func applicationSpecificPreferencesKey(_ value: Int32) -> ValueBoxKey {
@@ -646,6 +647,12 @@ public struct PreferencesKeys {
     public static let stateSyncDebugSettings: ValueBoxKey = {
         let key = ValueBoxKey(length: 4)
         key.setInt32(0, value: PreferencesKeyValues.stateSyncDebugSettings.rawValue)
+        return key
+    }()
+
+    public static let mellowsgramSettings: ValueBoxKey = {
+        let key = ValueBoxKey(length: 4)
+        key.setInt32(0, value: PreferencesKeyValues.mellowsgramSettings.rawValue)
         return key
     }()
 }

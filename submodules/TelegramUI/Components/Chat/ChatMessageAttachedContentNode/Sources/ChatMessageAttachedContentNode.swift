@@ -777,6 +777,7 @@ public final class ChatMessageAttachedContentNode: ASDisplayNode {
                                 context: context,
                                 presentationData: presentationData,
                                 edited: edited && !isPreview,
+                                deleted: engineMellowsgramMessageIsDeleted(message) && !isPreview,
                                 impressionCount: !isPreview ? viewCount : nil,
                                 dateText: dateText,
                                 type: statusType,
@@ -1143,10 +1144,12 @@ public final class ChatMessageAttachedContentNode: ASDisplayNode {
                                 switch resolvedInlineMediaValue {
                                 case let .media(resolvedInlineMediaValue):
                                     if let image = resolvedInlineMediaValue as? TelegramMediaImage {
-                                        let updateInlineImageSignal = chatWebpageSnippetPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: .message(message: MessageReference(message), media: image), placeholderColor: mainColor.withMultipliedAlpha(0.1))
+                                        let photoReference: ImageMediaReference = engineMellowsgramMessageIsDeleted(message) ? .standalone(media: image) : .message(message: MessageReference(message), media: image)
+                                        let updateInlineImageSignal = chatWebpageSnippetPhoto(account: context.account, userLocation: .peer(message.id.peerId), photoReference: photoReference, placeholderColor: mainColor.withMultipliedAlpha(0.1))
                                         inlineMedia.setSignal(updateInlineImageSignal)
                                     } else if let file = resolvedInlineMediaValue as? TelegramMediaFile, let representation = file.previewRepresentations.last {
-                                        let updateInlineImageSignal = chatWebpageSnippetFile(account: context.account, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: file), representation: representation)
+                                        let fileReference: FileMediaReference = engineMellowsgramMessageIsDeleted(message) ? .standalone(media: file) : .message(message: MessageReference(message), media: file)
+                                        let updateInlineImageSignal = chatWebpageSnippetFile(account: context.account, userLocation: .peer(message.id.peerId), mediaReference: fileReference, representation: representation)
                                         inlineMedia.setSignal(updateInlineImageSignal)
                                     }
                                 case let .peerAvatar(peer):

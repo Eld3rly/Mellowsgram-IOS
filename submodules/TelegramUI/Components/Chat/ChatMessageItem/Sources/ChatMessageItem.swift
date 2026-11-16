@@ -161,6 +161,9 @@ public protocol ChatMessageItem: ListViewItem, ChatHistoryItemWithHeaders {
     var disableDate: Bool { get }
     var effectiveAuthorId: EnginePeer.Id? { get }
     var additionalContent: ChatMessageItemAdditionalContent? { get }
+    /// UI-only action attached to a Mellowsgram deleted projection. It is
+    /// intentionally optional so ordinary Telegram messages stay unchanged.
+    var mellowsgramDeletedMessageHistory: (() -> Void)? { get }
 
     var message: EngineRawMessage { get }
     var read: Bool { get }

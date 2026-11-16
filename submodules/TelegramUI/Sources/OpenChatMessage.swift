@@ -289,23 +289,24 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
             case let .audio(file):
                 let location: PeerMessagesPlaylistLocation
                 let playerType: MediaManagerPlayerType
+                let mellowsgramStandalone = engineMellowsgramMessageIsDeleted(params.message)
                 var control = SharedMediaPlayerControlAction.playback(.play)
                 if case let .timecode(time) = params.mode {
                     control = .seek(time)
                 }
-                if (file.isVoice || file.isInstantVideo) && params.message.tags.contains(.voiceOrInstantVideo) {
+                if (file.isVoice || file.isInstantVideo) && (params.message.tags.contains(.voiceOrInstantVideo) || mellowsgramStandalone) {
                     if let playlistLocation = params.playlistLocation {
                         location = playlistLocation
-                    } else if params.standalone {
+                    } else if params.standalone || mellowsgramStandalone {
                         location = .recentActions(params.message)
                     } else {
                         location = .messages(chatLocation: params.chatLocation ?? .peer(id: params.message.id.peerId), tagMask: .voiceOrInstantVideo, at: params.message.id)
                     }
                     playerType = .voice
-                } else if file.isMusic && params.message.tags.contains(.music) {
+                } else if file.isMusic && (params.message.tags.contains(.music) || mellowsgramStandalone) {
                     if let playlistLocation = params.playlistLocation {
                         location = playlistLocation
-                    } else if params.standalone {
+                    } else if params.standalone || mellowsgramStandalone {
                         location = .recentActions(params.message)
                     } else {
                         location = .messages(chatLocation: params.chatLocation ?? .peer(id: params.message.id.peerId), tagMask: .music, at: params.message.id)
@@ -314,7 +315,7 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                 } else {
                     if let playlistLocation = params.playlistLocation {
                         location = playlistLocation
-                    } else if params.standalone {
+                    } else if params.standalone || mellowsgramStandalone {
                         location = .recentActions(params.message)
                     } else {
                         location = .singleMessage(params.message.id)

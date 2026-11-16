@@ -759,11 +759,13 @@ final class MessageHistoryTable: Table {
             }
         }
         
-        switch result {
-            case let .Push(thenSync):
-                self.synchronizeReadStateTable.set(messageIndex.id.peerId, operation: .Push(state: self.readStateTable.getCombinedState(messageIndex.id.peerId), thenSync: thenSync), operations: &updatedPeerReadStateOperations)
-            case .None:
-                break
+        if !postbox.mellowsgramGhostModeReadReceiptsEnabled {
+            switch result {
+                case let .Push(thenSync):
+                    self.synchronizeReadStateTable.set(messageIndex.id.peerId, operation: .Push(state: self.readStateTable.getCombinedState(messageIndex.id.peerId), thenSync: thenSync), operations: &updatedPeerReadStateOperations)
+                case .None:
+                    break
+            }
         }
         
         return messageIds

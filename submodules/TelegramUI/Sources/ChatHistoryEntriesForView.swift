@@ -13,6 +13,57 @@ import Markdown
 import Display
 import TelegramStringFormatting
 
+private func mellowsgramArchiveRecordsForView(
+    records: [EngineMellowsgramMessageArchiveRecord],
+    location: ChatLocation,
+    view: MessageHistoryView,
+    historyAppearsCleared: Bool,
+    pendingRemovedMessages: Set<MessageId>
+) -> [EngineMellowsgramMessageArchiveRecord] {
+    guard let peerId = location.peerId else {
+        return []
+    }
+
+    return mellowsgramArchiveRecordsForHistory(
+        records: records,
+        peerId: peerId,
+        threadId: location.threadId,
+        state: MellowsgramArchiveHistoryState(
+            loadedMessageIndices: view.entries.map { $0.message.index },
+            liveMessageIds: Set(view.entries.map { $0.message.id }).subtracting(pendingRemovedMessages),
+            earlierId: view.earlierId,
+            laterId: view.laterId,
+            holeEarlier: view.holeEarlier,
+            holeLater: view.holeLater,
+            isLoading: view.isLoading,
+            historyAppearsCleared: historyAppearsCleared
+        )
+    )
+}
+
+private func mellowsgramPendingMessageIsVisibleInHistory(_ message: EngineRawMessage, view: MessageHistoryView) -> Bool {
+    guard message.id.peerId.namespace != Namespaces.Peer.SecretChat,
+          !engineMellowsgramMessageIsEphemeral(message) else {
+        return false
+    }
+
+    guard !view.isLoading else {
+        return false
+    }
+
+    guard let lowerBound = view.entries.map({ $0.message.index }).min(), let upperBound = view.entries.map({ $0.message.index }).max() else {
+        return view.earlierId == nil && view.laterId == nil && !view.holeEarlier && !view.holeLater
+    }
+
+    if message.index < lowerBound {
+        return view.earlierId == nil && !view.holeEarlier
+    } else if message.index > upperBound {
+        return view.laterId == nil && !view.holeLater
+    } else {
+        return true
+    }
+}
+
 struct ChatHistoryEntriesForViewState {
     private var messageStableIdToLocalId: [UInt32: Int64] = [:]
     
@@ -88,13 +139,15 @@ func chatHistoryEntriesForView(
     adMessage: Message?,
     dynamicAdMessages: [Message],
     isMusicPlaylist: Bool,
-    pinToTopStableId: EngineMessage.StableId?
+    pinToTopStableId: EngineMessage.StableId?,
+    mellowsgramArchiveRecords: [EngineMellowsgramMessageArchiveRecord],
+    mellowsgramPendingDeletedMessageSnapshots: [MessageId: EngineRawMessage],
+    mellowsgramShowDeletedMessages: Bool,
+    mellowsgramTranslucentDeletedMessages: Bool,
+    mellowsgramIgnoreAutoremoveTimers: Bool
 ) -> ([ChatHistoryEntry], ChatHistoryEntriesForViewState) {
     var currentState = currentState
     
-    if historyAppearsCleared {
-        return ([], currentState)
-    }
     var entries: [ChatHistoryEntry] = []
     var adminRanks: [PeerId: CachedChannelAdminRank] = [:]
     var stickersEnabled = true
@@ -169,8 +222,52 @@ func chatHistoryEntriesForView(
     }
     
     var count = 0
+    let mellowsgramRecordsForView: [EngineMellowsgramMessageArchiveRecord]
+    if mellowsgramShowDeletedMessages {
+        mellowsgramRecordsForView = mellowsgramArchiveRecordsForView(
+            records: mellowsgramArchiveRecords,
+            location: location,
+            view: view,
+            historyAppearsCleared: historyAppearsCleared,
+            pendingRemovedMessages: pendingRemovedMessages
+        )
+    } else {
+        mellowsgramRecordsForView = []
+    }
+    let mellowsgramRecordsById = Dictionary(uniqueKeysWithValues: mellowsgramArchiveRecords.compactMap { record -> (MessageId, EngineMellowsgramMessageArchiveRecord)? in
+        guard let peerId = location.peerId,
+              record.messageId.peerId == peerId,
+              record.threadId == location.threadId,
+              record.deletedAt != nil,
+              record.messageId.peerId.namespace != Namespaces.Peer.SecretChat,
+              !engineMellowsgramMessageAttributes(record.attributesData).contains(where: { attribute in
+                  attribute is EphemeralMessageAttribute ||
+                  attribute is EphemeralOutgoingMessageAttribute
+              }) else {
+            return nil
+        }
+        return (record.messageId, record)
+    })
+    var mellowsgramProjectionPeers = cachedPeerDataPeers
+    if let chatPeer {
+        mellowsgramProjectionPeers[chatPeer.id] = chatPeer
+    }
+    func mellowsgramArchivedMessage(record: EngineMellowsgramMessageArchiveRecord) -> EngineRawMessage {
+        let author = record.authorId.flatMap { mellowsgramProjectionPeers[$0] }
+        return engineMellowsgramDeletedMessage(
+            record: record,
+            translucent: mellowsgramTranslucentDeletedMessages,
+            author: author,
+            peers: mellowsgramProjectionPeers
+        )
+    }
+    var projectedMellowsgramMessageIds = Set<MessageId>()
+
     loop: for entry in view.entries {
         var message = entry.message.withAppliedEphemeralReplacementMessage()
+        if mellowsgramIgnoreAutoremoveTimers {
+            message = engineMellowsgramMessageBypassingAutoremoveTimers(message)
+        }
         var isRead = entry.isRead
         
         var pinToTop = false
@@ -178,8 +275,25 @@ func chatHistoryEntriesForView(
             pinToTop = true
         }
         
-        if pendingRemovedMessages.contains(message.id) {
-            continue
+        if mellowsgramShowDeletedMessages, let record = mellowsgramRecordsById[message.id], record.deletedAt != nil {
+            // The archive can be committed before the live history view catches
+            // up. Keep the live row's full media/peer context and only add the
+            // in-memory deleted marker, so the list performs an item update.
+            message = engineMellowsgramDeletedMessage(message: message, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+            isRead = true
+            projectedMellowsgramMessageIds.insert(message.id)
+        } else if pendingRemovedMessages.contains(message.id) {
+            // Keep the original MessageEntry alive while Postbox processes the
+            // deletion. The normal Telegram item is updated in place with the
+            // deleted marker, so media, captions, direction and bubble geometry
+            // remain exactly those of the live message.
+            if let record = mellowsgramRecordsById[message.id], record.deletedAt != nil {
+                message = engineMellowsgramDeletedMessage(message: message, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+                isRead = true
+                projectedMellowsgramMessageIds.insert(message.id)
+            } else {
+                continue
+            }
         }
         
         if case let .replyThread(replyThreadMessage) = location, replyThreadMessage.isForumPost {
@@ -800,6 +914,33 @@ func chatHistoryEntriesForView(
             )
             entries.append(.MessageEntry(message, presentationData, false, nil, .none, ChatMessageEntryAttributes(rank: nil, isContact: false, contentTypeHint: .generic, updatingMedia: nil, isPlaying: false, isCentered: false, authorStoryStats: nil, displayContinueThreadFooter: false, pinToTop: false)))
         }
+    }
+
+    if mellowsgramShowDeletedMessages {
+        for (messageId, snapshot) in mellowsgramPendingDeletedMessageSnapshots {
+            guard let peerId = location.peerId,
+                  snapshot.id.peerId == peerId,
+                  snapshot.threadId == location.threadId,
+                  !projectedMellowsgramMessageIds.contains(messageId),
+                  mellowsgramRecordsById[messageId] == nil,
+                  mellowsgramPendingMessageIsVisibleInHistory(snapshot, view: view) else {
+                continue
+            }
+            let message = engineMellowsgramDeletedMessage(message: snapshot, translucent: mellowsgramTranslucentDeletedMessages)
+            entries.append(.MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes()))
+            projectedMellowsgramMessageIds.insert(messageId)
+        }
+
+        for record in mellowsgramRecordsForView where !projectedMellowsgramMessageIds.contains(record.messageId) {
+            let message: EngineRawMessage
+            if let snapshot = mellowsgramPendingDeletedMessageSnapshots[record.messageId] {
+                message = engineMellowsgramDeletedMessage(message: snapshot, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+            } else {
+                message = mellowsgramArchivedMessage(record: record)
+            }
+            entries.append(.MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes()))
+        }
+        entries.sort()
     }
     
     if let subject = associatedData.subject, case let .customChatContents(customChatContents) = subject {

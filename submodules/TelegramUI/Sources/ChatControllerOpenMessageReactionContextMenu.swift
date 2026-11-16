@@ -36,6 +36,9 @@ extension ChatControllerImpl {
     }
     
     func openMessageReactionContextMenu(message: EngineMessage, sourceView: ContextExtractedContentContainingView, gesture: ContextGesture?, value: MessageReaction.Reaction) {
+        if engineMellowsgramMessageIsDeleted(message._asMessage()) {
+            return
+        }
         if message.areReactionsTags(accountPeerId: self.context.account.peerId) {
             if !self.presentationInterfaceState.isPremium {
                 self.presentTagPremiumPaywall()

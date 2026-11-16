@@ -8,10 +8,18 @@ private typealias SignalKitTimer = SwiftSignalKit.Timer
 
 private final class ManagedAutoremoveMessageOperationsHelper {
     var entry: (TimestampBasedMessageAttributesEntry, MetaDisposable)?
+    var ignoreAutoremoveTimers: Bool?
     
-    func update(_ head: TimestampBasedMessageAttributesEntry?) -> (disposeOperations: [Disposable], beginOperations: [(TimestampBasedMessageAttributesEntry, MetaDisposable)]) {
+    func update(_ head: TimestampBasedMessageAttributesEntry?, ignoreAutoremoveTimers: Bool) -> (disposeOperations: [Disposable], beginOperations: [(TimestampBasedMessageAttributesEntry, MetaDisposable)]) {
         var disposeOperations: [Disposable] = []
         var beginOperations: [(TimestampBasedMessageAttributesEntry, MetaDisposable)] = []
+
+        let policyChanged = self.ignoreAutoremoveTimers != ignoreAutoremoveTimers
+        self.ignoreAutoremoveTimers = ignoreAutoremoveTimers
+        if policyChanged, let (_, disposable) = self.entry {
+            self.entry = nil
+            disposeOperations.append(disposable)
+        }
         
         if self.entry?.0.index != head?.index {
             if let (_, disposable) = self.entry {
@@ -63,9 +71,9 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
 
         let tag: UInt16 = isRemove ? 0 : 1
 
-        let disposable = combineLatest(timeOffset, postbox.timestampBasedMessageAttributesView(tag: tag)).start(next: { timeOffset, view in
+        let disposable = combineLatest(timeOffset, postbox.timestampBasedMessageAttributesView(tag: tag), postbox.mellowsgramIgnoreAutoremoveTimers).start(next: { timeOffset, view, ignoreAutoremoveTimers in
             let (disposeOperations, beginOperations) = helper.with { helper -> (disposeOperations: [Disposable], beginOperations: [(TimestampBasedMessageAttributesEntry, MetaDisposable)]) in
-                return helper.update(view.head)
+                return helper.update(view.head, ignoreAutoremoveTimers: ignoreAutoremoveTimers)
             }
             
             for disposable in disposeOperations {
@@ -82,6 +90,16 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
                     Logger.shared.log("Autoremove", "Performing autoremove for \(entry.messageId), isRemove: \(isRemove)")
 
                     if let message = transaction.getMessage(entry.messageId) {
+                        if postbox.mellowsgramIgnoreAutoremoveTimersEnabled,
+                           message.id.peerId.namespace != Namespaces.Peer.SecretChat,
+                           !Namespaces.Message.allEphemeral.contains(message.id.namespace),
+                           !message.attributes.contains(where: { attribute in
+                               attribute is EphemeralMessageAttribute ||
+                               attribute is EphemeralOutgoingMessageAttribute
+                           }) {
+                            return
+                        }
+
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
                             _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                         } else {

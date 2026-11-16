@@ -3,6 +3,13 @@
 Guidance for coding agents working in this repository. The project guide is [`CLAUDE.md`](CLAUDE.md): how to build,
 which simulators to use, how to drive them (XcodeBuildMCP) and the invariants of each subsystem. Read it first.
 
+## Standing Mellowsgram build policy
+
+- Never run a local Mac build for this repository: no local `xcodebuild`, Bazel, Make, or IPA build commands.
+- Build and run validation builds exclusively through GitHub Actions.
+- After an Actions build completes, download the IPA from the Actions artifact and install it into the simulator for testing.
+- Do not spend local disk space on build output or caches unless the user explicitly changes this policy.
+
 ## Visual features and animations: judge them from recorded frames
 
 A green build and passing unit tests say nothing about how a change looks or moves. For any visual change, and always

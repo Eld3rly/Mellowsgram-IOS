@@ -39,6 +39,7 @@ import UrlHandling
 import TextFormat
 import ChatNewThreadInfoItem
 import PhoneNumberFormat
+import SettingsUI
 import ChatHistoryListViewBackend
 import Postbox
 
@@ -50,6 +51,18 @@ struct ChatTopVisibleMessageRange: Equatable {
 }
 
 private let historyMessageCount: Int = 44
+
+private func mellowsgramDeletedMessageHistoryAction(context: AccountContext, controllerInteraction: ChatControllerInteraction, message: EngineRawMessage) -> (() -> Void)? {
+    guard let record = message.attributes.compactMap({ ($0 as? MellowsgramDeletedMessageAttribute)?.record }).first else {
+        return nil
+    }
+    return { [weak controllerInteraction] in
+        guard let navigationController = controllerInteraction?.navigationController() else {
+            return
+        }
+        navigationController.pushViewController(mellowsgramEditHistoryController(context: context, record: record))
+    }
+}
 
 enum ChatHistoryViewScrollPosition {
     case unread(index: MessageIndex)
@@ -239,7 +252,7 @@ private func mappedInsertEntries(context: AccountContext, chatLocation: ChatLoca
                 let item: ListViewItem
                 switch mode {
                     case .bubbles:
-                        item = ChatMessageItemImpl(presentationData: presentationData, context: context, chatLocation: chatLocation, associatedData: associatedData, controllerInteraction: controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders || message.timestamp < 10)
+                        item = ChatMessageItemImpl(presentationData: presentationData, context: context, chatLocation: chatLocation, associatedData: associatedData, controllerInteraction: controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders || message.timestamp < 10, mellowsgramDeletedMessageHistory: mellowsgramDeletedMessageHistoryAction(context: context, controllerInteraction: controllerInteraction, message: message))
                     case let .list(_, _, displayHeaders, hintLinks, isGlobalSearch, _):
                         let displayHeader: Bool
                         switch displayHeaders {
@@ -294,7 +307,7 @@ private func mappedUpdateEntries(context: AccountContext, chatLocation: ChatLoca
                 let item: ListViewItem
                 switch mode {
                     case .bubbles:
-                        item = ChatMessageItemImpl(presentationData: presentationData, context: context, chatLocation: chatLocation, associatedData: associatedData, controllerInteraction: controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders || message.timestamp < 10)
+                        item = ChatMessageItemImpl(presentationData: presentationData, context: context, chatLocation: chatLocation, associatedData: associatedData, controllerInteraction: controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders || message.timestamp < 10, mellowsgramDeletedMessageHistory: mellowsgramDeletedMessageHistoryAction(context: context, controllerInteraction: controllerInteraction, message: message))
                     case let .list(_, _, displayHeaders, hintLinks, isGlobalSearch, _):
                         let displayHeader: Bool
                         switch displayHeaders {
@@ -519,6 +532,13 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     public var originalHistoryView: MessageHistoryView? {
         return self.historyView?.originalView
     }
+
+    /// Live display snapshots bridge the transaction that removes a Postbox
+    /// message and the later archive-table signal. They are UI-only and are
+    /// never written back into Postbox or sent to Telegram.
+    private var mellowsgramLiveMessageSnapshots: [MessageId: EngineRawMessage] = [:]
+    private var mellowsgramPendingDeletedMessageSnapshots: [MessageId: EngineRawMessage] = [:]
+    private var mellowsgramPendingDeletedMessageIds = Set<MessageId>()
     
     private let historyDisposable = MetaDisposable()
     private let readHistoryDisposable = MetaDisposable()
@@ -1425,6 +1445,87 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     private let currentViewVersion = Atomic<Int?>(value: nil)
     private let previousView = Atomic<(ChatHistoryView, Int, Set<MessageId>?, Int)?>(value: nil)
     private let previousHistoryAppearsCleared = Atomic<Bool?>(value: nil)
+
+    private func updateMellowsgramDeletionSnapshots(view: MessageHistoryView, archiveRecords: [EngineMellowsgramMessageArchiveRecord], ignoreMessageIds: Set<MessageId>, saveDeletedMessages: Bool) -> [MessageId: EngineRawMessage] {
+        guard saveDeletedMessages else {
+            self.mellowsgramLiveMessageSnapshots.removeAll()
+            self.mellowsgramPendingDeletedMessageSnapshots.removeAll()
+            self.mellowsgramPendingDeletedMessageIds.removeAll()
+            return [:]
+        }
+
+        guard let peerId = self.chatLocation.peerId else {
+            self.mellowsgramLiveMessageSnapshots.removeAll()
+            self.mellowsgramPendingDeletedMessageSnapshots.removeAll()
+            self.mellowsgramPendingDeletedMessageIds.removeAll()
+            return [:]
+        }
+
+        let liveMessages = Dictionary(uniqueKeysWithValues: view.entries.map { ($0.message.id, $0.message) })
+        let liveIds = Set(liveMessages.keys)
+        let archivedIds = Set(archiveRecords.filter { $0.deletedAt != nil }.map { $0.messageId })
+        var pending: [MessageId: EngineRawMessage] = [:]
+        for (messageId, snapshot) in self.mellowsgramPendingDeletedMessageSnapshots {
+            guard messageId.peerId == peerId,
+                  snapshot.threadId == self.chatLocation.threadId,
+                  messageId.peerId.namespace != Namespaces.Peer.SecretChat,
+                  !engineMellowsgramMessageIsEphemeral(snapshot) else {
+                continue
+            }
+            pending[messageId] = snapshot
+        }
+
+        func isVisibleInCurrentRange(_ message: EngineRawMessage) -> Bool {
+            guard !view.isLoading else {
+                return false
+            }
+            let indices = view.entries.map { $0.message.index }
+            guard let lowerBound = indices.min(), let upperBound = indices.max() else {
+                return view.earlierId == nil && view.laterId == nil && !view.holeEarlier && !view.holeLater
+            }
+            if message.index < lowerBound {
+                return view.earlierId == nil && !view.holeEarlier
+            } else if message.index > upperBound {
+                return view.laterId == nil && !view.holeLater
+            } else {
+                return true
+            }
+        }
+
+        for (messageId, snapshot) in self.mellowsgramLiveMessageSnapshots where !liveIds.contains(messageId) {
+            guard messageId.peerId == peerId,
+                  snapshot.threadId == self.chatLocation.threadId,
+                  messageId.peerId.namespace != Namespaces.Peer.SecretChat,
+                  !engineMellowsgramMessageIsEphemeral(snapshot) else {
+                continue
+            }
+
+            // An explicit ignored id or a committed archive record covers
+            // interactive, remote and bulk deletion paths. A fully known range
+            // covers the short signal gap before either is published. The later
+            // history-entry pass applies the same range check before rendering.
+            if ignoreMessageIds.contains(messageId) || archivedIds.contains(messageId) || isVisibleInCurrentRange(snapshot) {
+                pending[messageId] = snapshot
+            }
+        }
+
+        for messageId in liveIds {
+            pending.removeValue(forKey: messageId)
+        }
+
+        // Keep the bridge bounded while retaining all rows that can still be
+        // rendered in the current chat. Persistent archive records remain the
+        // source of truth after a node is recreated.
+        if pending.count > 512 {
+            let retainedIds = archivedIds.union(liveIds)
+            pending = pending.filter { retainedIds.contains($0.key) }
+        }
+
+        self.mellowsgramLiveMessageSnapshots = liveMessages
+        self.mellowsgramPendingDeletedMessageSnapshots = pending
+        self.mellowsgramPendingDeletedMessageIds = Set(pending.keys)
+        return pending
+    }
     
     private func beginChatHistoryTransitions(resetScrolling: Bool, switchedToAnotherSource: Bool) {
         self.historyDisposable.set(nil)
@@ -1865,6 +1966,14 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             translationState = .single(nil)
         }
         
+        let mellowsgramArchiveRecordsSignal: Signal<[EngineMellowsgramMessageArchiveRecord], NoError>
+        if let peerId = chatLocation.peerId {
+            mellowsgramArchiveRecordsSignal = mellowsgramArchiveRecords(engine: context.engine, peerId: peerId, threadId: chatLocation.threadId)
+        } else {
+            mellowsgramArchiveRecordsSignal = .single([])
+        }
+        let mellowsgramSettingsSignal = mellowsgramSettings(engine: self.context.engine)
+
         let promises = combineLatest(
             self.historyAppearsClearedPromise.get(),
             self.pendingUnpinnedAllMessagesPromise.get(),
@@ -1872,7 +1981,9 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             self.currentlyPlayingMessageIdPromise.get(),
             self.scrollToMessageIdPromise.get(),
             self.chatHasBotsPromise.get(),
-            self.allAdMessagesPromise.get()
+            self.allAdMessagesPromise.get(),
+            mellowsgramArchiveRecordsSignal,
+            mellowsgramSettingsSignal
         )
         
         let contentSettings = self.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.ContentSettings())
@@ -1944,7 +2055,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         } else {
             stopHistoryViewUpdates = .single(false)
         }
-        
+
         let historyViewUpdateValue = historyViewUpdate
         historyViewUpdate = stopHistoryViewUpdates |> mapToSignal { value in
             if value {
@@ -1986,7 +2097,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             contentSettings |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_contentSettings")
         ) |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_firstChatHistoryTransition")).startStrict(next: { [weak self] update, chatPresentationData, selectedMessages, updatingMedia, networkType, preferredStoryHighQuality, animatedEmojiAndGiftStickers, additionalAnimatedEmojiStickers, customChannelDiscussionReadState, customThreadOutgoingReadState, availableReactions, availableMessageEffects, savedMessageTags, defaultReaction, accountPeer, accountCountry, suggestAudioTranscription, promises, topicAuthorId, translationState, maxReadStoryId, recommendedChannels, audioTranscriptionTrial, chatThemes, deviceContactsNumbers, contentSettings in
             let (animatedEmojiStickers, premiumGiftStickers, tonGiftStickers) = animatedEmojiAndGiftStickers
-            let (historyAppearsCleared, pendingUnpinnedAllMessages, pendingRemovedMessages, currentlyPlayingMessageIdAndType, scrollToMessageId, chatHasBots, allAdMessages) = promises
+            let (historyAppearsCleared, pendingUnpinnedAllMessages, pendingRemovedMessages, currentlyPlayingMessageIdAndType, scrollToMessageId, chatHasBots, allAdMessages, mellowsgramArchiveRecords, mellowsgramSettings) = promises
             
             if measure_isFirstTime {
                 measure_isFirstTime = false
@@ -2231,6 +2342,13 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 let isSuspiciousPeer = (data.cachedData as? CachedUserData)?.isSuspiciousPeer ?? false
                 
                 let associatedData = extractAssociatedData(chatLocation: chatLocation, view: view, automaticDownloadNetworkType: networkType, preferredStoryHighQuality: preferredStoryHighQuality, animatedEmojiStickers: animatedEmojiStickers, additionalAnimatedEmojiStickers: additionalAnimatedEmojiStickers, premiumGiftStickers: premiumGiftStickers, tonGiftStickers: tonGiftStickers, subject: subject, currentlyPlayingMessageId: currentlyPlayingMessageIdAndType?.0, isCopyProtectionEnabled: isCopyProtectionEnabled, availableReactions: availableReactions, availableMessageEffects: availableMessageEffects, savedMessageTags: savedMessageTags, defaultReaction: defaultReaction.0, areStarReactionsEnabled: defaultReaction.1, isPremium: isPremium, alwaysDisplayTranscribeButton: alwaysDisplayTranscribeButton, accountPeer: accountPeer, topicAuthorId: topicAuthorId, hasBots: chatHasBots, translateToLanguage: translateToLanguage?.toLang, maxReadStoryId: maxReadStoryId, recommendedChannels: recommendedChannels, audioTranscriptionTrial: audioTranscriptionTrial, chatThemes: chatThemes, deviceContactsNumbers: deviceContactsNumbers, isInline: !rotated, showSensitiveContent: contentSettings.ignoreContentRestrictionReasons.contains("sensitive"), isSuspiciousPeer: isSuspiciousPeer, accountCountry: accountCountry)
+
+                let mellowsgramPendingDeletedMessageSnapshots: [MessageId: EngineRawMessage]
+                if let strongSelf = self {
+                    mellowsgramPendingDeletedMessageSnapshots = strongSelf.updateMellowsgramDeletionSnapshots(view: view, archiveRecords: mellowsgramArchiveRecords, ignoreMessageIds: update.4, saveDeletedMessages: mellowsgramSettings.saveDeletedMessages)
+                } else {
+                    mellowsgramPendingDeletedMessageSnapshots = [:]
+                }
                 
                 var includeEmbeddedSavedChatInfo = false
                 if case let .replyThread(message) = chatLocation, message.peerId == context.account.peerId, !rotated {
@@ -2288,7 +2406,12 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     adMessage: allAdMessages.fixed,
                     dynamicAdMessages: allAdMessages.opportunistic,
                     isMusicPlaylist: isMusicPlaylist,
-                    pinToTopStableId: pinToTopStableId
+                    pinToTopStableId: pinToTopStableId,
+                    mellowsgramArchiveRecords: mellowsgramArchiveRecords,
+                    mellowsgramPendingDeletedMessageSnapshots: mellowsgramPendingDeletedMessageSnapshots,
+                    mellowsgramShowDeletedMessages: mellowsgramSettings.showDeletedMessages,
+                    mellowsgramTranslucentDeletedMessages: mellowsgramSettings.translucentDeletedMessages,
+                    mellowsgramIgnoreAutoremoveTimers: mellowsgramSettings.ignoreAutoremoveTimers
                 )
                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0
                 let processedView = ChatHistoryView(originalView: view, filteredEntries: filteredEntries, associatedData: associatedData, lastHeaderId: lastHeaderId, id: id, locationInput: update.2, ignoreMessagesInTimestampRange: update.3, ignoreMessageIds: update.4)
@@ -4226,13 +4349,20 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         var expiredMessageStableIds = Set<UInt32>()
         if let previousHistoryView = self.historyView, transition.options.contains(.AnimateInsertion) {
             var existingStableIds = Set<UInt32>()
+            var mellowsgramDeletedMessageIds = Set<MessageId>()
             for entry in transition.historyView.filteredEntries {
                 switch entry {
                 case let .MessageEntry(message, _, _, _, _, _):
                     existingStableIds.insert(message.stableId)
+                    if engineMellowsgramMessageIsDeleted(message) {
+                        mellowsgramDeletedMessageIds.insert(message.id)
+                    }
                 case let .MessageGroupEntry(_, messages, _):
                     for message in messages {
                         existingStableIds.insert(message.0.stableId)
+                        if engineMellowsgramMessageIsDeleted(message.0) {
+                            mellowsgramDeletedMessageIds.insert(message.0.id)
+                        }
                     }
                 default:
                     break
@@ -4294,6 +4424,9 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 }
             }
             for id in self.ignoreMessageIds {
+                if mellowsgramDeletedMessageIds.contains(id) || self.mellowsgramPendingDeletedMessageIds.contains(id) {
+                    continue
+                }
                 inner: for (stableId, listId) in maybeRemovedInteractivelyMessageIds {
                     if listId == id {
                         expiredMessageStableIds.insert(stableId)
@@ -5218,7 +5351,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                             let item: ListViewItem
                             switch self.mode {
                             case .bubbles:
-                                item = ChatMessageItemImpl(presentationData: presentationData, context: self.context, chatLocation: self.chatLocation, associatedData: associatedData, controllerInteraction: self.controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders)
+                                item = ChatMessageItemImpl(presentationData: presentationData, context: self.context, chatLocation: self.chatLocation, associatedData: associatedData, controllerInteraction: self.controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders, mellowsgramDeletedMessageHistory: mellowsgramDeletedMessageHistoryAction(context: self.context, controllerInteraction: self.controllerInteraction, message: message))
                             case let .list(_, _, displayHeaders, hintLinks, isGlobalSearch, _):
                                 let displayHeader: Bool
                                 switch displayHeaders {
@@ -5296,7 +5429,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                                 let item: ListViewItem
                                 switch self.mode {
                                     case .bubbles:
-                                        item = ChatMessageItemImpl(presentationData: presentationData, context: self.context, chatLocation: self.chatLocation, associatedData: associatedData, controllerInteraction: self.controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders)
+                                        item = ChatMessageItemImpl(presentationData: presentationData, context: self.context, chatLocation: self.chatLocation, associatedData: associatedData, controllerInteraction: self.controllerInteraction, content: .message(message: message, read: read, selection: selection, attributes: attributes, location: location), disableDate: disableFloatingDateHeaders, mellowsgramDeletedMessageHistory: mellowsgramDeletedMessageHistoryAction(context: self.context, controllerInteraction: self.controllerInteraction, message: message))
                                     case let .list(_, _, displayHeaders, hintLinks, isGlobalSearch, _):
                                         let displayHeader: Bool
                                         switch displayHeaders {

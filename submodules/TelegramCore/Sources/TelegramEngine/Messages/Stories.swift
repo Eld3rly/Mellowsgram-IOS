@@ -2108,6 +2108,13 @@ func _internal_deleteStories(account: Account, peerId: PeerId, ids: [Int32]) -> 
 }
 
 func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPinned: Bool) -> Signal<Never, NoError> {
+    // Pinned stories use a direct incrementStoryViews request instead of the
+    // normal operation log. Keep that path behind the same Ghost Mode gate so
+    // it cannot leak a story read while the queued path is suppressed.
+    if account.postbox.mellowsgramGhostModeCoordinator.areStoryReadsSuppressed {
+        return .complete()
+    }
+
     if asPinned {
         return account.postbox.transaction { transaction -> Api.InputPeer? in
             return transaction.getPeer(peerId).flatMap(apiInputPeer)

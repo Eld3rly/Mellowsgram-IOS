@@ -4,8 +4,10 @@ import TelegramCore
 import TelegramUIPreferences
 import AccountContext
 
-public let maximumNumberOfAccounts = 3
-public let maximumPremiumNumberOfAccounts = 4
+/// Mellowsgram keeps the connected-account limit independent of Telegram Premium.
+/// Every account is still a separate Telegram account with its own session.
+public let maximumNumberOfAccounts = 32
+public let maximumPremiumNumberOfAccounts = 32
 
 public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
     let sharedContext = context.sharedContext

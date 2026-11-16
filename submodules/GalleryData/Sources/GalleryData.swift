@@ -109,6 +109,15 @@ public func chatMessageGalleryControllerData(
     actionInteraction: GalleryControllerActionInteraction?
 ) -> ChatMessageGalleryControllerData? {
     var standalone = standalone
+    let mellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message)
+    let mellowsgramAutoremoveBypassed = engineMellowsgramMessageIsAutoremoveBypassed(message)
+    if mellowsgramDeletedMessage || mellowsgramAutoremoveBypassed {
+        standalone = true
+    }
+    var gallerySource = source
+    if mellowsgramDeletedMessage || mellowsgramAutoremoveBypassed {
+        gallerySource = .standaloneMessage(message, mediaSubject)
+    }
     if message.id.peerId.namespace == Namespaces.Peer.CloudUser && message.id.namespace != Namespaces.Message.Cloud {
         standalone = true
     }
@@ -297,13 +306,12 @@ public func chatMessageGalleryControllerData(
                     }*/
                 }
                 
-                var source = source
                 if standalone {
-                    source = .standaloneMessage(message, mediaSubject)
+                    gallerySource = .standaloneMessage(message, mediaSubject)
                 }
                 
                 if internalDocumentItemSupportsMimeType(file.mimeType, fileName: file.fileName ?? "file") {
-                    let gallery = GalleryController(context: context, source: source ?? .peerMessagesAtId(messageId: message.id, chatLocation: chatLocation ?? .peer(id: message.id.peerId), customTag: chatFilterTag, chatLocationContextHolder: chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), invertItemOrder: reverseMessageGalleryOrder, streamSingleVideo: stream, fromPlayingVideo: autoplayingVideo, landscape: landscape, timecode: timecode, synchronousLoad: synchronousLoad, replaceRootController: { [weak navigationController] controller, ready in
+                    let gallery = GalleryController(context: context, source: gallerySource ?? .peerMessagesAtId(messageId: message.id, chatLocation: chatLocation ?? .peer(id: message.id.peerId), customTag: chatFilterTag, chatLocationContextHolder: chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), invertItemOrder: reverseMessageGalleryOrder, streamSingleVideo: stream, fromPlayingVideo: autoplayingVideo, landscape: landscape, timecode: timecode, synchronousLoad: synchronousLoad, replaceRootController: { [weak navigationController] controller, ready in
                         navigationController?.replaceTopController(controller, animated: false, ready: ready)
                         }, baseNavigationController: navigationController, actionInteraction: actionInteraction)
                     return .gallery(.single(gallery))
@@ -320,7 +328,7 @@ public func chatMessageGalleryControllerData(
                 }, baseNavigationController: navigationController, actionInteraction: actionInteraction)
                 gallery.temporaryDoNotWaitForReady = autoplayingVideo
                 return .gallery(.single(gallery))
-            } else if message.containsSecretMedia {
+            } else if !mellowsgramDeletedMessage && !mellowsgramAutoremoveBypassed && message.containsSecretMedia {
                 let gallery = SecretMediaPreviewController(context: context, messageId: message.id)
                 return .secretGallery(gallery)
             } else {
@@ -357,7 +365,7 @@ public func chatMessageGalleryControllerData(
                         openChatLocation = .peer(id: message.id.peerId)
                         openChatLocationContextHolder = Atomic<ChatLocationContextHolder?>(value: nil)
                     }
-                    let gallery = GalleryController(context: context, source: source ?? (standalone ? .standaloneMessage(message, mediaSubject) : .peerMessagesAtId(messageId: message.id, chatLocation: openChatLocation, customTag: chatFilterTag, chatLocationContextHolder: openChatLocationContextHolder)), invertItemOrder: reverseMessageGalleryOrder, streamSingleVideo: stream, fromPlayingVideo: autoplayingVideo, landscape: landscape, timecode: startState.timecode, playbackRate: startState.rate, synchronousLoad: synchronousLoad, replaceRootController: { [weak navigationController] controller, ready in
+                    let gallery = GalleryController(context: context, source: gallerySource ?? (standalone ? .standaloneMessage(message, mediaSubject) : .peerMessagesAtId(messageId: message.id, chatLocation: openChatLocation, customTag: chatFilterTag, chatLocationContextHolder: openChatLocationContextHolder)), invertItemOrder: reverseMessageGalleryOrder, streamSingleVideo: stream, fromPlayingVideo: autoplayingVideo, landscape: landscape, timecode: startState.timecode, playbackRate: startState.rate, synchronousLoad: synchronousLoad, replaceRootController: { [weak navigationController] controller, ready in
                         navigationController?.replaceTopController(controller, animated: false, ready: ready)
                     }, baseNavigationController: navigationController, actionInteraction: actionInteraction)
                     gallery.temporaryDoNotWaitForReady = autoplayingVideo

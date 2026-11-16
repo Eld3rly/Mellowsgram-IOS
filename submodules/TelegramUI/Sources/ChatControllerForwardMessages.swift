@@ -16,11 +16,28 @@ import ChatMessagePaymentAlertController
 
 extension ChatControllerImpl {
     func forwardMessages(messageIds: [EngineMessage.Id], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
-        let _ = (self.context.engine.data.get(EngineDataMap(
-            messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
-        ))
+        let archiveRecordsSignal: Signal<[EngineMellowsgramMessageArchiveRecord], NoError>
+        if let peerId = self.chatLocation.peerId {
+            archiveRecordsSignal = mellowsgramArchiveRecords(engine: self.context.engine, peerId: peerId, threadId: self.chatLocation.threadId)
+            |> take(1)
+        } else {
+            archiveRecordsSignal = .single([])
+        }
+
+        let _ = (combineLatest(
+            self.context.engine.data.get(EngineDataMap(
+                messageIds.map(TelegramEngine.EngineData.Item.Messages.Message.init)
+            )),
+            archiveRecordsSignal
+        )
         |> deliverOnMainQueue).startStandalone(next: { [weak self] messages in
-            let sortedMessages = messages.values.compactMap { $0?._asMessage() }.sorted { lhs, rhs in
+            let (messageMap, archiveRecords) = messages
+            var sortedMessages = messageMap.values.compactMap { $0?._asMessage() }
+            let existingIds = Set(sortedMessages.map { $0.id })
+            for record in archiveRecords where messageIds.contains(record.messageId) && !existingIds.contains(record.messageId) {
+                sortedMessages.append(engineMellowsgramDeletedMessage(record: record, translucent: false))
+            }
+            sortedMessages.sort { lhs, rhs in
                 return lhs.id < rhs.id
             }
             self?.forwardMessages(messages: sortedMessages, options: options, resetCurrent: resetCurrent)
@@ -28,6 +45,11 @@ extension ChatControllerImpl {
     }
 
     func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
+        if messages.contains(where: { engineMellowsgramMessageIsDeleted($0) }) {
+            self.forwardMellowsgramMessages(messages: messages)
+            return
+        }
+
         let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
             guard let self else {
                 return
@@ -516,6 +538,116 @@ extension ChatControllerImpl {
                 }
             }
             self.chatDisplayNode.dismissInput()
+            self.effectiveNavigationController?.pushViewController(controller)
+        })
+    }
+
+    /// For a Mellowsgram tombstone the original Telegram row is intentionally
+    /// gone from Postbox, so a normal `.forward(source:)` enqueue would only
+    /// carry a dead MessageId and produce nothing. Rebuild the outgoing item
+    /// from the in-memory projection and use standalone media references.
+    private func forwardMellowsgramMessages(messages: [EngineRawMessage]) {
+        let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
+            guard let self else {
+                return
+            }
+
+            var filter: ChatListNodePeersFilter = [.onlyWriteable, .excludeDisabled, .doNotSearchMessages]
+            if messages.contains(where: { $0.media.contains(where: { $0 is TelegramMediaPaidContent }) }) {
+                filter.insert(.excludeSecretChats)
+            }
+
+            let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(
+                context: self.context,
+                updatedPresentationData: self.updatedPresentationData,
+                filter: filter,
+                hasFilters: true,
+                multipleSelection: true,
+                // Do not ask the peer selector to build a forward preview from
+                // ids that no longer exist in Postbox.
+                forwardedMessageIds: [],
+                selectForumThreads: true
+            ))
+
+            let context = self.context
+            controller.multiplePeersSelected = { [weak self, weak controller] peers, _, messageText, _, forwardOptions, _ in
+                guard let self, let controller else {
+                    return
+                }
+
+                var outgoing: [EnqueueMessage] = []
+
+                if !messageText.string.isEmpty {
+                    let inputText = convertMarkdownToAttributes(messageText)
+                    for text in breakChatInputText(trimChatInputText(inputText)) where text.length != 0 {
+                        var attributes: [EngineMessage.Attribute] = []
+                        let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                        if !entities.isEmpty {
+                            attributes.append(TextEntitiesMessageAttribute(entities: entities))
+                        }
+                        outgoing.append(.message(
+                            text: text.string,
+                            attributes: attributes,
+                            inlineStickers: [:],
+                            mediaReference: nil,
+                            threadId: nil,
+                            replyToMessageId: nil,
+                            replyToStoryId: nil,
+                            localGroupingKey: nil,
+                            correlationId: nil,
+                            bubbleUpEmojiOrStickersets: []
+                        ))
+                    }
+                }
+
+                for message in messages {
+                    let media: Media? = message.effectiveMedia.first(where: { media in
+                        // Keep every forwardable media descriptor from the
+                        // archived projection: photos, videos, circles,
+                        // voice/audio, files, GIFs, stickers, polls, maps,
+                        // contacts and webpages all use Telegram's normal
+                        // enqueue path. Service/expired/story wrappers are
+                        // not standalone outgoing message content.
+                        return !(media is TelegramMediaAction) &&
+                            !(media is TelegramMediaExpiredContent) &&
+                            !(media is TelegramMediaStory)
+                    })
+                    let text = forwardOptions?.hideCaptions == true ? "" : message.text
+                    var attributes: [EngineMessage.Attribute] = []
+                    if !text.isEmpty, let textEntities = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) as? TextEntitiesMessageAttribute {
+                        attributes.append(textEntities)
+                    }
+
+                    guard !text.isEmpty || media != nil else {
+                        continue
+                    }
+
+                    outgoing.append(.message(
+                        text: text,
+                        attributes: attributes,
+                        inlineStickers: [:],
+                        mediaReference: media.flatMap { AnyMediaReference.standalone(media: $0) },
+                        threadId: nil,
+                        replyToMessageId: nil,
+                        replyToStoryId: nil,
+                        localGroupingKey: nil,
+                        correlationId: nil,
+                        bubbleUpEmojiOrStickersets: []
+                    ))
+                }
+
+                guard !outgoing.isEmpty else {
+                    controller.dismiss()
+                    return
+                }
+
+                controller.dismiss()
+                self.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
+                for peer in peers {
+                    let _ = enqueueMessages(account: context.account, peerId: peer.id, messages: outgoing).startStandalone()
+                }
+            }
+
             self.effectiveNavigationController?.pushViewController(controller)
         })
     }
