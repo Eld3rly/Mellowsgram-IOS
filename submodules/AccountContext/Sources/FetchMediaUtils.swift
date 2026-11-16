@@ -35,7 +35,12 @@ private func fetchCategoryForFile(_ file: TelegramMediaFile) -> FetchManagerCate
 }
 
 public func messageMediaFileInteractiveFetched(context: AccountContext, message: Message, file: TelegramMediaFile, userInitiated: Bool, storeToDownloadsPeerId: EnginePeer.Id? = nil) -> Signal<Void, NoError> {
-    let messageReference = engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) ? MessageReference(content: .none) : MessageReference(message)
+    let messageReference: MessageReference
+    if engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) {
+        messageReference = TelegramCore.MessageReference(content: TelegramCore.MessageReferenceContent.none)
+    } else {
+        messageReference = TelegramCore.MessageReference(message)
+    }
     return messageMediaFileInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: messageReference, file: file, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
 }
 
@@ -57,7 +62,12 @@ public func messageMediaFileCancelInteractiveFetch(context: AccountContext, mess
 }
 
 public func messageMediaImageInteractiveFetched(context: AccountContext, message: Message, image: TelegramMediaImage, resource: MediaResource, range: Range<Int64>? = nil, userInitiated: Bool = true, storeToDownloadsPeerId: EnginePeer.Id?) -> Signal<Void, NoError> {
-    let messageReference = engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) ? MessageReference(content: .none) : MessageReference(message)
+    let messageReference: MessageReference
+    if engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) {
+        messageReference = TelegramCore.MessageReference(content: TelegramCore.MessageReferenceContent.none)
+    } else {
+        messageReference = TelegramCore.MessageReference(message)
+    }
     return messageMediaImageInteractiveFetched(fetchManager: context.fetchManager, messageId: message.id, messageReference: messageReference, image: image, resource: resource, range: range, userInitiated: userInitiated, priority: .userInitiated, storeToDownloadsPeerId: storeToDownloadsPeerId)
 }
 
