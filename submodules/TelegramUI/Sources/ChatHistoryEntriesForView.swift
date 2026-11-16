@@ -37,7 +37,9 @@ private func mellowsgramArchiveRecordsForView(
             holeLater: view.holeLater,
             isLoading: view.isLoading,
             historyAppearsCleared: historyAppearsCleared
-        )
+        ),
+        excludedPeerNamespaces: Set([Namespaces.Peer.SecretChat]),
+        excludedMessageNamespaces: Namespaces.Message.allEphemeral
     )
 }
 

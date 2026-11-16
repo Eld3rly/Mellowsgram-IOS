@@ -41,7 +41,9 @@ public func mellowsgramArchiveRecordsForHistory(
     records: [MellowsgramMessageArchiveRecord],
     peerId: PeerId,
     threadId: Int64?,
-    state: MellowsgramArchiveHistoryState
+    state: MellowsgramArchiveHistoryState,
+    excludedPeerNamespaces: Set<PeerId.Namespace> = [],
+    excludedMessageNamespaces: Set<MessageId.Namespace> = []
 ) -> [MellowsgramMessageArchiveRecord] {
     guard !state.isLoading else {
         return []
@@ -51,8 +53,8 @@ public func mellowsgramArchiveRecordsForHistory(
         guard record.messageId.peerId == peerId,
               record.threadId == threadId,
               record.deletedAt != nil,
-              record.messageId.peerId.namespace != Namespaces.Peer.SecretChat,
-              !Namespaces.Message.allEphemeral.contains(record.messageId.namespace),
+              !excludedPeerNamespaces.contains(record.messageId.peerId.namespace),
+              !excludedMessageNamespaces.contains(record.messageId.namespace),
               !state.liveMessageIds.contains(record.messageId) else {
             return false
         }
