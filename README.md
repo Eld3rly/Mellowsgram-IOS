@@ -20,6 +20,8 @@
 
 > **Status:** experimental work in progress. Mellowsgram is an unofficial Telegram client and is not affiliated with Telegram or AyuGram.
 
+> **⚠️ Development warning:** Mellowsgram is still under active development. Features may be incomplete, unavailable, or behave incorrectly. Building or launching the project at this stage is not recommended. Please wait for a release before using it.
+
 <p><a href="README.md">English</a> · <a href="README-RU.md">Русский</a></p>
 
 ## Overview
