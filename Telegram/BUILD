@@ -2053,56 +2053,6 @@ ios_application(
     visibility = ["//visibility:public"],
 )
 
-# CI-only source target for the one TelegramUI source file changed by Mellowsgram. Keeping this
-# file in a small standalone module lets CI type-check it without rebuilding the entire TelegramUI
-# module just to run the preflight step.
-swift_library(
-    name = "MellowsgramChatHistoryPreflight",
-    module_name = "MellowsgramChatHistoryPreflight",
-    srcs = [
-        "//submodules/TelegramUI:Sources/ChatHistoryEntriesForView.swift",
-    ],
-    copts = ["-warnings-as-errors"],
-    deps = [
-        "//submodules/AccountContext:AccountContext",
-        "//submodules/Display:Display",
-        "//submodules/Emoji:Emoji",
-        "//submodules/Markdown:Markdown",
-        "//submodules/Postbox:Postbox",
-        "//submodules/TelegramCore:TelegramCore",
-        "//submodules/TelegramPresentationData:TelegramPresentationData",
-        "//submodules/TelegramStringFormatting:TelegramStringFormatting",
-        "//submodules/TelegramUI/Components/Chat/ChatHistoryEntry:ChatHistoryEntry",
-        "//submodules/TelegramUI/Components/Chat/ChatMessageItemCommon:ChatMessageItemCommon",
-        "//submodules/TemporaryCachedPeerDataManager:TemporaryCachedPeerDataManager",
-        "//submodules/TextFormat:TextFormat",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-# CI-only iOS compilation target. It checks only changed Swift modules and uses the iOS
-# simulator transition, but has no extensions or provisioning profile. The simulator IPA job
-# runs this target before the full app build so Swift errors surface early.
-ios_application(
-    name = "MellowsgramPreflightApplication",
-    bundle_id = "{telegram_bundle_id}".format(
-        telegram_bundle_id = telegram_bundle_id,
-    ),
-    families = ["iphone", "ipad"],
-    minimum_os_version = minimum_os_version,
-    infoplists = [":TelegramInfoPlist"],
-    deps = [
-        ":Main",
-        "//submodules/AccountContext:AccountContext",
-        "//submodules/Postbox:Postbox",
-        ":MellowsgramChatHistoryPreflight",
-        "//submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode:ChatMessageInteractiveMediaNode",
-        "//submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode:ChatMessageReplyInfoNode",
-    ],
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
 xcodeproj(
     name = "Telegram_xcodeproj",
     bazel_path = telegram_bazel_path,

@@ -1,9 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
-exports_files([
-    "Sources/ChatHistoryEntriesForView.swift",
-], visibility = ["//visibility:public"])
-
 filegroup(
     name = "TelegramUIResources",
     srcs = glob([

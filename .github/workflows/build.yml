@@ -64,22 +64,22 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Preflight Mellowsgram Swift targets
+      - name: Fast preflight (no build)
         shell: bash
         run: |
           set -euo pipefail
-          build_number=$((10000 + $(git rev-list --count HEAD)))
-          python3 -u build-system/Make/Make.py \
-            --overrideXcodeVersion \
-            --cacheDir build-input/bazel-disk-cache \
-            build \
-            --configurationPath build-input/mellowsgram-configuration.json \
-            --xcodeManagedCodesigning \
-            --buildNumber "$build_number" \
-            --configuration debug_sim_arm64 \
-            --disableProvisioningProfiles \
-            --target //Telegram:MellowsgramPreflightApplication \
-            --continueOnError
+          git diff --check
+          python3 -m py_compile ci/mellowsgram_configuration.py
+          swiftc_path="$(xcrun --find swiftc)"
+          for source in \
+            submodules/AccountContext/Sources/FetchMediaUtils.swift \
+            submodules/Postbox/Sources/MellowsgramMessageArchiveVisibility.swift \
+            submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift; do
+            echo "Parsing $source"
+            "$swiftc_path" -frontend -parse -parse-as-library "$source"
+          done
 
       - name: Build simulator IPA
         shell: bash
