@@ -60,7 +60,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-input/bazel-disk-cache
-          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'submodules/TelegramApi/swift_scheme.tl') }}
+          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'Telegram/BUILD', 'submodules/TelegramApi/swift_scheme.tl') }}
           restore-keys: |
             bazel-${{ runner.os }}-${{ runner.arch }}-
 
@@ -69,60 +69,17 @@ jobs:
         run: |
           set -euo pipefail
           build_number=$((10000 + $(git rev-list --count HEAD)))
-          preflight_targets=(
-            //submodules/Postbox:Postbox
-            //submodules/TelegramCore:TelegramCore
-            //submodules/AccountContext:AccountContext
-            //submodules/AccountUtils:AccountUtils
-            //submodules/Display:Display
-            //submodules/GalleryData:GalleryData
-            //submodules/PremiumUI:PremiumUI
-            //submodules/SettingsUI:SettingsUI
-            //submodules/TelegramUI:TelegramUI
-            //submodules/TelegramUI/Components/ButtonComponent:ButtonComponent
-            //submodules/TelegramUI/Components/Chat/ChatHistoryEntry:ChatHistoryEntry
-            //submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode:ChatMessageAnimatedStickerItemNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode:ChatMessageAttachedContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode:ChatMessageBubbleItemNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode:ChatMessageContactBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode:ChatMessageDateAndStatusNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageFactCheckBubbleContentNode:ChatMessageFactCheckBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode:ChatMessageGiveawayBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode:ChatMessageInteractiveFileNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode:ChatMessageInteractiveInstantVideoNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode:ChatMessageInteractiveMediaNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageItem:ChatMessageItem
-            //submodules/TelegramUI/Components/Chat/ChatMessageItemImpl:ChatMessageItemImpl
-            //submodules/TelegramUI/Components/Chat/ChatMessageItemView:ChatMessageItemView
-            //submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode:ChatMessageMapBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode:ChatMessagePollBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode:ChatMessageReplyInfoNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageRestrictedBubbleContentNode:ChatMessageRestrictedBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode:ChatMessageRichDataBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageSelectionInputPanelNode:ChatMessageSelectionInputPanelNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode:ChatMessageStickerItemNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode:ChatMessageTextBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode:ChatMessageTodoBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ChatMessageWidgetBubbleContentNode:ChatMessageWidgetBubbleContentNode
-            //submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode:ReplyAccessoryPanelNode
-            //submodules/TelegramUI/Components/ChatMediaEditorScreen:ChatMediaEditorScreen
-            //submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist:PeerMessagesMediaPlaylist
-            //submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen:PeerInfoScreen
-          )
-          for target in "${preflight_targets[@]}"; do
-            echo "Preflight target: $target"
-            python3 -u build-system/Make/Make.py \
-              --overrideXcodeVersion \
-              --cacheDir build-input/bazel-disk-cache \
-              build \
-              --configurationPath build-input/mellowsgram-configuration.json \
-              --xcodeManagedCodesigning \
-              --buildNumber "$build_number" \
-              --configuration debug_sim_arm64 \
-              --disableProvisioningProfiles \
-              --target "$target" \
-              --continueOnError
-          done
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir build-input/bazel-disk-cache \
+            build \
+            --configurationPath build-input/mellowsgram-configuration.json \
+            --xcodeManagedCodesigning \
+            --buildNumber "$build_number" \
+            --configuration debug_sim_arm64 \
+            --disableProvisioningProfiles \
+            --target //Telegram:MellowsgramPreflightFramework \
+            --continueOnError
 
       - name: Build simulator IPA
         shell: bash
