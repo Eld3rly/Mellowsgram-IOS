@@ -601,7 +601,7 @@ extension ChatControllerImpl {
                 }
 
                 for message in messages {
-                    let media: Media? = message.effectiveMedia.first(where: { media in
+                    let media: EngineRawMedia? = message.effectiveMedia.first(where: { media in
                         // Keep every forwardable media descriptor from the
                         // archived projection: photos, videos, circles,
                         // voice/audio, files, GIFs, stickers, polls, maps,

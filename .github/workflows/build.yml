@@ -79,7 +79,8 @@ jobs:
             submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift \
             submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift \
             submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift \
-            submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift; do
+            submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift \
+            submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift; do
             echo "Parsing $source"
             "$swiftc_path" -frontend -parse -parse-as-library "$source"
           done
