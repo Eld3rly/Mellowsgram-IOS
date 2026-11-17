@@ -78,7 +78,7 @@ jobs:
             --buildNumber "$build_number" \
             --configuration debug_sim_arm64 \
             --disableProvisioningProfiles \
-            --target //Telegram:MellowsgramPreflightFramework \
+            --target //Telegram:MellowsgramPreflightApplication \
             --continueOnError
 
       - name: Build simulator IPA

@@ -11,7 +11,6 @@ load("@build_bazel_rules_apple//apple:ios.bzl",
     "ios_application",
     "ios_extension",
     "ios_framework",
-    "ios_static_framework",
     "ios_ui_test",
     "ios_ui_test_suite",
     "ios_unit_test",
@@ -2054,14 +2053,36 @@ ios_application(
     visibility = ["//visibility:public"],
 )
 
-# CI-only iOS compilation target. It applies the same iOS simulator transition as the app,
-# while avoiding application packaging and signing. The simulator IPA job runs this target
-# before the full app build so Swift errors surface early.
-ios_static_framework(
-    name = "MellowsgramPreflightFramework",
-    bundle_name = "MellowsgramPreflight",
+# CI-only iOS compilation target. It uses the same application dependency graph and iOS
+# simulator transition as the app, but has no extensions or provisioning profile. The
+# simulator IPA job runs this target before the full app build so Swift errors surface early.
+ios_application(
+    name = "MellowsgramPreflightApplication",
+    bundle_id = "{telegram_bundle_id}".format(
+        telegram_bundle_id = telegram_bundle_id,
+    ),
+    families = ["iphone", "ipad"],
     minimum_os_version = minimum_os_version,
-    deps = [":Lib"],
+    infoplists = [
+        ":TelegramInfoPlist",
+        ":BuildNumberInfoPlist",
+        ":RequiredDeviceCapabilitiesPlist",
+        ":UrlTypesInfoPlist",
+    ],
+    app_icons = [":{}_icon".format(name) for name in composer_icon_folders],
+    resources = [":LaunchScreen"],
+    frameworks = [
+        ":MtProtoKitFramework",
+        ":SwiftSignalKitFramework",
+        ":PostboxFramework",
+        ":TelegramCoreFramework",
+        ":TelegramUIFramework",
+    ],
+    strings = [":AppStringResources"],
+    deps = [
+        ":Main",
+        ":Lib",
+    ],
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
