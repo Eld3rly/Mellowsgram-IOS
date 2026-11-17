@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import AsyncDisplayKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 import Display
@@ -25,7 +24,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
     private let messageDisposable = MetaDisposable()
     public let chatPeerId: EnginePeer.Id
     public let messageId: EngineMessage.Id
-    private let fallbackMessage: Message?
+    private let fallbackMessage: EngineRawMessage?
     public let quote: EngineMessageReplyQuote?
     public let innerSubject: EngineMessageReplyInnerSubject?
     
@@ -48,7 +47,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
     
     private var validLayout: (size: CGSize, inset: CGFloat, interfaceState: ChatPresentationInterfaceState)?
     
-    public init(context: AccountContext, chatPeerId: EnginePeer.Id, messageId: EngineMessage.Id, fallbackMessage: Message?, quote: EngineMessageReplyQuote?, innerSubject: EngineMessageReplyInnerSubject?, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, animationCache: AnimationCache?, animationRenderer: MultiAnimationRenderer?) {
+    public init(context: AccountContext, chatPeerId: EnginePeer.Id, messageId: EngineMessage.Id, fallbackMessage: EngineRawMessage?, quote: EngineMessageReplyQuote?, innerSubject: EngineMessageReplyInnerSubject?, theme: PresentationTheme, strings: PresentationStrings, nameDisplayOrder: PresentationPersonNameOrder, dateTimeFormat: PresentationDateTimeFormat, animationCache: AnimationCache?, animationRenderer: MultiAnimationRenderer?) {
         self.chatPeerId = chatPeerId
         self.messageId = messageId
         self.fallbackMessage = fallbackMessage
@@ -115,7 +114,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
         self.addSubnode(self.imageNode)
         self.addSubnode(self.actionArea)
         
-        let messageSignal: Signal<Message?, NoError> = context.account.postbox.messageView(messageId)
+        let messageSignal: Signal<EngineRawMessage?, NoError> = context.account.postbox.messageView(messageId)
         |> mapToSignal { messageView in
             if let message = messageView.message {
                 return .single(message)
@@ -123,7 +122,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
             if let fallbackMessage {
                 return .single(fallbackMessage)
             }
-            return context.account.postbox.transaction { transaction -> Message? in
+            return context.account.postbox.transaction { transaction -> EngineRawMessage? in
                 guard let record = transaction.mellowsgramArchiveRecord(messageId: messageId), record.deletedAt != nil else {
                     return nil
                 }
