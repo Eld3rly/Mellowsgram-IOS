@@ -70,6 +70,7 @@ jobs:
           set -euo pipefail
           git diff --check
           python3 -m py_compile ci/mellowsgram_configuration.py
+          python3 build-system/Make/PostboxImportCheck.py
           swiftc_path="$(xcrun --find swiftc)"
           for source in \
             submodules/AccountContext/Sources/FetchMediaUtils.swift \
@@ -97,6 +98,7 @@ jobs:
             --xcodeManagedCodesigning \
             --buildNumber "$build_number" \
             --configuration debug_sim_arm64 \
+            --continueOnError \
             --disableProvisioningProfiles \
             --outputBuildArtifactsPath build/mellowsgram-simulator-artifacts
 
