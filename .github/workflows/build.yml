@@ -60,9 +60,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-input/bazel-disk-cache
-          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'submodules/TelegramApi/swift_scheme.tl') }}
+          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'submodules/TelegramApi/swift_scheme.tl', 'ci/BUILD') }}
           restore-keys: |
             bazel-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Preflight Mellowsgram Swift targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_number=$((10000 + $(git rev-list --count HEAD)))
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir build-input/bazel-disk-cache \
+            build \
+            --configurationPath build-input/mellowsgram-configuration.json \
+            --xcodeManagedCodesigning \
+            --buildNumber "$build_number" \
+            --configuration debug_sim_arm64 \
+            --disableProvisioningProfiles \
+            --target //ci:mellowsgram_preflight \
+            --continueOnError
 
       - name: Build simulator IPA
         shell: bash

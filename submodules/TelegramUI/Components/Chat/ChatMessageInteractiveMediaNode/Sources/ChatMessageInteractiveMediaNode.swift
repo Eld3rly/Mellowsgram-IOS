@@ -902,7 +902,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
             // have a live Postbox message to use as a media reference. Standalone
             // references still use the same MediaBox resources and let the
             // regular Telegram renderer/gallery operate normally.
-            func mellowsgramAnyMediaReference(_ media: Media) -> AnyMediaReference {
+            func mellowsgramAnyMediaReference(_ media: EngineRawMedia) -> AnyMediaReference {
                 if isMellowsgramDeletedMessage {
                     return .standalone(media: media)
                 } else {
