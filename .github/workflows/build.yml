@@ -75,6 +75,7 @@ jobs:
             submodules/AccountContext/Sources/FetchMediaUtils.swift \
             submodules/Postbox/Sources/MellowsgramMessageArchiveVisibility.swift \
             submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift \
             submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift \
             submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift \
             submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift; do
