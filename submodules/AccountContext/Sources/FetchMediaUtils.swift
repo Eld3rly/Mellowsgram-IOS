@@ -36,7 +36,7 @@ private func fetchCategoryForFile(_ file: TelegramMediaFile) -> FetchManagerCate
 
 public func messageMediaFileInteractiveFetched(context: AccountContext, message: Message, file: TelegramMediaFile, userInitiated: Bool, storeToDownloadsPeerId: EnginePeer.Id? = nil) -> Signal<Void, NoError> {
     let messageReference: MessageReference
-    if engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) {
+    if engineMellowsgramMessageIsDeleted(message) {
         messageReference = TelegramCore.MessageReference(content: TelegramCore.MessageReferenceContent.none)
     } else {
         messageReference = TelegramCore.MessageReference(message)
@@ -63,7 +63,7 @@ public func messageMediaFileCancelInteractiveFetch(context: AccountContext, mess
 
 public func messageMediaImageInteractiveFetched(context: AccountContext, message: Message, image: TelegramMediaImage, resource: MediaResource, range: Range<Int64>? = nil, userInitiated: Bool = true, storeToDownloadsPeerId: EnginePeer.Id?) -> Signal<Void, NoError> {
     let messageReference: MessageReference
-    if engineMellowsgramMessageIsDeleted(EngineRawMessage(message)) {
+    if engineMellowsgramMessageIsDeleted(message) {
         messageReference = TelegramCore.MessageReference(content: TelegramCore.MessageReferenceContent.none)
     } else {
         messageReference = TelegramCore.MessageReference(message)

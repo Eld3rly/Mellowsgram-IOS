@@ -896,7 +896,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
             let _ = peerType
             let message = engineMessage._asMessage()
             let media = engineMedia._asMedia()
-            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(EngineRawMessage(message))
+            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message)
 
             // Deleted rows keep their original media descriptors but no longer
             // have a live Postbox message to use as a media reference. Standalone
