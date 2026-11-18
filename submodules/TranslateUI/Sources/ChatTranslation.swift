@@ -252,7 +252,7 @@ private func storeMellowsgramTranslations(context: AccountContext, values: [(Mes
             })
         }
     }
-    |> ignoreValues()
+    |> ignoreValues
 }
 
 private func mellowsgramGoogleTranslateMessages(context: AccountContext, messageIds: [MessageId], fromLang: String?, toLang: String) -> Signal<Never, NoError> {
