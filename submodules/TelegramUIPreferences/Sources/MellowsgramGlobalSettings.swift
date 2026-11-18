@@ -227,7 +227,7 @@ public final class MellowsgramGlobalSettingsRuntime {
         guard key.isTelegramPreference else {
             return
         }
-        self.nativeValues.modify { current in
+        _ = self.nativeValues.modify { current in
             var current = current
             current[key.rawValue] = value
             return current
