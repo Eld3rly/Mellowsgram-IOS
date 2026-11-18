@@ -2,6 +2,7 @@ import Foundation
 import NaturalLanguage
 import SwiftSignalKit
 import TelegramCore
+import Postbox
 import AccountContext
 import TelegramUIPreferences
 
