@@ -273,6 +273,12 @@ extension ChatControllerImpl {
         self.chatDisplayNode.overlayTitleContent = contentData.state.chatTitleContent
         
         self.chatDisplayNode.historyNode.nextChannelToRead = contentData.state.nextChannelToRead.flatMap { nextChannelToRead -> (peer: EnginePeer, threadData: (id: Int64, data: MessageHistoryThreadData)?, unreadCount: Int, location: TelegramEngine.NextUnreadChannelLocation)? in
+            if nextChannelToRead.threadData != nil && !MellowsgramGlobalSettingsRuntime.shared.bool(for: .pullToNextTopic) {
+                return nil
+            }
+            if nextChannelToRead.threadData == nil && !MellowsgramGlobalSettingsRuntime.shared.bool(for: .pullToNextUnreadChannel) {
+                return nil
+            }
             return (
                 nextChannelToRead.peer,
                 nextChannelToRead.threadData.flatMap { threadData -> (id: Int64, data: MessageHistoryThreadData) in
@@ -2005,7 +2011,7 @@ extension ChatControllerImpl {
                     strongSelf.forwardMessages(messages: messages, resetCurrent: false)
                 } else {
                     let forwardMessageIds = messages.map { $0.id }.sorted()
-                    strongSelf.forwardMessages(messageIds: forwardMessageIds)
+                    strongSelf.forwardMessages(messageIds: forwardMessageIds, options: strongSelf.presentationInterfaceState.interfaceState.forwardOptionsState)
                 }
             }
         }, updateForwardOptionsState: { [weak self] f in
@@ -4613,15 +4619,22 @@ extension ChatControllerImpl {
 
             let entities = generateChatInputTextEntities(text)
 
-            let translationConfiguration = TranslationConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+            let mellowsgramTranslationService = MellowsgramGlobalSettingsRuntime.shared.value(for: .translationService)
             var useSystemTranslation = false
-            switch translationConfiguration.manual {
-            case .system:
+            if mellowsgramTranslationService == "system" {
                 if #available(iOS 18.0, *) {
                     useSystemTranslation = true
                 }
-            default:
-                break
+            } else if mellowsgramTranslationService != "telegram" && mellowsgramTranslationService != "google" {
+                let translationConfiguration = TranslationConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
+                switch translationConfiguration.manual {
+                case .system:
+                    if #available(iOS 18.0, *) {
+                        useSystemTranslation = true
+                    }
+                default:
+                    break
+                }
             }
 
             if useSystemTranslation {
@@ -4631,6 +4644,7 @@ extension ChatControllerImpl {
                     entities: entities,
                     canCopy: true,
                     fromLanguage: language,
+                    forceSystemTranslation: true,
                     replaceText: { text, entities in
                         replace(chatInputStateStringWithAppliedEntities(text, entities: entities))
                     },

@@ -135,7 +135,8 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
     var previousItemIsFile = false
     var hasFiles = false
     
-    var needReactions = true
+    let mellowsgramHidesReactions = MellowsgramGlobalSettingsRuntime.shared.bool(for: .hideReactions)
+    var needReactions = !MellowsgramGlobalSettingsRuntime.shared.bool(for: .hideReactions)
     
     let hideAllAdditionalInfo = item.presentationData.isPreview
     
@@ -487,7 +488,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
     let firstMessage = item.content.firstMessage
     
     let reactionsAreInline: Bool
-    reactionsAreInline = shouldDisplayInlineDateReactions(message: EngineMessage(firstMessage), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions)
+    reactionsAreInline = !mellowsgramHidesReactions && shouldDisplayInlineDateReactions(message: EngineMessage(firstMessage), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions)
     if reactionsAreInline {
         needReactions = false
     }
@@ -498,7 +499,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
         }
     }
     
-    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
+    if !mellowsgramHidesReactions && !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
         if result.last?.1 == ChatMessageTextBubbleContentNode.self {
         } else if item.bubbleStyle == .bubblelessCard && result.last?.1 != ChatMessageCommentFooterContentNode.self {
             // Without bubbles a card keeps its reactions under its outline, as a message without a card does.
@@ -534,7 +535,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
     // Without bubbles incoming messages show no status, which is where text, captions, link previews, rich pages, fact
     // checks, files, games, invoices and restricted messages keep their reactions: those go under the message instead, or
     // into a reactions footer above a comments row or after an album of files.
-    if item.bubbleStyle.isBubbleless && !reactionsAreInline && !isAction && !hideAllAdditionalInfo {
+    if !mellowsgramHidesReactions && item.bubbleStyle.isBubbleless && !reactionsAreInline && !isAction && !hideAllAdditionalInfo {
         let statusReactionClasses: [AnyClass] = [ChatMessageTextBubbleContentNode.self, ChatMessageWebpageBubbleContentNode.self, ChatMessageRichDataBubbleContentNode.self, ChatMessageFactCheckBubbleContentNode.self, ChatMessageFileBubbleContentNode.self, ChatMessageGameBubbleContentNode.self, ChatMessageInvoiceBubbleContentNode.self, ChatMessageRestrictedBubbleContentNode.self]
         let hasReactions = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId))?.reactions.isEmpty == false
         let endsWithComments = result.last?.1 == ChatMessageCommentFooterContentNode.self
@@ -887,6 +888,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
     
     private var summarizeButtonNode: ChatMessageShareButton?
     private var shareButtonNode: ChatMessageShareButton?
+    private var quickTranslateButtonNode: ChatMessageShareButton?
     
     private let messageAccessibilityArea: AccessibilityAreaNode
 
@@ -1455,6 +1457,10 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                 }
                 
                 if let shareButtonNode = strongSelf.shareButtonNode, shareButtonNode.frame.contains(point) {
+                    return .fail
+                }
+
+                if let quickTranslateButtonNode = strongSelf.quickTranslateButtonNode, quickTranslateButtonNode.frame.contains(point) {
                     return .fail
                 }
                 
@@ -2203,6 +2209,24 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             needsShareButton = false
             allowFullWidth = true
         }
+
+        let isMessageOptionsSubject: Bool
+        if let subject = item.associatedData.subject, case .messageOptions = subject {
+            isMessageOptionsSubject = true
+        } else {
+            isMessageOptionsSubject = false
+        }
+        var needsQuickTranslateButton = MellowsgramGlobalSettingsRuntime.shared.bool(for: .quickTranslateButton)
+            && incoming
+            && !item.message.text.isEmpty
+            && !isPreview
+            && !isAd
+            && !isEphemeralMessage
+            && !isUnsupportedContent
+            && !bubbleStyle.isBubbleless
+            && !isMessageOptionsSubject
+            && !item.associatedData.isCopyProtectionEnabled
+            && !item.message.isCopyProtected()
         
         // Without bubbles there is no share button beside incoming messages: sharing stays in the context menu. An ad
         // keeps its close and more buttons there.
@@ -2213,14 +2237,14 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
         var tmpWidth: CGFloat
         if allowFullWidth {
             tmpWidth = baseWidth
-            if (needsShareButton && !isSidePanelOpen) || isAd {
+            if (needsShareButton && !isSidePanelOpen) || isAd || needsQuickTranslateButton {
                 tmpWidth -= 45.0
             } else {
                 tmpWidth -= 3.0
             }
         } else {
             tmpWidth = layoutConstants.bubble.maximumWidthFill.widthFor(baseWidth)
-            if ((needsShareButton && !isSidePanelOpen) || isAd) && tmpWidth + 32.0 > baseWidth {
+            if ((needsShareButton && !isSidePanelOpen) || isAd || needsQuickTranslateButton) && tmpWidth + 32.0 > baseWidth {
                 tmpWidth = baseWidth - 32.0
             }
         }
@@ -2234,8 +2258,21 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
         
         tmpWidth -= deliveryFailedInset
 
+        let renderWideChannelPosts: Bool
+        if let channel = item.message.peers[item.message.id.peerId] as? TelegramChannel,
+           case .broadcast = channel.info,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .wideChannelPosts),
+           !hasCommentButton(item: item) {
+            renderWideChannelPosts = true
+            tmpWidth = baseWidth - deliveryFailedInset
+            needsShareButton = false
+            needsQuickTranslateButton = false
+        } else {
+            renderWideChannelPosts = false
+        }
+
         var maximumContentWidth = floor(tmpWidth - layoutConstants.bubble.edgeInset * 3.0 - layoutConstants.bubble.contentInsets.left - layoutConstants.bubble.contentInsets.right - avatarInset)
-        if (needsShareButton && !isSidePanelOpen) {
+        if (needsShareButton && !isSidePanelOpen) || needsQuickTranslateButton {
             maximumContentWidth -= 10.0
         }
         
@@ -2301,6 +2338,9 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             }
         }
         maximumContentWidth = max(0.0, maximumContentWidth)
+        if renderWideChannelPosts {
+            layoutConstants.image.maxDimensions.width = maximumContentWidth
+        }
         
         var contentPropertiesAndPrepareLayouts: [(Message, Bool, ChatMessageEntryAttributes, BubbleItemAttributes, (_ item: ChatMessageBubbleContentItem, _ layoutConstants: ChatMessageItemLayoutConstants, _ preparePosition: ChatMessageBubblePreparePosition, _ messageSelection: Bool?, _ constrainedSize: CGSize, _ avatarInset: CGFloat) -> (ChatMessageBubbleContentProperties, CGSize?, CGFloat, (CGSize, ChatMessageBubbleContentPosition) -> (CGFloat, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool, ListViewItemApply?) -> Void))))] = []
         var addedContentNodes: [(Message, Bool, ChatMessageBubbleContentNode, Int?)]?
@@ -2653,7 +2693,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
         var bottomNodeMergeStatus: ChatMessageBubbleMergeStatus = mergedBottom.merged ? (incoming ? .Left : .Right) : .None(incoming ? .Incoming : .Outgoing)
         
         let bubbleReactions: ReactionsMessageAttribute
-        if needReactions || forceReactionsOutside {
+        if !MellowsgramGlobalSettingsRuntime.shared.bool(for: .hideReactions) && (needReactions || forceReactionsOutside) {
             bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -6121,6 +6161,20 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             strongSelf.shareButtonNode = nil
             shareButtonNode.removeFromSupernode()
         }
+
+        if needsQuickTranslateButton {
+            if strongSelf.quickTranslateButtonNode == nil {
+                let quickTranslateButtonNode = ChatMessageShareButton()
+                strongSelf.quickTranslateButtonNode = quickTranslateButtonNode
+                strongSelf.insertSubnode(quickTranslateButtonNode, belowSubnode: strongSelf.messageAccessibilityArea)
+                quickTranslateButtonNode.pressed = { [weak strongSelf] in
+                    strongSelf?.quickTranslateButtonPressed()
+                }
+            }
+        } else if let quickTranslateButtonNode = strongSelf.quickTranslateButtonNode {
+            strongSelf.quickTranslateButtonNode = nil
+            quickTranslateButtonNode.removeFromSupernode()
+        }
         
         if !incoming && !item.presentationData.chatBubbleCorners.bubbleMode {
             bubblelessCheckAnchor = .bubble(backgroundFrame)
@@ -6377,6 +6431,18 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                 animation.animator.updateAlpha(layer: shareButtonNode.layer, alpha: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0, completion: nil)
                 animation.animator.updateScale(layer: shareButtonNode.layer, scale: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.001 : 1.0, completion: nil)
             }
+            if let quickTranslateButtonNode = strongSelf.quickTranslateButtonNode {
+                let buttonSize = quickTranslateButtonNode.update(presentationData: item.presentationData, controllerInteraction: item.controllerInteraction, chatLocation: item.chatLocation, subject: item.associatedData.subject, message: EngineMessage(item.message), accountPeerId: item.context.account.peerId, disableComments: true, isQuickTranslate: true)
+                var buttonFrame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - buttonSize.height - 1.0), size: buttonSize)
+                if let shareButtonNode = strongSelf.shareButtonNode {
+                    buttonFrame.origin.y -= shareButtonNode.frame.height + 4.0
+                }
+                if let shareButtonOffset = shareButtonOffset {
+                    buttonFrame.origin.y += shareButtonOffset.y
+                }
+                animation.animator.updateFrame(layer: quickTranslateButtonNode.layer, frame: buttonFrame, completion: nil)
+                animation.animator.updateAlpha(layer: quickTranslateButtonNode.layer, alpha: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0, completion: nil)
+            }
         } else {
             /*if let _ = strongSelf.backgroundFrameTransition {
                 strongSelf.animateFrameTransition(1.0, backgroundFrame.size.height)
@@ -6434,6 +6500,19 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                 animation.animator.updateBounds(layer: shareButtonNode.layer, bounds: CGRect(origin: CGPoint(), size: buttonFrame.size), completion: nil)
                 animation.animator.updateAlpha(layer: shareButtonNode.layer, alpha: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0, completion: nil)
                 animation.animator.updateScale(layer: shareButtonNode.layer, scale: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.001 : 1.0, completion: nil)
+            }
+
+            if let quickTranslateButtonNode = strongSelf.quickTranslateButtonNode {
+                let buttonSize = quickTranslateButtonNode.update(presentationData: item.presentationData, controllerInteraction: item.controllerInteraction, chatLocation: item.chatLocation, subject: item.associatedData.subject, message: EngineMessage(item.message), accountPeerId: item.context.account.peerId, disableComments: true, isQuickTranslate: true)
+                var buttonFrame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - buttonSize.height - 1.0), size: buttonSize)
+                if let shareButtonNode = strongSelf.shareButtonNode {
+                    buttonFrame.origin.y -= shareButtonNode.frame.height + 4.0
+                }
+                if let shareButtonOffset = shareButtonOffset {
+                    buttonFrame.origin.y += shareButtonOffset.y
+                }
+                quickTranslateButtonNode.frame = buttonFrame
+                quickTranslateButtonNode.alpha = (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0
             }
             
             // The non-animated path. The enclosing `else` already establishes that `animation` is not
@@ -6632,7 +6711,13 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                 } else if case .tap = gesture {
                     item.controllerInteraction.clickThroughMessage(self.view, location)
                 } else if case .doubleTap = gesture {
-                    if canAddMessageReactions(message: EngineMessage(item.message)) {
+                    let flags = item.message.flags
+                    if MellowsgramGlobalSettingsRuntime.shared.bool(for: .doubleTapToEdit),
+                       !flags.contains(.Incoming),
+                       flags.intersection([.Failed, .Sending, .Unsent]).isEmpty,
+                       !Namespaces.Message.allEphemeral.contains(item.message.id.namespace) {
+                        item.controllerInteraction.editMessage(item.message.id)
+                    } else if canAddMessageReactions(message: EngineMessage(item.message)) {
                         item.controllerInteraction.updateMessageReaction(item.message, .default, false, nil)
                     }
                 }
@@ -7485,6 +7570,10 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
         if let shareButtonNode = self.shareButtonNode, shareButtonNode.frame.contains(point) {
             return shareButtonNode.view.hitTest(self.view.convert(point, to: shareButtonNode.view), with: event)
         }
+
+        if let quickTranslateButtonNode = self.quickTranslateButtonNode, quickTranslateButtonNode.frame.contains(point) {
+            return quickTranslateButtonNode.view.hitTest(self.view.convert(point, to: quickTranslateButtonNode.view), with: event)
+        }
         
         if let selectionNode = self.selectionNode {
             if let result = self.traceSelectionNodes(parent: self, point: point.offsetBy(dx: -42.0, dy: 0.0)) {
@@ -7993,6 +8082,19 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             }
         }
     }
+
+    @objc private func quickTranslateButtonPressed() {
+        guard let item = self.item, !item.message.text.isEmpty else {
+            return
+        }
+        item.controllerInteraction.performTextSelectionAction(
+            item.message,
+            true,
+            NSAttributedString(string: item.message.text),
+            item.message.textEntitiesAttribute?.entities,
+            .translate
+        )
+    }
                                                
     private func openQuickShare(node: ASDisplayNode, gesture: ContextGesture) {
         if let item = self.item {
@@ -8330,6 +8432,13 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             shareButtonNodeFrame.origin.y += rect.minY
             
             shareButtonNode.updateAbsoluteRect(shareButtonNodeFrame, within: containerSize)
+        }
+
+        if let quickTranslateButtonNode = self.quickTranslateButtonNode {
+            var quickTranslateButtonNodeFrame = quickTranslateButtonNode.frame
+            quickTranslateButtonNodeFrame.origin.x += rect.minX
+            quickTranslateButtonNodeFrame.origin.y += rect.minY
+            quickTranslateButtonNode.updateAbsoluteRect(quickTranslateButtonNodeFrame, within: containerSize)
         }
         
         if let actionButtonsNode = self.actionButtonsNode {

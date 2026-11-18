@@ -9,6 +9,7 @@ import AccountContext
 import MultilineTextComponent
 import BundleIconComponent
 import TelegramCore
+import TelegramUIPreferences
 import TranslateUI
 import TooltipComponent
 import Markdown
@@ -239,7 +240,76 @@ final class TextProcessingTranslateContentComponent: Component {
                 
                 switch component.mode {
                 case .translate:
-                    mappedMode = .translate(toLanguage: result.language, emojify: component.externalState.emojify, style: component.externalState.style)
+                    mappedMode = nil
+                    let inputText: String
+                    let inputEntities: [MessageTextEntity]
+                    switch component.inputText {
+                    case .empty:
+                        inputText = ""
+                        inputEntities = []
+                    case let .plain(text, entities):
+                        inputText = text
+                        inputEntities = entities
+                    case let .rich(instantPage):
+                        inputText = instantPage.plainText
+                        inputEntities = []
+                    }
+
+                    guard !inputText.isEmpty else {
+                        component.externalState.isProcessing = false
+                        component.externalState.result = (result.language, component.inputText, [])
+                        return
+                    }
+
+                    component.externalState.isProcessing = true
+                    if !self.isUpdating {
+                        self.state?.updated(transition: .spring(duration: 0.4))
+                    }
+                    let googleTranslation = {
+                        mellowsgramGoogleTranslateText(text: inputText, fromLang: component.externalState.sourceLanguage, toLang: result.language)
+                    }
+                    let translation: Signal<(String, [MessageTextEntity])?, TranslationError>
+                    let translationService = MellowsgramGlobalSettingsRuntime.shared.value(for: .translationService)
+                    if translationService == "google" {
+                        translation = googleTranslation()
+                    } else if translationService == "system" {
+                        translation = mellowsgramSystemTranslateText(text: inputText, fromLang: component.externalState.sourceLanguage, toLang: result.language)
+                        |> `catch` { _ in
+                            googleTranslation()
+                        }
+                    } else {
+                        translation = component.context.engine.messages.translate(text: inputText, toLang: result.language, entities: inputEntities)
+                        |> mapToSignal { value -> Signal<(String, [MessageTextEntity])?, TranslationError> in
+                            if let value, !value.0.isEmpty {
+                                return .single(value)
+                            } else {
+                                return googleTranslation()
+                            }
+                        }
+                        |> `catch` { _ in
+                            return googleTranslation()
+                        }
+                    }
+                    self.processDisposable = (translation |> deliverOnMainQueue).startStrict(next: { [weak self] value in
+                        guard let self, let component = self.component else {
+                            return
+                        }
+                        component.externalState.isProcessing = false
+                        if let value, !value.0.isEmpty {
+                            component.externalState.result = (result.language, .plain(text: value.0, entities: value.1), [])
+                        }
+                        if !self.isUpdating {
+                            self.state?.updated(transition: .spring(duration: 0.4))
+                        }
+                    }, error: { [weak self] _ in
+                        guard let self, let component = self.component else {
+                            return
+                        }
+                        component.externalState.isProcessing = false
+                        if !self.isUpdating {
+                            self.state?.updated(transition: .spring(duration: 0.4))
+                        }
+                    })
                 case .stylize:
                     if case let .stylize(isComposeWithAI) = component.mode, isComposeWithAI {
                         if let appliedPrompt = component.appliedPrompt, !appliedPrompt.isEmpty {

@@ -41,17 +41,15 @@ class ThemeSettingsAppIconItem: ListViewItem, ItemListItem {
     let strings: PresentationStrings
     let systemStyle: ItemListSystemStyle
     let icons: [PresentationAppIcon]
-    let isPremium: Bool
     let currentIconName: String?
     let updated: (PresentationAppIcon) -> Void
     let tag: ItemListItemTag?
     
-    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle, sectionId: ItemListSectionId, icons: [PresentationAppIcon], isPremium: Bool, currentIconName: String?, updated: @escaping (PresentationAppIcon) -> Void, tag: ItemListItemTag? = nil) {
+    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle, sectionId: ItemListSectionId, icons: [PresentationAppIcon], currentIconName: String?, updated: @escaping (PresentationAppIcon) -> Void, tag: ItemListItemTag? = nil) {
         self.theme = theme
         self.strings = strings
         self.systemStyle = systemStyle
         self.icons = icons
-        self.isPremium = isPremium
         self.currentIconName = currentIconName
         self.updated = updated
         self.tag = tag
@@ -407,6 +405,54 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = item.strings.Appearance_AppIconNew1
                                 case "New2":
                                     name = item.strings.Appearance_AppIconNew2
+                                case "MellowsgramMint":
+                                    name = "Mellowsgram Mint"
+                                case "MellowsgramSage":
+                                    name = "Mellowsgram Sage"
+                                case "MellowsgramLavender":
+                                    name = "Mellowsgram Lavender"
+                                case "MellowsgramRose":
+                                    name = "Mellowsgram Rose"
+                                case "MellowsgramCoral":
+                                    name = "Mellowsgram Coral"
+                                case "MellowsgramApricot":
+                                    name = "Mellowsgram Apricot"
+                                case "MellowsgramGraphite":
+                                    name = "Mellowsgram Graphite"
+                                case "MellowsgramSand":
+                                    name = "Mellowsgram Sand"
+                                case "MellowsgramMidnight":
+                                    name = "Mellowsgram Midnight"
+                                case "MellowsgramForest":
+                                    name = "Mellowsgram Forest"
+                                case "MellowsgramBordeaux":
+                                    name = "Mellowsgram Bordeaux"
+                                case "MellowsgramPlum":
+                                    name = "Mellowsgram Plum"
+                                case "MellowsgramLimeNoir":
+                                    name = "Mellowsgram Lime Noir"
+                                case "MellowsgramLilacNoir":
+                                    name = "Mellowsgram Lilac Noir"
+                                case "MellowsgramPeachNoir":
+                                    name = "Mellowsgram Peach Noir"
+                                case "MellowsgramBerry":
+                                    name = "Mellowsgram Berry"
+                                case "MellowsgramLemon":
+                                    name = "Mellowsgram Lemon"
+                                case "MellowsgramPistachio":
+                                    name = "Mellowsgram Pistachio"
+                                case "MellowsgramLilac":
+                                    name = "Mellowsgram Lilac"
+                                case "MellowsgramPeach":
+                                    name = "Mellowsgram Peach"
+                                case "MellowsgramRaspberry":
+                                    name = "Mellowsgram Raspberry"
+                                case "MellowsgramElectric":
+                                    name = "Mellowsgram Electric"
+                                case "MellowsgramSunset":
+                                    name = "Mellowsgram Sunset"
+                                case "MellowsgramAurora":
+                                    name = "Mellowsgram Aurora"
                                 case "Premium":
                                     name = item.strings.Appearance_AppIconPremium
                                 case "PremiumBlack":
@@ -417,7 +463,7 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = icon.name
                             }
                         
-                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: !item.isPremium && icon.isPremium, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
+                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: false, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
                                 item.updated(icon)
                             })
                         }

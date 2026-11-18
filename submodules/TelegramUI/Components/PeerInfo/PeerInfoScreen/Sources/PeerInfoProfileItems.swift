@@ -4,6 +4,7 @@ import Display
 import AccountContext
 import TelegramPresentationData
 import TelegramCore
+import TelegramUIPreferences
 import PeerInfoUI
 import TextFormat
 import PhoneNumberFormat
@@ -132,6 +133,17 @@ func infoItems(
         let ItemAgentAddProvider = 9101
         let ItemAgentProvidersInfo = 9102
         let ItemCommunity = 10000
+
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showRegistrationDate),
+           let rawDate = (data.cachedData as? CachedUserData)?.peerStatusSettings?.registrationDate {
+            let components = rawDate.split(separator: ".")
+            if components.count == 2, let month = Int32(components[0]), let year = Int32(components[1]), (1 ... 12).contains(month) {
+                let dateText = stringForMonth(strings: presentationData.strings, month: month - 1, ofYear: year - 1900)
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9202, context: context, label: "Registration date", text: dateText, action: nil, requestLayout: { _ in
+                    interaction.requestLayout(false)
+                }))
+            }
+        }
         
         if let cachedUserData = data.cachedData as? CachedUserData, cachedUserData.flags.contains(.unofficialSecurityRisk) {
             items[.unofficial]!.append(PeerInfoScreenInfoItem(id: 0, title: "", text: .plain(presentationData.strings.PeerInfo_UnofficialSecurityRisk(EnginePeer(user).compactDisplayTitle).string), style: .compact, linkAction: nil))
@@ -893,6 +905,50 @@ func infoItems(
                     bioContextAction(node, nil, nil)
                 } : nil, linkItemAction: bioLinkAction, contextAction: bioContextAction, requestLayout: { animated in
                     interaction.requestLayout(animated)
+                }))
+            }
+        }
+    }
+
+    if let peer = data.peer {
+        let peerIdText: String
+        switch peer {
+        case let .user(user):
+            peerIdText = String(user.id.id._internalGetInt64Value())
+        case let .legacyGroup(group):
+            peerIdText = String(group.id.id._internalGetInt64Value())
+        case let .channel(channel):
+            peerIdText = "-100\(channel.id.id._internalGetInt64Value())"
+        }
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showProfileId) {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9200, context: context, label: "ID", text: peerIdText, action: nil, requestLayout: { _ in
+                interaction.requestLayout(false)
+            }))
+        }
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showDataCenter),
+           let image = peer.smallProfileImage,
+           let resource = image.resource as? CloudPeerPhotoSizeMediaResource {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9201, context: context, label: "DC", text: "dc: \(resource.datacenterId)", action: nil, requestLayout: { _ in
+                interaction.requestLayout(false)
+            }))
+        }
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showChatCreationDate) {
+            let creationDate: Int32
+            switch peer {
+            case .user:
+                creationDate = 0
+            case let .legacyGroup(group):
+                creationDate = group.creationDate
+            case let .channel(channel):
+                creationDate = channel.creationDate
+            }
+            if creationDate > 0 {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .none
+                let dateText = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(creationDate)))
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9203, context: context, label: "Chat creation date", text: dateText, action: nil, requestLayout: { _ in
+                    interaction.requestLayout(false)
                 }))
             }
         }

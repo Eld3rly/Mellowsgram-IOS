@@ -270,8 +270,13 @@ public func engineMellowsgramMessageMedia(_ mediaData: Data) -> [EngineRawMedia]
 }
 
 struct MellowsgramDeletedReplyFormatting {
-    let prefix: String
-    let quoteLength: Int
+    /// Text that represents the archived message inside the reply quote.
+    ///
+    /// The author line is deliberately not built here: whether it belongs in
+    /// the quote depends on the destination peer (groups/channels use it,
+    /// private chats do not), and the peer lookup is only available to the
+    /// enqueue transaction.
+    let preview: String
 }
 
 private func mellowsgramDeletedReplyMediaDescription(_ media: [EngineRawMedia]) -> String? {
@@ -310,9 +315,9 @@ func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRe
         return nil
     }
 
-    let normalizedText = record.text
-        .replacingOccurrences(of: "\n", with: " ")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+    // Keep the original line breaks. AyuGram's deleted-message reply is a
+    // real block quote, not a service-message label flattened into one line.
+    let normalizedText = record.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let preview: String
     if normalizedText.isEmpty {
         preview = mellowsgramDeletedReplyMediaDescription(engineMellowsgramMessageMedia(record.mediaData)) ?? "Вложение"
@@ -320,8 +325,7 @@ func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRe
         preview = String(normalizedText.prefix(256))
     }
 
-    let quote = "Удалённое сообщение\n\(preview)"
-    return MellowsgramDeletedReplyFormatting(prefix: quote + "\n\n", quoteLength: quote.utf16.count)
+    return MellowsgramDeletedReplyFormatting(preview: preview)
 }
 
 /// Creates a regular Telegram `Message` projection for a deleted archive row.

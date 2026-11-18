@@ -146,6 +146,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     public var emojiFile: TelegramMediaFile?
     public var telegramDice: TelegramMediaDice?
     public var emojiString: String?
+    public var sizeCoefficient: Float = 1.0
+    public var hideTimestamp = false
     private let disposable = MetaDisposable()
     private let disposables = DisposableSet()
 
@@ -864,7 +866,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     }
         
     override public func asyncLayout() -> (_ item: ChatMessageItem, _ params: ListViewItemLayoutParams, _ mergedTop: ChatMessageMerge, _ mergedBottom: ChatMessageMerge, _ dateHeaderAtBottom: ChatMessageHeaderSpec) -> (ListViewItemNodeLayout, (ListViewItemUpdateAnimation, ListViewItemApply, Bool) -> Void) {
-        var displaySize = CGSize(width: 180.0, height: 180.0)
+        var displaySize = CGSize(width: 180.0 * CGFloat(self.sizeCoefficient), height: 180.0 * CGFloat(self.sizeCoefficient))
         let telegramFile = self.telegramFile
         let emojiFile = self.emojiFile
         let telegramDice = self.telegramDice
@@ -903,7 +905,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             var imageBottomPadding: CGFloat = 0.0
             var imageHorizontalOffset: CGFloat = 0.0
             if !(telegramFile?.videoThumbnails.isEmpty ?? true) {
-                displaySize = CGSize(width: 240.0, height: 240.0)
+                displaySize = CGSize(width: 240.0 * CGFloat(self.sizeCoefficient), height: 240.0 * CGFloat(self.sizeCoefficient))
                 imageVerticalInset = -20.0
                 imageHorizontalOffset = 12.0
             }
@@ -1868,7 +1870,9 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     let dateAndStatusFrame = CGRect(origin: CGPoint(x: max(displayLeftInset, updatedImageFrame.maxX - dateAndStatusSize.width - 4.0), y: updatedImageFrame.maxY - dateAndStatusSize.height - 4.0 + imageBottomPadding), size: dateAndStatusSize)
                     animation.animator.updateFrame(layer: strongSelf.dateAndStatusNode.layer, frame: dateAndStatusFrame, completion: nil)
                     dateAndStatusApply(animation)
-                    if case .customChatContents = item.associatedData.subject {
+                    if strongSelf.hideTimestamp {
+                        strongSelf.dateAndStatusNode.isHidden = true
+                    } else if case .customChatContents = item.associatedData.subject {
                         strongSelf.dateAndStatusNode.isHidden = true
                     } else if hidesStatusForBubbleless {
                         strongSelf.hidesStatusWithoutBubbles = true

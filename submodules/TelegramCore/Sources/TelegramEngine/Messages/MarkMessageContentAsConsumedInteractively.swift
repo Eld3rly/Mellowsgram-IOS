@@ -20,6 +20,8 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                 return
             }
 
+            let shouldSendMediaConsumption = postbox.mellowsgramGhostModeCoordinator.shouldSendMediaConsumption()
+
             var updateMessage = false
             var updatedAttributes = message.attributes
             
@@ -29,30 +31,32 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                         updatedAttributes[i] = ConsumableContentMessageAttribute(consumed: true)
                         updateMessage = true
                         
-                        if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
-                            if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
-                                var layer: SecretChatLayer?
-                                switch state.embeddedState {
-                                    case .terminated, .handshake:
-                                        break
-                                    case .basicLayer:
-                                        layer = .layer8
-                                    case let .sequenceBasedLayer(sequenceState):
-                                        layer = sequenceState.layerNegotiationState.activeLayer.secretChatLayer
-                                }
-                                if let layer = layer {
-                                    var globallyUniqueIds: [Int64] = []
-                                    if let globallyUniqueId = message.globallyUniqueId {
-                                        globallyUniqueIds.append(globallyUniqueId)
-                                        let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: message.id.peerId, operation: SecretChatOutgoingOperationContents.readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: globallyUniqueIds), state: state)
-                                        if updatedState != state {
-                                            transaction.setPeerChatState(message.id.peerId, state: updatedState)
+                        if shouldSendMediaConsumption {
+                            if message.id.peerId.namespace == Namespaces.Peer.SecretChat {
+                                if let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState {
+                                    var layer: SecretChatLayer?
+                                    switch state.embeddedState {
+                                        case .terminated, .handshake:
+                                            break
+                                        case .basicLayer:
+                                            layer = .layer8
+                                        case let .sequenceBasedLayer(sequenceState):
+                                            layer = sequenceState.layerNegotiationState.activeLayer.secretChatLayer
+                                    }
+                                    if let layer = layer {
+                                        var globallyUniqueIds: [Int64] = []
+                                        if let globallyUniqueId = message.globallyUniqueId {
+                                            globallyUniqueIds.append(globallyUniqueId)
+                                            let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: message.id.peerId, operation: SecretChatOutgoingOperationContents.readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: globallyUniqueIds), state: state)
+                                            if updatedState != state {
+                                                transaction.setPeerChatState(message.id.peerId, state: updatedState)
+                                            }
                                         }
                                     }
                                 }
+                            } else {
+                                addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [message.id])
                             }
-                        } else {
-                            addSynchronizeConsumeMessageContentsOperation(transaction: transaction, messageIds: [message.id])
                         }
                     }
                 } else if let attribute = updatedAttributes[i] as? ConsumablePersonalMentionMessageAttribute, !attribute.consumed {
@@ -86,7 +90,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                                 }
                             }
                             
-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                            if shouldSendMediaConsumption, let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                 if updatedState != state {
                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)
@@ -117,7 +121,7 @@ func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox, messa
                                 }
                             }
                             
-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                            if shouldSendMediaConsumption, let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                 if updatedState != state {
                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)

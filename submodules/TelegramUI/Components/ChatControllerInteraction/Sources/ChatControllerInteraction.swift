@@ -261,6 +261,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let openCheckoutOrReceipt: (EngineMessage.Id, OpenMessageParams?) -> Void
     public let openSearch: () -> Void
     public let setupReply: (EngineMessage.Id) -> Void
+    public let editMessage: (EngineMessage.Id) -> Void
     public let canSetupReply: (EngineRawMessage) -> ChatControllerInteractionSwipeAction
     public let canSendMessages: () -> Bool
     public let navigateToFirstDateMessage: (Int32, Bool) -> Void
@@ -456,6 +457,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         openCheckoutOrReceipt: @escaping (EngineMessage.Id, OpenMessageParams?) -> Void,
         openSearch: @escaping () -> Void,
         setupReply: @escaping (EngineMessage.Id) -> Void,
+        editMessage: @escaping (EngineMessage.Id) -> Void = { _ in },
         canSetupReply: @escaping (EngineRawMessage) -> ChatControllerInteractionSwipeAction,
         canSendMessages: @escaping () -> Bool,
         navigateToFirstDateMessage: @escaping(Int32, Bool) ->Void,
@@ -590,6 +592,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         self.openCheckoutOrReceipt = openCheckoutOrReceipt
         self.openSearch = openSearch
         self.setupReply = setupReply
+        self.editMessage = editMessage
         self.canSetupReply = canSetupReply
         self.canSendMessages = canSendMessages
         self.navigateToFirstDateMessage = navigateToFirstDateMessage

@@ -69,7 +69,35 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
     return Signal { _ in
         let helper = Atomic<ManagedSynchronizeConsumeMessageContentsOperationHelper>(value: ManagedSynchronizeConsumeMessageContentsOperationHelper())
         
-        let disposable = postbox.mergedOperationLogView(tag: OperationLogTags.SynchronizeConsumeMessageContents, limit: 10).start(next: { view in
+        let disposable = combineLatest(
+            postbox.mergedOperationLogView(tag: OperationLogTags.SynchronizeConsumeMessageContents, limit: 10),
+            postbox.mellowsgramGhostModeReadReceipts
+        ).start(next: { view, mediaConsumptionSuppressed in
+            if mediaConsumptionSuppressed {
+                // Cancel an in-flight acknowledgement and remove queued ones.
+                // Otherwise a voice/video-note played before Ghost Mode was
+                // enabled could be sent later when the mode is disabled.
+                let disposables = helper.with { helper -> [Disposable] in
+                    return helper.reset()
+                }
+                for disposable in disposables {
+                    disposable.dispose()
+                }
+
+                if !view.entries.isEmpty {
+                    let _ = postbox.transaction { transaction -> Void in
+                        for entry in view.entries {
+                            let _ = transaction.operationLogRemoveEntry(
+                                peerId: entry.peerId,
+                                tag: OperationLogTags.SynchronizeConsumeMessageContents,
+                                tagLocalIndex: entry.tagLocalIndex
+                            )
+                        }
+                    }.start()
+                }
+                return
+            }
+
             let (disposeOperations, beginOperations) = helper.with { helper -> (disposeOperations: [Disposable], beginOperations: [(PeerMergedOperationLogEntry, MetaDisposable)]) in
                 return helper.update(view.entries)
             }
@@ -82,7 +110,7 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeConsumeMessageContentsOperation {
-                            return synchronizeConsumeMessageContents(transaction: transaction, network: network, stateManager: stateManager, peerId: entry.peerId, operation: operation)
+                            return synchronizeConsumeMessageContents(transaction: transaction, postbox: postbox, network: network, stateManager: stateManager, peerId: entry.peerId, operation: operation)
                         } else {
                             assertionFailure()
                         }
@@ -109,7 +137,14 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
     }
 }
 
-private func synchronizeConsumeMessageContents(transaction: Transaction, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeConsumeMessageContentsOperation) -> Signal<Void, NoError> {
+private func synchronizeConsumeMessageContents(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeConsumeMessageContentsOperation) -> Signal<Void, NoError> {
+    // A playback operation can already be present in Postbox when Ghost Mode
+    // is enabled (for example after a restart). Drop it before constructing
+    // the RPC so disabling Ghost Mode later cannot replay an old acknowledgement.
+    if !postbox.mellowsgramGhostModeCoordinator.shouldSendMediaConsumption() {
+        return .complete()
+    }
+
     if peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudGroup {
         return network.request(Api.functions.messages.readMessageContents(id: operation.messageIds.map { $0.id }))
         |> map(Optional.init)

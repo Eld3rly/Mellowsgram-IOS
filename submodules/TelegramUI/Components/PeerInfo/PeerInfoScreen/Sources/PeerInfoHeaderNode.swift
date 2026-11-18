@@ -102,6 +102,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     private let isOpenedFromChat: Bool
     private let isSettings: Bool
     private let isMyProfile: Bool
+    private var currentAccountIsOnline = false
+    private let currentAccountPresenceDisposable = MetaDisposable()
     private let videoCallsEnabled: Bool
     private let forumTopicThreadId: Int64?
     private let chatLocation: ChatLocation
@@ -386,6 +388,24 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         requestUpdateLayoutImpl = { [weak self] in
             self?.requestUpdateLayout?(false)
         }
+
+        if isMyProfile {
+            self.currentAccountPresenceDisposable.set((combineLatest(
+                context.account.shouldKeepOnlinePresence.get(),
+                context.account.postbox.mellowsgramGhostModeOnlinePresence
+            )
+            |> map { shouldKeepOnlinePresence, ghostModeSuppressesOnlinePresence in
+                return shouldKeepOnlinePresence && !ghostModeSuppressesOnlinePresence
+            }
+            |> distinctUntilChanged
+            |> deliverOnMainQueue).start(next: { [weak self] isOnline in
+                guard let self, self.currentAccountIsOnline != isOnline else {
+                    return
+                }
+                self.currentAccountIsOnline = isOnline
+                self.requestUpdateLayout?(false)
+            }))
+        }
         
         self.view.addSubview(self.backgroundBannerView)
         self.titleNodeContainer.addSubnode(self.titleNode)
@@ -460,6 +480,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     deinit {
         self.emojiStatusPackDisposable.dispose()
+        self.currentAccountPresenceDisposable.dispose()
     }
     
     /// VoiceOver: the avatar, name and status (with the buttons, in `PeerInfoHeaderRegularContentNode`), then the gifts
@@ -1325,7 +1346,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 let subtitleColor: UIColor
                 subtitleColor = .white
                 
-                subtitleStringText = presentationData.strings.Presence_online
+                subtitleStringText = self.currentAccountIsOnline ? presentationData.strings.Presence_online : presentationData.strings.LastSeen_Lately
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: subtitleColor)
                 smallSubtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white, shadowColor: titleShadowColor)
                 

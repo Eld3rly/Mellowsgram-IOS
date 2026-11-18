@@ -195,13 +195,15 @@ private enum QueuedWakeup: Int32 {
 final class SharedApplicationContext {
     let sharedContext: SharedAccountContextImpl
     let notificationManager: SharedNotificationManager
+    let mellowsgramBackgroundNotificationManager: MellowsgramBackgroundNotificationManager
     let wakeupManager: SharedWakeupManager
     let overlayMediaController: ViewController & OverlayMediaController
     var minimizedContainer: [AccountRecordId: MinimizedContainer] = [:]
     
-    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, wakeupManager: SharedWakeupManager) {
+    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, mellowsgramBackgroundNotificationManager: MellowsgramBackgroundNotificationManager, wakeupManager: SharedWakeupManager) {
         self.sharedContext = sharedContext
         self.notificationManager = notificationManager
+        self.mellowsgramBackgroundNotificationManager = mellowsgramBackgroundNotificationManager
         self.wakeupManager = wakeupManager
         self.overlayMediaController = OverlayMediaControllerImpl()
     }
@@ -1009,6 +1011,33 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if buildConfig.isInternalBuild {
                     icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
                 }
+
+                icons.append(contentsOf: [
+                    PresentationAppIcon(name: "MellowsgramMint", imageName: "MellowsgramMint"),
+                    PresentationAppIcon(name: "MellowsgramSage", imageName: "MellowsgramSage"),
+                    PresentationAppIcon(name: "MellowsgramLavender", imageName: "MellowsgramLavender"),
+                    PresentationAppIcon(name: "MellowsgramRose", imageName: "MellowsgramRose"),
+                    PresentationAppIcon(name: "MellowsgramCoral", imageName: "MellowsgramCoral"),
+                    PresentationAppIcon(name: "MellowsgramApricot", imageName: "MellowsgramApricot"),
+                    PresentationAppIcon(name: "MellowsgramGraphite", imageName: "MellowsgramGraphite"),
+                    PresentationAppIcon(name: "MellowsgramSand", imageName: "MellowsgramSand"),
+                    PresentationAppIcon(name: "MellowsgramMidnight", imageName: "MellowsgramMidnight"),
+                    PresentationAppIcon(name: "MellowsgramForest", imageName: "MellowsgramForest"),
+                    PresentationAppIcon(name: "MellowsgramBordeaux", imageName: "MellowsgramBordeaux"),
+                    PresentationAppIcon(name: "MellowsgramPlum", imageName: "MellowsgramPlum"),
+                    PresentationAppIcon(name: "MellowsgramLimeNoir", imageName: "MellowsgramLimeNoir"),
+                    PresentationAppIcon(name: "MellowsgramLilacNoir", imageName: "MellowsgramLilacNoir"),
+                    PresentationAppIcon(name: "MellowsgramPeachNoir", imageName: "MellowsgramPeachNoir"),
+                    PresentationAppIcon(name: "MellowsgramBerry", imageName: "MellowsgramBerry"),
+                    PresentationAppIcon(name: "MellowsgramLemon", imageName: "MellowsgramLemon"),
+                    PresentationAppIcon(name: "MellowsgramPistachio", imageName: "MellowsgramPistachio"),
+                    PresentationAppIcon(name: "MellowsgramLilac", imageName: "MellowsgramLilac"),
+                    PresentationAppIcon(name: "MellowsgramPeach", imageName: "MellowsgramPeach"),
+                    PresentationAppIcon(name: "MellowsgramRaspberry", imageName: "MellowsgramRaspberry"),
+                    PresentationAppIcon(name: "MellowsgramElectric", imageName: "MellowsgramElectric"),
+                    PresentationAppIcon(name: "MellowsgramSunset", imageName: "MellowsgramSunset"),
+                    PresentationAppIcon(name: "MellowsgramAurora", imageName: "MellowsgramAurora")
+                ])
                 
                 icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
                 icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
@@ -1027,7 +1056,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, requestSetAlternateIconName: { name, completion in
             application.setAlternateIconName(name, completionHandler: { error in
                 if let error = error {
-                   Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon with error \(error.localizedDescription)")
+                   Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon \(name ?? "<default>"): \(error.localizedDescription)")
                 }
                 completion(error == nil)
             })
@@ -1224,6 +1253,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             setPresentationCall = { call in
                 notificationManager.setNotificationCall(call, strings: sharedContext.currentPresentationData.with({ $0 }).strings)
             }
+            let mellowsgramBackgroundNotificationManager = MellowsgramBackgroundNotificationManager(
+                activeAccounts: sharedContext.activeAccountContexts,
+                inForeground: applicationBindings.applicationInForeground,
+                hasActiveAudioSession: self.hasActiveAudioSession.get(),
+                presentationData: {
+                    return sharedContext.currentPresentationData.with({ $0 })
+                }
+            )
             let liveLocationPolling = self.context.get()
             |> mapToSignal { context -> Signal<AccountRecordId?, NoError> in
                 if let context = context, let liveLocationManager = context.context.liveLocationManager {
@@ -1259,12 +1296,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 application.endBackgroundTask(id)
             }, backgroundTimeRemaining: { application.backgroundTimeRemaining }, acquireIdleExtension: {
                 return applicationBindings.pushIdleTimerExtension()
-            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: .single(nil), inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
+            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: .single(nil), inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), mellowsgramBackgroundNotificationAccountIds: mellowsgramBackgroundNotificationManager.enabledAccountIds, notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
                 return sharedContext.accountUserInterfaceInUse(id)
             }, presentationData: {
                 return sharedContext.currentPresentationData.with({ $0 })
             })
-            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, wakeupManager: wakeupManager)
+            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, mellowsgramBackgroundNotificationManager: mellowsgramBackgroundNotificationManager, wakeupManager: wakeupManager)
             sharedApplicationContext.sharedContext.mediaManager.overlayMediaManager.attachOverlayMediaController(sharedApplicationContext.overlayMediaController)
             
             return accountManager.transaction { transaction -> (SharedApplicationContext, LoggingSettings) in
@@ -1317,7 +1354,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> deliverOnMainQueue
             |> map { accountAndSettings -> AuthorizedApplicationContext? in
                 return accountAndSettings.flatMap { context, callListSettings in
-                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, reinitializedNotificationSettings: {
+                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, showContactsTab: callListSettings.showContactsTab, reinitializedNotificationSettings: {
                         let _ = (self.context.get()
                         |> take(1)
                         |> deliverOnMainQueue).start(next: { context in

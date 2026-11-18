@@ -3,6 +3,7 @@ import SwiftSignalKit
 import CoreMedia
 import AVFoundation
 import TelegramCore
+import TelegramUIPreferences
 import TelegramAudio
 import UniversalMediaPlayer
 import AccountContext
@@ -448,6 +449,11 @@ final class ManagedAudioRecorderContext {
                 queue.async {
                     if let strongSelf = self, !strongSelf.paused {
                         strongSelf.hasAudioSession = true
+                        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .forceDeviceMicrophone) {
+                            let audioSession = AVAudioSession.sharedInstance()
+                            let builtInMicrophone = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic })
+                            try? audioSession.setPreferredInput(builtInMicrophone)
+                        }
                         strongSelf.setupAudioUnit()
                         strongSelf.audioSessionAcquired(headset: state.isHeadsetConnected)
                     }

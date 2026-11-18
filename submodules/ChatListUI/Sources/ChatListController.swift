@@ -697,6 +697,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 guard let strongSelf = self else {
                     return
                 }
+
                 let animation: LottieAnimationComponent.AnimationItem?
                 let colors: [String: UIColor]
                 let progressValue: Double?
@@ -807,6 +808,23 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             self.chatListDisplayNode.mainContainerNode.currentItemFilterUpdated = { [weak self] filter, fraction, transition, force in
                 guard let strongSelf = self else {
                     return
+                }
+
+                if !strongSelf.chatListDisplayNode.mainContainerNode.isSwitchingCurrentItemFilterByDragging,
+                   MellowsgramGlobalSettingsRuntime.shared.bool(for: .openLastFolder) {
+                    let folderId: Int32
+                    switch filter {
+                    case .all:
+                        folderId = -1
+                    case let .filter(id):
+                        folderId = id
+                    }
+                    let accountKey = "\(strongSelf.context.account.id.int64)"
+                    if MellowsgramGlobalSettingsRuntime.shared.lastFolderId(accountKey: accountKey) != folderId {
+                        let _ = updateMellowsgramGlobalSettingsInteractively(accountManager: strongSelf.context.sharedContext.accountManager) { settings in
+                            settings.withUpdatedLastFolderId(folderId, accountKey: accountKey)
+                        }.start()
+                    }
                 }
                 
                 if let navigationBarView = strongSelf.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View, let headerPanelsView = navigationBarView.headerPanels as? HeaderPanelContainerComponent.View, let tabsView = headerPanelsView.tabs as? HorizontalTabsComponent.View {
@@ -4154,6 +4172,14 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
             
             var selectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
+            if !strongSelf.initializedFilters,
+               MellowsgramGlobalSettingsRuntime.shared.bool(for: .openLastFolder),
+               let lastFolderId = MellowsgramGlobalSettingsRuntime.shared.lastFolderId(accountKey: "\(strongSelf.context.account.id.int64)") {
+                let lastEntryId: ChatListFilterTabEntryId = lastFolderId == -1 ? .all : .filter(lastFolderId)
+                if resolvedItems.contains(where: { $0.id == lastEntryId }) {
+                    selectedEntryId = lastEntryId
+                }
+            }
             var resetCurrentEntry = false
             if !resolvedItems.contains(where: { $0.id == selectedEntryId }) {
                 resetCurrentEntry = true
@@ -4450,7 +4476,23 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.openStories(peerId: peerId, completion: { _ in })
     }
     
-    public func openStories(peerId: EnginePeer.Id, completion: @escaping (StoryContainerScreen) -> Void = { _ in }) {
+    public func openStories(peerId: EnginePeer.Id, completion: @escaping (StoryContainerScreen) -> Void = { _ in }, skipConfirmation: Bool = false) {
+        if !skipConfirmation,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .askBeforeViewingStories),
+           peerId != self.context.account.peerId {
+            let alert = UIAlertController(
+                title: "View story?",
+                message: "The author may see that you viewed this story. Continue?",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Continue", style: .default, handler: { [weak self] _ in
+                self?.openStories(peerId: peerId, completion: completion, skipConfirmation: true)
+            }))
+            self.present(alert, in: .window(.root))
+            return
+        }
+
         if let navigationBarView = self.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View {
             if navigationBarView.storiesUnlocked {
                 self.shouldFixStorySubscriptionOrder = true

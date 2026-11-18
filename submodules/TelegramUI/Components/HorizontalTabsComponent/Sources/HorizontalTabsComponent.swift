@@ -9,6 +9,7 @@ import MultilineTextWithEntitiesComponent
 import TextBadgeComponent
 import LiquidLens
 import HeaderPanelContainerComponent
+import TelegramUIPreferences
 
 private class ReorderingGestureRecognizerTimerTarget: NSObject {
     private let f: () -> Void
@@ -1308,7 +1309,7 @@ private final class ItemComponent: Component {
             self.containerView.isGestureEnabled = component.editing == nil
             self.tapRecognizer?.isEnabled = component.editing == nil
             
-            let sideInset: CGFloat = 16.0
+            let sideInset: CGFloat = 16.0 / (MellowsgramGlobalSettingsRuntime.shared.bool(for: .smallerFolderSpacing) ? 2.0 : 1.0)
             let badgeSpacing: CGFloat = 5.0
             
             var size = CGSize(width: sideInset, height: availableSize.height)

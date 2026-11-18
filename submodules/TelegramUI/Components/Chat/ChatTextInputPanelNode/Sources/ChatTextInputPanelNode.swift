@@ -5,6 +5,7 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 import TelegramCore
+import TelegramUIPreferences
 import TelegramPresentationData
 import TextFormat
 import AccountContext
@@ -416,6 +417,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     private let statusDisposable = MetaDisposable()
+    private var mellowsgramGlobalSettingsDisposable: Disposable?
     override public var interfaceInteraction: ChatPanelInterfaceInteraction? {
         didSet {
             if let statuses = self.interfaceInteraction?.statuses {
@@ -1132,6 +1134,17 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         if let viewForOverlayContent = self.viewForOverlayContent {
             viewForOverlayContent.addSubnode(self.viewOnceButton)
         }
+
+        self.mellowsgramGlobalSettingsDisposable = (MellowsgramGlobalSettingsRuntime.shared.signal
+        |> deliverOnMainQueue).start(next: { [weak self] _ in
+            guard let self else {
+                return
+            }
+            if let textView = self.richTextInputNode?.inputView as? UITextView {
+                textView.returnKeyType = MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendWithReturnKey) ? .send : .default
+            }
+            self.requestLayout(transition: .immediate)
+        })
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -1144,6 +1157,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.agentMenuCooldown.cancel()
         self.tooltipController?.dismiss()
         self.currentEmojiSuggestion?.disposable.dispose()
+        self.mellowsgramGlobalSettingsDisposable?.dispose()
     }
     
     override public func didLoad() {
@@ -1229,6 +1243,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             richTextInputNode = RichTextEditorChatInputNode(strings: self.presentationInterfaceState?.strings ?? defaultPresentationStrings, inputBackend: self.richTextInputBackendPreference, useInputDecEngine: self.useInputDecEngineEditor)
         } else {
             richTextInputNode = makeChatRichTextInputNode()
+        }
+        if let textView = richTextInputNode.inputView as? UITextView {
+            textView.returnKeyType = MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendWithReturnKey) ? .send : .default
         }
         richTextInputNode.initialPrimaryLanguage = self.presentationInterfaceState?.interfaceState.inputLanguage
         var textColor: UIColor = .black
@@ -1509,7 +1526,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         var hasSendAsButton = false
-        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendAsButton), let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
             hasSendAsButton = true
         }
         
@@ -1966,7 +1983,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         var displaySendAsAvatarButton = false
         let mediaRecordingState = interfaceState.inputTextPanelState.mediaRecordingState
-        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendAsButton), let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
             menuButtonExpanded = false
             displaySendAsAvatarButton = true
             
@@ -4888,8 +4905,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let blurTransitionOut: ComponentTransition = transition.isAnimated ? .easeInOut(duration: 0.18) : .immediate
         let sendButtonBlurOut: CGFloat = 4.0
         
-        var hideMicButton = false
-        var hideMicButtonBackground = false
+        let showsVoiceRecordingButton = MellowsgramGlobalSettingsRuntime.shared.bool(for: .voiceRecordingButton)
+        var hideMicButton = !showsVoiceRecordingButton
+        var hideMicButtonBackground = !showsVoiceRecordingButton
         
         if self.customRightAction != nil {
             self.mediaActionButtons.isHidden = true
@@ -5732,6 +5750,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     public func chatInputTextNode(shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         guard let richTextInputNode = self.richTextInputNode, let context = self.context else {
             return false
+        }
+
+        if text == "\n", MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendWithReturnKey) {
+            let hasMarkedText = (richTextInputNode.inputView as? UITextView)?.markedTextRange != nil
+            if !hasMarkedText {
+                self.sendButtonPressed()
+                return false
+            }
         }
 
         self.updateActivity()

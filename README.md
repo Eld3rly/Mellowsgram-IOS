@@ -73,13 +73,22 @@ The project is designed around three principles:
 
 ### Settings
 
-The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings and contains separate native screens for:
+The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings. The root screen provides search, links and separate native category screens for:
 
 - Spy&Ghost;
 - Appearance;
+- Chats & Tabs;
+- Stories;
+- Profiles & Calls;
+- Translation & Voice;
+- Media & Performance;
+- Context Menu;
+- Messages & Input;
 - Links.
 
-Settings are stored per account through the MellowsgramSettings model.
+Ghost Mode, deleted-message archive and edit history remain account-scoped. Client customization is stored app-wide, while settings already owned by Telegram continue using Telegram's shared preferences. The screen includes controls for tabs and folders, story behavior, profile details, translation and transcription services, media quality, context-menu actions, and message input.
+
+The app includes Mellowsgram alternate icons, including icons normally gated by Telegram Premium. Optional background notifications use local notifications while the app keeps selected account connections active; they require notification permission, are best-effort, and increase battery use. They are not APNs push notifications.
 
 Mellowsgram allows up to **32 connected accounts** without making the account count depend on Telegram Premium. Each account keeps its own Telegram session and local data.
 

@@ -153,11 +153,13 @@ final class AuthorizedApplicationContext {
     
     private var showCallsTab: Bool
     private var showCallsTabDisposable: Disposable?
+    private var showContactsTab: Bool
+    private var mellowsgramGlobalSettingsDisposable: Disposable?
     private var showNewsTab: Bool
     private var showNewsTabDisposable: Disposable?
     private var enablePostboxTransactionsDiposable: Disposable?
     
-    init(sharedApplicationContext: SharedApplicationContext, mainWindow: Window1, context: AccountContextImpl, accountManager: AccountManager<TelegramAccountManagerTypes>, showCallsTab: Bool, reinitializedNotificationSettings: @escaping () -> Void) {
+    init(sharedApplicationContext: SharedApplicationContext, mainWindow: Window1, context: AccountContextImpl, accountManager: AccountManager<TelegramAccountManagerTypes>, showCallsTab: Bool, showContactsTab: Bool, reinitializedNotificationSettings: @escaping () -> Void) {
         self.sharedApplicationContext = sharedApplicationContext
         
         setupLegacyComponents(context: context)
@@ -169,6 +171,7 @@ final class AuthorizedApplicationContext {
         self.context = context
 
         self.showCallsTab = showCallsTab
+        self.showContactsTab = showContactsTab
         self.showNewsTab = isNewsFeedEnabled(appConfiguration: context.currentAppConfiguration.with { $0 })
         
         self.notificationController = NotificationContainerController(context: context)
@@ -252,7 +255,7 @@ final class AuthorizedApplicationContext {
         }
         
         if self.rootController.rootTabController == nil {
-            self.rootController.addRootControllers(showCallsTab: self.showCallsTab, showNewsTab: self.showNewsTab)
+            self.rootController.addRootControllers(showContactsTab: self.showContactsTab, showCallsTab: self.showCallsTab, showNewsTab: self.showNewsTab)
         }
         if let tabsController = self.rootController.viewControllers.first as? TabBarController, !tabsController.controllers.isEmpty, tabsController.selectedIndex >= 0 {
             let controller = tabsController.controllers[tabsController.selectedIndex]
@@ -805,21 +808,29 @@ final class AuthorizedApplicationContext {
             }
         })
         
-        let showCallsTabSignal = context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.callListSettings])
-        |> map { sharedData -> Bool in
-            var value = CallListSettings.defaultSettings.showTab
+        let showTabSettingsSignal = context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.callListSettings])
+        |> map { sharedData -> (Bool, Bool) in
+            var showCallsTab = CallListSettings.defaultSettings.showTab
+            var showContactsTab = CallListSettings.defaultSettings.showContactsTab
             if let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.callListSettings]?.get(CallListSettings.self) {
-                value = settings.showTab
+                showCallsTab = settings.showTab
+                showContactsTab = settings.showContactsTab
             }
-            return value
+            return (showCallsTab, showContactsTab)
         }
-        self.showCallsTabDisposable = (showCallsTabSignal |> deliverOnMainQueue).start(next: { [weak self] value in
+        self.showCallsTabDisposable = (showTabSettingsSignal |> deliverOnMainQueue).start(next: { [weak self] value in
             if let strongSelf = self {
-                if strongSelf.showCallsTab != value {
-                    strongSelf.showCallsTab = value
-                    strongSelf.rootController.updateRootControllers(showCallsTab: value, showNewsTab: strongSelf.showNewsTab)
+                if strongSelf.showCallsTab != value.0 || strongSelf.showContactsTab != value.1 {
+                    strongSelf.showCallsTab = value.0
+                    strongSelf.showContactsTab = value.1
+                    strongSelf.rootController.updateRootControllers(showContactsTab: value.1, showCallsTab: value.0, showNewsTab: strongSelf.showNewsTab)
                 }
             }
+        })
+
+        self.mellowsgramGlobalSettingsDisposable = (mellowsgramGlobalSettings(accountManager: context.sharedContext.accountManager)
+        |> deliverOnMainQueue).start(next: { [weak self] settings in
+            self?.rootController.updateMellowsgramGlobalSettings(settings)
         })
 
         self.showNewsTabDisposable = (context.appConfiguration
@@ -832,7 +843,7 @@ final class AuthorizedApplicationContext {
                 return
             }
             self.showNewsTab = value
-            self.rootController.updateRootControllers(showCallsTab: self.showCallsTab, showNewsTab: value)
+            self.rootController.updateRootControllers(showContactsTab: self.showContactsTab, showCallsTab: self.showCallsTab, showNewsTab: value)
         })
         
         self.rootController.setForceInCallStatusBar((self.context.sharedContext as! SharedAccountContextImpl).currentCallStatusBarNode)
@@ -847,6 +858,7 @@ final class AuthorizedApplicationContext {
     deinit {
         self.context.account.postbox.clearCaches()
         self.showNewsTabDisposable?.dispose()
+        self.mellowsgramGlobalSettingsDisposable?.dispose()
         self.context.account.shouldKeepOnlinePresence.set(.single(false))
         self.context.account.shouldBeServiceTaskMaster.set(.single(.never))
         self.loggedOutDisposable.dispose()

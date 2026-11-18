@@ -414,6 +414,36 @@ private func ephemeralReplacementContextMenuItems(chatPresentationInterfaceState
 
         var actions: [ContextMenuItem] = []
 
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextJSON), !isMellowsgramDeletedMessage {
+            var mediaTypes: [String] = []
+            for media in message.media {
+                if media is TelegramMediaImage {
+                    mediaTypes.append("photo")
+                } else if let file = media as? TelegramMediaFile {
+                    mediaTypes.append(file.isVideo ? "video" : file.isVoice ? "voice" : file.isMusic ? "audio" : file.isSticker ? "sticker" : "file")
+                } else {
+                    mediaTypes.append(String(describing: type(of: media)))
+                }
+            }
+            let value: [String: Any] = [
+                "message_id": String(message.id.id),
+                "peer_id": String(describing: message.id.peerId),
+                "date": message.timestamp,
+                "from_id": message.author.map { String(describing: $0.id) } as Any? ?? NSNull(),
+                "text": message.text,
+                "media": mediaTypes
+            ]
+            actions.append(.action(ContextMenuActionItem(text: "JSON", icon: { theme in
+                return generateTintedImage(image: UIImage(systemName: "curlybraces"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                if let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]), let json = String(data: data, encoding: .utf8) {
+                    UIPasteboard.general.string = json
+                    controllerInteraction.displayUndo(.copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied))
+                }
+                f(.default)
+            })))
+        }
+
         let noAction: ((ContextMenuActionItem.Action) -> Void)? = nil
         actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Chat_EphemeralMessage_AnchoredInfo, textFont: .small, icon: { _ in return nil }, action: noAction)))
         actions.append(.separator)
@@ -1257,7 +1287,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             isReplyThreadHead = messages[0].id == replyThreadMessage.effectiveTopId
         }
         
-        if !isPinnedMessages, !isReplyThreadHead, data.canReply {
+        if !isPinnedMessages, !isReplyThreadHead, data.canReply, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextReply) {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuReply, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Reply"), color: theme.actionSheet.primaryTextColor)
             }, action: { c, _ in
@@ -1579,7 +1609,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if resourceAvailable, !message.containsSecretMedia && !isCopyProtected {
+        if resourceAvailable, !message.containsSecretMedia && !isCopyProtected, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToFiles) {
             var mediaReference: AnyMediaReference?
             var isVideo = false
             for media in message.effectiveMedia {
@@ -1623,7 +1653,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if !isCopyProtected {
+        if !isCopyProtected, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToFiles) {
             for media in message.effectiveMedia {
                 if let file = media as? TelegramMediaFile {
                     if file.isMusic {
@@ -1680,7 +1710,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if !isMellowsgramDeletedMessage, let _ = threadId, !isPinnedMessages {
+        if !isMellowsgramDeletedMessage, let _ = threadId, !isPinnedMessages, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextViewThread) {
             let text: String
             if threadMessageCount != 0 {
                 text = chatPresentationInterfaceState.strings.Conversation_ContextViewReplies(Int32(threadMessageCount))
@@ -1824,7 +1854,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             canPin = false
         }
         
-        if canPin {
+        if canPin, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextPin) {
             var pinnedSelectedMessageId: EngineMessage.Id?
             for message in messages {
                 if message.tags.contains(.pinned) {
@@ -2051,10 +2081,44 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
                     f(.dismissWithoutContent)
                 })))
+
+                if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToCloud), message.id.peerId != context.account.peerId, !isMellowsgramDeletedMessage {
+                    actions.append(.action(ContextMenuActionItem(text: "Save to Cloud", icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+                    }, action: { _, f in
+                        let selectedMessages = selectAll || isImage ? messages : [message]
+                        let attributes: [EngineMessage.Attribute] = [ForwardOptionsMessageAttribute(hideNames: false, hideCaptions: false)]
+                        let forwardedMessages = selectedMessages.map { item in
+                            EnqueueMessage.forward(source: item.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
+                        }
+                        let _ = (enqueueMessages(account: context.account, peerId: context.account.peerId, messages: forwardedMessages)
+                        |> deliverOnMainQueue).startStandalone(completed: {
+                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                            controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: true, text: selectedMessages.count == 1 ? presentationData.strings.Conversation_ForwardTooltip_SavedMessages_One : presentationData.strings.Conversation_ForwardTooltip_SavedMessages_Many), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in false }), nil)
+                        })
+                        f(.default)
+                    })))
+                }
+
+                if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextHideSenderNames), message.id.peerId != context.account.peerId {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ForwardOptions_HideSendersNames, icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)
+                    }, action: { _, f in
+                        interfaceInteraction.updateForwardOptionsState { current in
+                            var updated = current
+                            updated.hideNames = true
+                            updated.hideCaptions = false
+                            updated.unhideNamesOnCaptionChange = false
+                            return updated
+                        }
+                        interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
+                        f(.dismissWithoutContent)
+                    })))
+                }
             }
         }
         
-        if data.messageActions.options.contains(.report) {
+        if data.messageActions.options.contains(.report), MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextReport) {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuReport, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Report"), color: theme.actionSheet.primaryTextColor)
             }, action: { controller, f in
@@ -2066,6 +2130,47 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }, action: { controller, f in
                 interfaceInteraction.blockMessageAuthor(message, controller)
             })))
+        }
+
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextRestrict), !isMellowsgramDeletedMessage,
+           let author = message.author as? TelegramUser, author.id != context.account.peerId,
+           let peer = chatPresentationInterfaceState.renderedPeer?.peer ?? message.peers[message.id.peerId] {
+            let canRestrict: Bool
+            if let channel = peer as? TelegramChannel {
+                if case .broadcast = channel.info {
+                    canRestrict = false
+                } else {
+                    canRestrict = channel.hasPermission(.banMembers)
+                }
+            } else if let group = peer as? TelegramGroup {
+                switch group.role {
+                case .creator:
+                    canRestrict = true
+                case let .admin(adminRights, _):
+                    canRestrict = adminRights.rights.contains(.canBanUsers)
+                case .member:
+                    canRestrict = false
+                }
+            } else {
+                canRestrict = false
+            }
+            if canRestrict {
+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuBan, icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Restrict"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let participantSignal: Signal<ChannelParticipant?, NoError>
+                    if peer is TelegramChannel {
+                        participantSignal = context.engine.peers.fetchChannelParticipant(peerId: peer.id, participantId: author.id)
+                    } else {
+                        participantSignal = .single(.member(id: author.id, invitedAt: 0, adminInfo: nil, banInfo: nil, rank: nil, subscriptionUntilDate: nil))
+                    }
+                    let _ = (participantSignal |> deliverOnMainQueue).start(next: { participant in
+                        let controller = channelBannedMemberController(context: context, peerId: peer.id, memberId: author.id, initialParticipant: participant, updated: { _ in }, upgradedToSupergroup: { _, completion in completion() })
+                        controllerInteraction.presentControllerInCurrent(controller, ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
+                    })
+                    f(.dismissWithoutContent)
+                })))
+            }
         }
         
         var clearCacheAsDelete = false
@@ -2222,6 +2327,48 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
 
         if !isPinnedMessages, !isReplyThreadHead, data.canSelect {
             var didAddSeparator = false
+
+            if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSelectFromAuthor), !isMellowsgramDeletedMessage, let authorId = message.author?.id {
+                if !actions.isEmpty {
+                    didAddSeparator = true
+                    actions.append(.separator)
+                }
+                actions.append(.action(ContextMenuActionItem(text: "Select from Author", icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)
+                }, action: { _, f in
+                    let threadId: Int64?
+                    if case let .replyThread(replyThreadMessage) = chatPresentationInterfaceState.chatLocation {
+                        threadId = replyThreadMessage.threadId
+                    } else {
+                        threadId = nil
+                    }
+                    let _ = (context.account.postbox.transaction { transaction -> [EngineMessage.Id] in
+                        var ids: [EngineMessage.Id] = []
+                        transaction.withAllMessages(peerId: message.id.peerId) { candidate in
+                            guard ids.count < 500 else {
+                                return false
+                            }
+                            guard candidate.author?.id == authorId,
+                                  threadId == nil || candidate.threadId == threadId,
+                                  !candidate.media.contains(where: { $0 is TelegramMediaAction }) else {
+                                return true
+                            }
+                            ids.append(candidate.id)
+                            return true
+                        }
+                        return ids
+                    } |> deliverOnMainQueue).start(next: { ids in
+                        guard !ids.isEmpty else {
+                            f(.default)
+                            return
+                        }
+                        interfaceInteraction.beginMessageSelection(ids, { transition in
+                            f(.custom(transition))
+                        })
+                    })
+                })))
+            }
+
             if !selectAll || messages.count == 1 {
                 if !actions.isEmpty && !didAddSeparator {
                     didAddSeparator = true

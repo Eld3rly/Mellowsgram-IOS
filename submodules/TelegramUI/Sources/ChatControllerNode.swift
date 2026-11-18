@@ -1971,7 +1971,13 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         var dismissedInputContextPanelNode: ChatInputContextPanelNode?
         var dismissedOverlayContextPanelNode: ChatInputContextPanelNode?
         
-        let inputPanelNodes = inputPanelForChatPresentationIntefaceState(self.chatPresentationInterfaceState, context: self.context, currentPanel: self.inputPanelNode, currentSecondaryPanel: self.secondaryInputPanelNode, textInputPanelNode: self.textInputPanelNode, chatControllerInteraction: self.controllerInteraction, interfaceInteraction: self.interfaceInteraction)
+        var inputPanelNodes = inputPanelForChatPresentationIntefaceState(self.chatPresentationInterfaceState, context: self.context, currentPanel: self.inputPanelNode, currentSecondaryPanel: self.secondaryInputPanelNode, textInputPanelNode: self.textInputPanelNode, chatControllerInteraction: self.controllerInteraction, interfaceInteraction: self.interfaceInteraction)
+        if !MellowsgramGlobalSettingsRuntime.shared.bool(for: .channelBottomPanel),
+           self.chatPresentationInterfaceState.interfaceState.selectionState == nil,
+           self.chatPresentationInterfaceState.search == nil,
+           inputPanelNodes.primary != nil || inputPanelNodes.secondary != nil {
+            inputPanelNodes = inputPanelForChatPresentationIntefaceState(self.chatPresentationInterfaceState, context: self.context, currentPanel: self.inputPanelNode, currentSecondaryPanel: self.secondaryInputPanelNode, textInputPanelNode: self.textInputPanelNode, chatControllerInteraction: self.controllerInteraction, interfaceInteraction: self.interfaceInteraction, forceHideChannelButton: true)
+        }
         
         let inputPanelBottomInset = max(insets.bottom, inputPanelBottomInsetTerm)
         

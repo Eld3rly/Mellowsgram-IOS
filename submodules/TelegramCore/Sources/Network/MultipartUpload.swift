@@ -499,7 +499,8 @@ func multipartUpload(network: Network, postbox: Postbox, source: MultipartUpload
                 }
             }
             
-            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts, increaseParallelParts: increaseParallelParts, uploadPart: { part in
+            let mellowsgramUploadBoost = UserDefaults.standard.bool(forKey: "mellowsgram.global.uploadBoost")
+            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts || mellowsgramUploadBoost, increaseParallelParts: increaseParallelParts || mellowsgramUploadBoost, uploadPart: { part in
                 switch uploadInterface {
                 case let .download(download):
                     return download.uploadPart(fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression, onFloodWaitError: onFloodWaitError)

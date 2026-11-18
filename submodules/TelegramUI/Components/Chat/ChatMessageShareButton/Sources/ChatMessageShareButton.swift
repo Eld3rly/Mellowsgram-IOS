@@ -37,6 +37,7 @@ public class ChatMessageShareButton: ASDisplayNode {
     private var isReplies: Bool = false
     private var hasMore: Bool = false
     private var isExpand: Bool = false
+    private var isQuickTranslate: Bool = false
     
     private var textNode: ImmediateTextNode?
     
@@ -110,7 +111,7 @@ public class ChatMessageShareButton: ASDisplayNode {
         self.morePressed?()
     }
     
-    public func update(presentationData: ChatPresentationData, controllerInteraction: ChatControllerInteraction, chatLocation: ChatLocation, subject: ChatControllerSubject?, message: EngineMessage, accountPeerId: EnginePeer.Id, disableComments: Bool = false, isSummarize: Bool = false) -> CGSize {
+    public func update(presentationData: ChatPresentationData, controllerInteraction: ChatControllerInteraction, chatLocation: ChatLocation, subject: ChatControllerSubject?, message: EngineMessage, accountPeerId: EnginePeer.Id, disableComments: Bool = false, isSummarize: Bool = false, isQuickTranslate: Bool = false) -> CGSize {
         let isGlass = !presentationData.chatBubbleCorners.bubbleMode
         var isReplies = false
         var isNavigate = false
@@ -147,16 +148,21 @@ public class ChatMessageShareButton: ASDisplayNode {
             isExpand = true
         }
         
-        if self.theme !== presentationData.theme.theme || self.isReplies != isReplies || self.hasMore != hasMore || self.isExpand != isExpand {
+        if self.theme !== presentationData.theme.theme || self.isReplies != isReplies || self.hasMore != hasMore || self.isExpand != isExpand || self.isQuickTranslate != isQuickTranslate {
             self.theme = presentationData.theme.theme
             self.isReplies = isReplies
             self.hasMore = hasMore
             self.isExpand = isExpand
+            self.isQuickTranslate = isQuickTranslate
 
             var updatedIconImage: UIImage?
             var updatedBottomIconImage: UIImage?
             var updatedIconOffset = CGPoint()
-            if isSummarize {
+            if isQuickTranslate {
+                let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 16.0, weight: .medium)
+                let foregroundColor = bubbleVariableColor(variableColor: presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: presentationData.theme.wallpaper)
+                updatedIconImage = (UIImage(systemName: "translate") ?? UIImage(systemName: "textformat"))?.withConfiguration(symbolConfiguration).withTintColor(foregroundColor, renderingMode: .alwaysOriginal)
+            } else if isSummarize {
                 if isExpand {
                     updatedIconImage = PresentationResourcesChat.chatFreeExpandButtonIcon(presentationData.theme.theme, wallpaper: presentationData.theme.wallpaper)
                 } else {
@@ -203,7 +209,9 @@ public class ChatMessageShareButton: ASDisplayNode {
             
             // VoiceOver: the icon-only button is named by what it does (it was an unlabelled element).
             var topLabel: String?
-            if isSummarize || message.adAttribute != nil {
+            if isQuickTranslate {
+                topLabel = "Translate"
+            } else if isSummarize || message.adAttribute != nil {
                 topLabel = nil
             } else if case let .customChatContents(contents) = subject, case .hashTagSearch = contents.kind {
                 topLabel = presentationData.strings.SharedMedia_ViewInChat
@@ -218,10 +226,8 @@ public class ChatMessageShareButton: ASDisplayNode {
             } else {
                 topLabel = presentationData.strings.Conversation_ContextMenuShare
             }
-            if let topLabel {
-                self.topButton.accessibilityLabel = topLabel
-                self.topButton.accessibilityTraits = .button
-            }
+            self.topButton.accessibilityLabel = topLabel
+            self.topButton.accessibilityTraits = .button
             
             if let updatedBottomIconImage {
                 let bottomButton: HighlightTrackingButtonNode

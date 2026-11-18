@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import TelegramCore
+import TelegramUIPreferences
 
 private extension PeerNameColors.Colors {
     init?(colors: EngineAvailableColorOptions.MultiColorPack) {
@@ -29,36 +30,63 @@ public class PeerNameColors: Equatable {
     }
     
     public struct Colors: Equatable {
-        public let main: UIColor
-        public let secondary: UIColor?
-        public let tertiary: UIColor?
+        private let baseMain: UIColor
+        private let baseSecondary: UIColor?
+        private let baseTertiary: UIColor?
+
+        private func adjusted(_ color: UIColor) -> UIColor {
+            let factor = CGFloat(MellowsgramGlobalSettingsRuntime.shared.integer(for: .accountColorsSaturation)) / 100.0
+            guard factor < 1.0, factor >= 0.0 else {
+                return color
+            }
+            var hue: CGFloat = 0.0
+            var saturation: CGFloat = 0.0
+            var brightness: CGFloat = 0.0
+            var alpha: CGFloat = 0.0
+            guard color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) else {
+                return color
+            }
+            return UIColor(hue: hue, saturation: saturation * factor, brightness: brightness, alpha: alpha)
+        }
+
+        public var main: UIColor {
+            return self.adjusted(self.baseMain)
+        }
+
+        public var secondary: UIColor? {
+            return self.baseSecondary.map(self.adjusted)
+        }
+
+        public var tertiary: UIColor? {
+            return self.baseTertiary.map(self.adjusted)
+        }
         
         public init(main: UIColor, secondary: UIColor?, tertiary: UIColor?) {
-            self.main = main
-            self.secondary = secondary
-            self.tertiary = tertiary
+            self.baseMain = main
+            self.baseSecondary = secondary
+            self.baseTertiary = tertiary
         }
         
         public init(main: UIColor) {
-            self.main = main
-            self.secondary = nil
-            self.tertiary = nil
+            self.baseMain = main
+            self.baseSecondary = nil
+            self.baseTertiary = nil
         }
         
         public init?(colors: [UIColor]) {
             guard let first = colors.first else {
                 return nil
             }
-            self.main = first
+            self.baseMain = first
             if colors.count == 3 {
-                self.secondary = colors[1]
-                self.tertiary = colors[2]
+                self.baseSecondary = colors[1]
+                self.baseTertiary = colors[2]
             } else if colors.count == 2, let second = colors.last {
-                self.secondary = second
-                self.tertiary = nil
+                self.baseSecondary = second
+                self.baseTertiary = nil
             } else {
-                self.secondary = nil
-                self.tertiary = nil
+                self.baseSecondary = nil
+                self.baseTertiary = nil
             }
         }
     }

@@ -3714,7 +3714,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             self?.presentInGlobalOverlay(controller, with: arguments)
         }, callPeer: { [weak self] peerId, isVideo in
             if let strongSelf = self {
-                let _ = strongSelf.presentVoiceMessageDiscardAlert(action: {
+                let startCall = { [weak strongSelf] in
+                    guard let strongSelf else {
+                        return
+                    }
                     strongSelf.commitPurposefulAction()
                     
                     let _ = (context.account.viewTracker.peerView(peerId)
@@ -3738,7 +3741,22 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         
                         context.requestCall(peerId: peer.id, isVideo: isVideo, completion: {})
                     })
-                })
+                }
+                let performCall = { [weak strongSelf] in
+                    guard let strongSelf else {
+                        return
+                    }
+                    let _ = strongSelf.presentVoiceMessageDiscardAlert(action: startCall)
+                }
+                if MellowsgramGlobalSettingsRuntime.shared.bool(for: .callConfirmation) {
+                    let presentationData = strongSelf.presentationData
+                    strongSelf.present(textAlertController(context: strongSelf.context, updatedPresentationData: strongSelf.updatedPresentationData, title: nil, text: "Start this call?", actions: [
+                        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                        TextAlertAction(type: .defaultAction, title: "Call", action: performCall)
+                    ]), in: .window(.root))
+                } else {
+                    performCall()
+                }
             }
         }, openConferenceCall: { [weak self] message in
             guard let self else {
@@ -3893,6 +3911,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }, openSearch: {
         }, setupReply: { [weak self] messageId in
             self?.interfaceInteraction?.setupReplyMessage(messageId, nil, { _, f in f() })
+        }, editMessage: { [weak self] messageId in
+            self?.interfaceInteraction?.setupEditMessage(messageId, { _ in })
         }, canSetupReply: { [weak self] message in
             if Namespaces.Message.allEphemeral.contains(message.id.namespace) {
                 if !message.flags.contains(.Incoming) {
@@ -4584,18 +4604,25 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                         }
                         
                         let (_, language) = canTranslateText(context: context, text: text.string, showTranslate: translationSettings.showTranslate, showTranslateIfTopical: showTranslateIfTopical, ignoredLanguages: translationSettings.ignoredLanguages)
-                        
+
+                        let mellowsgramTranslationService = MellowsgramGlobalSettingsRuntime.shared.value(for: .translationService)
                         let _ = ApplicationSpecificNotice.incrementTranslationSuggestion(accountManager: context.sharedContext.accountManager, timestamp: Int32(Date().timeIntervalSince1970)).startStandalone()
                         
                         let translationConfiguration = TranslationConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 })
                         var useSystemTranslation = false
-                        switch translationConfiguration.manual {
-                        case .system:
+                        if mellowsgramTranslationService == "system" {
                             if #available(iOS 18.0, *) {
                                 useSystemTranslation = true
                             }
-                        default:
-                            break
+                        } else if mellowsgramTranslationService != "telegram" && mellowsgramTranslationService != "google" {
+                            switch translationConfiguration.manual {
+                            case .system:
+                                if #available(iOS 18.0, *) {
+                                    useSystemTranslation = true
+                                }
+                            default:
+                                break
+                            }
                         }
                         
                         if useSystemTranslation {
@@ -4605,6 +4632,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 entities: entities ?? [],
                                 canCopy: canCopy,
                                 fromLanguage: language,
+                                forceSystemTranslation: true,
                                 ignoredLanguages: translationSettings.ignoredLanguages,
                                 translateChat: { [weak self] _, toLang in
                                     self?.interfaceInteraction?.changeTranslationLanguage(toLang)

@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import TelegramCore
+import TelegramUIPreferences
 import Display
 import LegacyComponents
 import LegacyMediaPickerUI
@@ -112,7 +113,8 @@ func chatMediaSendRenderedImageMedia(image: UIImage, nominalDimensions: PixelDim
     defer {
         EngineTempBox.shared.dispose(tempFile)
     }
-    guard let scaledImageData = compressImageToJPEG(scaledImage, quality: 0.6, tempFilePath: tempFile.path) else {
+    let outgoingQuality = Float(MellowsgramGlobalSettingsRuntime.shared.integer(for: .outgoingPhotoQuality)) / 100.0
+    guard let scaledImageData = compressImageToJPEG(scaledImage, quality: outgoingQuality, tempFilePath: tempFile.path) else {
         return nil
     }
     let _ = try? scaledImageData.write(to: URL(fileURLWithPath: tempFilePath))
@@ -140,8 +142,10 @@ func chatMediaSendLibraryPhotoMedia(identifier: String, pixelSize: CGSize, thumb
 
     var randomId: Int64 = 0
     arc4random_buf(&randomId, 8)
-    let scaledSize = pixelSize.aspectFittedOrSmaller(CGSize(width: 1280.0, height: 1280.0))
-    let resource = PhotoLibraryMediaResource(localIdentifier: identifier, uniqueId: Int64.random(in: Int64.min ... Int64.max), forceHd: forceHd)
+    let sendHd = forceHd || MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendHDPhotos)
+    let maximumSide: CGFloat = sendHd ? 2560.0 : 1280.0
+    let scaledSize = pixelSize.aspectFittedOrSmaller(CGSize(width: maximumSide, height: maximumSide))
+    let resource = PhotoLibraryMediaResource(localIdentifier: identifier, uniqueId: Int64.random(in: Int64.min ... Int64.max), forceHd: sendHd)
     representations.append(TelegramMediaImageRepresentation(dimensions: PixelDimensions(scaledSize), resource: resource, progressiveSizes: [], immediateThumbnailData: nil, hasVideo: false, isPersonal: false))
     return TelegramMediaImage(imageId: EngineMedia.Id(namespace: Namespaces.Media.LocalImage, id: randomId), representations: representations, immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
 }
@@ -368,7 +372,8 @@ func chatMediaSendBuildMessagesReportingSkipped(items: [ChatMediaSendItem], plan
             continue
         }
         let item = items[planned.index]
-        guard let (media, stickerFiles) = chatMediaSendItemMedia(item: item, forceHd: forceHd && item.options.allowsHd, storeResourceData: storeResourceData) else {
+        let allowHd = (forceHd || MellowsgramGlobalSettingsRuntime.shared.bool(for: .sendHDPhotos)) && item.options.allowsHd
+        guard let (media, stickerFiles) = chatMediaSendItemMedia(item: item, forceHd: allowHd, storeResourceData: storeResourceData) else {
             skippedIndices.append(planned.index)
             continue
         }

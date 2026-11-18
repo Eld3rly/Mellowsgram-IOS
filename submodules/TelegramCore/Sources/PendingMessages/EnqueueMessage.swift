@@ -1101,8 +1101,40 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         // tombstone target as well, so remove it regardless of
                         // where it came from.
                         attributes.removeAll(where: { $0 is ReplyMessageAttribute })
-                        if !messageText.hasPrefix(formatting.prefix) {
-                            let prefixLength = formatting.prefix.utf16.count
+
+                        let isGroupChat: Bool
+                        if peer is TelegramGroup {
+                            isGroupChat = true
+                        } else if let channel = peer as? TelegramChannel, case .group = channel.info {
+                            isGroupChat = true
+                        } else {
+                            isGroupChat = false
+                        }
+
+                        var quoteText = formatting.preview
+                        var quoteEntities: [MessageTextEntity] = []
+                        if isGroupChat, let authorId = record.authorId, let authorPeer = transaction.getPeer(authorId) {
+                            let authorName = EnginePeer(authorPeer).compactDisplayTitle
+                                .replacingOccurrences(of: "\n", with: " ")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !authorName.isEmpty {
+                                quoteText = "\(authorName)\n\(formatting.preview)"
+                                let authorRange = 0 ..< authorName.utf16.count
+                                // The name is both visually bold and a real
+                                // text mention, matching AyuGram's group
+                                // reply format. Telegram only accepts
+                                // text-mentions for users, so anonymous
+                                // channel senders remain bold but non-clickable.
+                                quoteEntities.append(MessageTextEntity(range: authorRange, type: .Bold))
+                                if authorPeer is TelegramUser {
+                                    quoteEntities.append(MessageTextEntity(range: authorRange, type: .TextMention(peerId: authorId)))
+                                }
+                            }
+                        }
+
+                        let quotePrefix = quoteText + "\n"
+                        if !messageText.hasPrefix(quotePrefix) {
+                            let prefixLength = quotePrefix.utf16.count
                             let entities = attributes.compactMap { attribute in
                                 (attribute as? TextEntitiesMessageAttribute)?.entities
                             }.flatMap { $0 }
@@ -1113,10 +1145,9 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                                 )
                             }
                             attributes.removeAll(where: { $0 is TextEntitiesMessageAttribute })
-                            messageText = formatting.prefix + messageText
-                            attributes.append(TextEntitiesMessageAttribute(entities: shiftedEntities + [
-                                MessageTextEntity(range: 0 ..< formatting.quoteLength, type: .BlockQuote(isCollapsed: false))
-                            ]))
+                            messageText = quotePrefix + messageText
+                            quoteEntities.append(MessageTextEntity(range: 0 ..< quoteText.utf16.count, type: .BlockQuote(isCollapsed: false)))
+                            attributes.append(TextEntitiesMessageAttribute(entities: shiftedEntities + quoteEntities))
                         }
                     } else if let replyToMessageId = replyToMessageId {
                         var threadMessageId: MessageId?

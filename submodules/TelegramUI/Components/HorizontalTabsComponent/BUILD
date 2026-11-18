@@ -24,6 +24,7 @@ swift_library(
         "//submodules/TelegramUI/Components/LiquidLens",
         "//submodules/TelegramUI/Components/TextBadgeComponent",
         "//submodules/TelegramUI/Components/HeaderPanelContainerComponent",
+        "//submodules/TelegramUIPreferences:TelegramUIPreferences",
     ],
     visibility = [
         "//visibility:public",

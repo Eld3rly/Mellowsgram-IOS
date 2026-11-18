@@ -541,6 +541,25 @@ func alternativeTranslateText(text: String, fromLang: String?, toLang: String) -
     }
 }
 
+public func mellowsgramGoogleTranslateText(text: String, fromLang: String?, toLang: String) -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> {
+    return alternativeTranslateText(text: text, fromLang: fromLang, toLang: toLang)
+}
+
+public func mellowsgramSystemTranslateText(text: String, fromLang: String?, toLang: String) -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> {
+    guard #available(iOS 18.0, *), let fromLang, let service = engineExperimentalInternalTranslationService else {
+        return .fail(.generic)
+    }
+    let requestId = AnyHashable(UUID().uuidString)
+    return service.translate(texts: [requestId: text], fromLang: fromLang, toLang: toLang)
+    |> castError(TelegramCore.TranslationError.self)
+    |> mapToSignal { result -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> in
+        guard let translatedText = result?[requestId], !translatedText.isEmpty else {
+            return .fail(.generic)
+        }
+        return .single((translatedText, []))
+    }
+}
+
 func getRandomUserAgent() -> String {
     let userAgents = [
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1"

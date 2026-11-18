@@ -905,17 +905,22 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             let isSimulator = false
             #endif
             let isIpad = LegacyCameraImpl.shared.isIpad
-            let cameraCellBranch = mediaPickerCameraCellBranch(
+            var cameraCellBranch = mediaPickerCameraCellBranch(
                 flagOn: controller.context.routesToChatMediaEditorV2(.inlineCameraCell) && controller.preparedCompletion != nil && controller.opensChatCameraWithHolder,
                 subject: cameraCellSubject,
                 isIpad: isIpad,
                 isSimulator: isSimulator
             )
+            if !MellowsgramGlobalSettingsRuntime.shared.bool(for: .cameraInGallery),
+               cameraCellSubject != .avatar && cameraCellSubject != .sticker {
+                cameraCellBranch = .none
+            }
             self.cameraCellBranch = cameraCellBranch
             
             switch cameraCellBranch {
             case .legacyAttachmentCamera:
-                let enableAnimations = self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true
+                let enableAnimations = (self.controller?.context.sharedContext.energyUsageSettings.fullTranslucency ?? true)
+                    && MellowsgramGlobalSettingsRuntime.shared.bool(for: .cameraPreviewInGallery)
   
                 let cameraView = TGAttachmentCameraView(forSelfPortrait: false, videoModeByDefault: controller.bannedSendPhotos != nil && controller.bannedSendVideos == nil)!
                 cameraView.clipsToBounds = true
@@ -981,6 +986,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 )
                 self.modernCamera = camera
                 let enableAnimations = controller.context.sharedContext.energyUsageSettings.fullTranslucency
+                    && MellowsgramGlobalSettingsRuntime.shared.bool(for: .cameraPreviewInGallery)
                 self.modernCameraHasLivePreview = enableAnimations
             case .editorCamera:
                 let cameraImpl = LegacyCameraImpl.shared

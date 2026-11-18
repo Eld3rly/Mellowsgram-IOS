@@ -80,7 +80,16 @@ jobs:
             submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift \
             submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift \
             submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift \
-            submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift; do
+            submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift \
+            submodules/TelegramUI/Sources/MellowsgramBackgroundNotificationManager.swift \
+            submodules/TelegramUI/Sources/SharedWakeupManager.swift \
+            submodules/TelegramUI/Sources/AppDelegate.swift \
+            submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift \
+            submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift \
+            submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift \
+            submodules/SettingsUI/Sources/MellowsgramSettingsController.swift \
+            submodules/TelegramCore/Sources/Settings/MellowsgramSettings.swift \
+            submodules/TelegramUIPreferences/Sources/MellowsgramGlobalSettings.swift; do
             echo "Parsing $source"
             "$swiftc_path" -frontend -parse -parse-as-library "$source"
           done

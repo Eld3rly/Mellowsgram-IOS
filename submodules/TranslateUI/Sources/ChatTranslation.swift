@@ -235,11 +235,117 @@ public func updateChatTranslationStateInteractively(engine: TelegramEngine, peer
 
 @available(iOS 12.0, *)
 private let languageRecognizer = NLLanguageRecognizer()
+private let mellowsgramGoogleTranslationBatchSize = 4
+
+private func storeMellowsgramTranslations(context: AccountContext, values: [(MessageId, String, [MessageTextEntity])], toLang: String) -> Signal<Never, NoError> {
+    guard !values.isEmpty else {
+        return .complete()
+    }
+    return context.account.postbox.transaction { transaction in
+        for (messageId, text, entities) in values {
+            transaction.updateMessage(messageId, update: { currentMessage in
+                let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
+                var attributes = currentMessage.attributes.filter { !($0 is TranslationMessageAttribute) }
+                attributes.append(TranslationMessageAttribute(text: text, entities: entities, toLang: toLang))
+                return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: attributes, media: currentMessage.media))
+            })
+        }
+    }
+    |> ignoreValues()
+}
+
+private func mellowsgramGoogleTranslateMessages(context: AccountContext, messageIds: [MessageId], fromLang: String?, toLang: String) -> Signal<Never, NoError> {
+    guard !messageIds.isEmpty else {
+        return .complete()
+    }
+    return context.account.postbox.transaction { transaction -> [(MessageId, String)] in
+        return messageIds.compactMap { messageId in
+            guard let message = transaction.getMessage(messageId), !message.text.isEmpty else {
+                return nil
+            }
+            return (messageId, message.text)
+        }
+    }
+    |> mapToSignal { messages -> Signal<Never, NoError> in
+        guard !messages.isEmpty else {
+            return .complete()
+        }
+        let batches = stride(from: 0, to: messages.count, by: mellowsgramGoogleTranslationBatchSize).map { startIndex in
+            Array(messages[startIndex ..< min(startIndex + mellowsgramGoogleTranslationBatchSize, messages.count)])
+        }
+        return batches.reduce(Signal<Never, NoError>.complete()) { previousBatch, batch in
+            let signals: [Signal<(MessageId, (String, [MessageTextEntity])?), NoError>] = batch.map { messageId, text in
+                return mellowsgramGoogleTranslateText(text: text, fromLang: fromLang, toLang: toLang)
+                |> map { (messageId, $0) }
+                |> `catch` { _ -> Signal<(MessageId, (String, [MessageTextEntity])?), NoError> in
+                    return .single((messageId, nil))
+                }
+            }
+            let currentBatch = combineLatest(signals)
+            |> mapToSignal { results -> Signal<Never, NoError> in
+                let values = results.compactMap { messageId, result -> (MessageId, String, [MessageTextEntity])? in
+                    guard let (text, entities) = result, !text.isEmpty else {
+                        return nil
+                    }
+                    return (messageId, text, entities)
+                }
+                return storeMellowsgramTranslations(context: context, values: values, toLang: toLang)
+            }
+            return previousBatch |> then(currentBatch)
+        }
+    }
+}
+
+private func mellowsgramSystemTranslateMessages(context: AccountContext, messageIds: [MessageId], fromLang: String?, toLang: String) -> Signal<Never, NoError>? {
+    guard #available(iOS 18.0, *), let fromLang, let service = engineExperimentalInternalTranslationService else {
+        return nil
+    }
+    guard !messageIds.isEmpty else {
+        return .complete()
+    }
+    return context.account.postbox.transaction { transaction -> [MessageId: String] in
+        var values: [MessageId: String] = [:]
+        for messageId in messageIds {
+            if let message = transaction.getMessage(messageId), !message.text.isEmpty {
+                values[messageId] = message.text
+            }
+        }
+        return values
+    }
+    |> mapToSignal { messageTexts -> Signal<Never, NoError> in
+        guard !messageTexts.isEmpty else {
+            return .complete()
+        }
+        var sourceTexts: [AnyHashable: String] = [:]
+        for (messageId, text) in messageTexts {
+            sourceTexts[AnyHashable(messageId)] = text
+        }
+        return service.translate(texts: sourceTexts, fromLang: fromLang, toLang: toLang)
+        |> mapToSignal { result -> Signal<Never, NoError> in
+            guard let result else {
+                return mellowsgramGoogleTranslateMessages(context: context, messageIds: messageIds, fromLang: fromLang, toLang: toLang)
+            }
+            var translatedValues: [(MessageId, String, [MessageTextEntity])] = []
+            var untranslatedIds: [MessageId] = []
+            for messageId in messageIds {
+                if let translatedText = result[AnyHashable(messageId)], !translatedText.isEmpty {
+                    translatedValues.append((messageId, translatedText, []))
+                } else if messageTexts[messageId] != nil {
+                    untranslatedIds.append(messageId)
+                }
+            }
+            return storeMellowsgramTranslations(context: context, values: translatedValues, toLang: toLang)
+            |> then(mellowsgramGoogleTranslateMessages(context: context, messageIds: untranslatedIds, fromLang: fromLang, toLang: toLang))
+        }
+    }
+}
 
 public func translateMessageIds(context: AccountContext, messageIds: [EngineMessage.Id], fromLang: String?, toLang: String) -> Signal<Never, NoError> {
     return context.account.postbox.transaction { transaction -> Signal<Never, NoError> in
         var messageIdsToTranslate: [EngineMessage.Id] = []
         var messageIdsSet = Set<EngineMessage.Id>()
+        var plainTextMessageIds: [MessageId] = []
+        var plainTextMessageIdsSet = Set<MessageId>()
         for messageId in messageIds {
             if let message = transaction.getMessage(messageId) {
                 if let replyAttribute = message.attributes.first(where: { $0 is ReplyMessageAttribute }) as? ReplyMessageAttribute, let replyMessage = message.associatedMessages[replyAttribute.messageId] {
@@ -249,6 +355,10 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
                             if !messageIdsSet.contains(replyMessage.id) {
                                 messageIdsToTranslate.append(replyMessage.id)
                                 messageIdsSet.insert(replyMessage.id)
+                            }
+                            if !plainTextMessageIdsSet.contains(replyMessage.id) {
+                                plainTextMessageIds.append(replyMessage.id)
+                                plainTextMessageIdsSet.insert(replyMessage.id)
                             }
                         }
                     }
@@ -264,6 +374,10 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
                     if !messageIdsSet.contains(messageId) {
                         messageIdsToTranslate.append(messageId)
                         messageIdsSet.insert(messageId)
+                    }
+                    if !plainTextMessageIdsSet.contains(messageId) {
+                        plainTextMessageIds.append(messageId)
+                        plainTextMessageIdsSet.insert(messageId)
                     }
                 } else if let _ = message.richText {
                     if !messageIdsSet.contains(messageId) {
@@ -288,20 +402,36 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
                 }
             }
         }
-        
-        let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
-        var enableLocalIfPossible = false
-        switch translationConfiguration.auto {
-        case .system:
-            if #available(iOS 18.0, *) {
-                enableLocalIfPossible = true
-            }
-        default:
-            break
-        }
-        return context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible)
-        |> `catch` { _ -> Signal<Never, NoError> in
+        guard !messageIdsToTranslate.isEmpty else {
             return .complete()
+        }
+
+        let plainTextIds = plainTextMessageIds
+        let nonPlainTextIds = messageIdsToTranslate.filter { !plainTextMessageIdsSet.contains($0) }
+        let googleTextTranslation = mellowsgramGoogleTranslateMessages(context: context, messageIds: plainTextIds, fromLang: fromLang, toLang: toLang)
+        let telegramTranslation: ([EngineMessage.Id]) -> Signal<Never, NoError> = { ids in
+            guard !ids.isEmpty else {
+                return .complete()
+            }
+            return context.engine.messages.translateMessages(messageIds: ids, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: false)
+            |> `catch` { _ -> Signal<Never, NoError> in
+                return .complete()
+            }
+        }
+
+        switch MellowsgramGlobalSettingsRuntime.shared.value(for: .translationService) {
+        case "google":
+            return telegramTranslation(nonPlainTextIds)
+            |> then(googleTextTranslation)
+        case "system":
+            let systemTranslation = mellowsgramSystemTranslateMessages(context: context, messageIds: plainTextIds, fromLang: fromLang, toLang: toLang) ?? googleTextTranslation
+            return systemTranslation
+            |> then(telegramTranslation(nonPlainTextIds))
+        default:
+            return context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: false)
+            |> `catch` { _ -> Signal<Never, NoError> in
+                return googleTextTranslation
+            }
         }
     } |> switchToLatest
 }

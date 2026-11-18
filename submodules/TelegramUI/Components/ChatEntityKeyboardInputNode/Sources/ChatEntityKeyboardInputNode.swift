@@ -489,7 +489,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     public init(context: AccountContext, currentInputData: InputData, updatedInputData: Signal<InputData, NoError>, defaultToEmojiTab: Bool, opaqueTopPanelBackground: Bool = false, useOpaqueTheme: Bool = false, interaction: ChatEntityKeyboardInputNode.Interaction?, chatPeerId: PeerId?, stateContext: StateContext?, forceHasPremium: Bool = false, displayBottomPanel: Bool = true) {
         self.context = context
         self.currentInputData = currentInputData
-        self.defaultToEmojiTab = defaultToEmojiTab
+        self.defaultToEmojiTab = defaultToEmojiTab || MellowsgramGlobalSettingsRuntime.shared.bool(for: .emojiTabFirst)
         self.opaqueTopPanelBackground = opaqueTopPanelBackground
         self.useOpaqueTheme = useOpaqueTheme
         self.stateContext = stateContext
@@ -2057,6 +2057,14 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     }
 
     private func processStableItemGroupList(category: EntityKeyboardComponent.ReorderCategory, itemGroups: [EmojiPagerContentComponent.ItemGroup]) -> [EmojiPagerContentComponent.ItemGroup] {
+        var itemGroups = itemGroups
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .standardEmojisFirst),
+           let staticIndex = itemGroups.firstIndex(where: { ($0.groupId.base as? String) == "static" }) {
+            let staticGroup = itemGroups.remove(at: staticIndex)
+            let recentIndex = itemGroups.firstIndex(where: { ($0.groupId.base as? String) == "recent" })
+            itemGroups.insert(staticGroup, at: (recentIndex ?? -1) + 1)
+        }
+
         let nextIds: [ItemCollectionId] = itemGroups.compactMap { group -> ItemCollectionId? in
             if group.isEmbedded {
                 return nil

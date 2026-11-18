@@ -14,6 +14,7 @@ import AppBundle
 import SearchBarNode
 import TabSelectionRecognizer
 import TabBarLayout
+import TelegramUIPreferences
 
 /// The items VoiceOver may reach: while search is active every item but the selected one is faded out.
 func tabBarAccessibleItemIds<Id: Hashable>(ids: [Id], selectedId: Id?, isSearchActive: Bool) -> [Id] {
@@ -868,8 +869,10 @@ public final class TabBarComponent: Component {
         
         func update(component: TabBarComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             let innerInset: CGFloat = 4.0
-            let isSystemLayout = component.axis == .horizontal && !component.isCompact && component.usesSystemLayout
+            let isSystemLayout = component.axis == .horizontal && !component.isCompact && component.usesSystemLayout && !MellowsgramGlobalSettingsRuntime.shared.bool(for: .wideTabBar)
             let availableSize = CGSize(width: isSystemLayout ? availableSize.width : min(500.0, availableSize.width), height: availableSize.height)
+            let showsTabNames = MellowsgramGlobalSettingsRuntime.shared.bool(for: .showTabNames)
+            let showsTitle = !component.isCompact && showsTabNames
 
             let previousComponent = self.component
             // A new axis or mode is applied without animation, so the capsule does not morph through
@@ -879,7 +882,9 @@ public final class TabBarComponent: Component {
                 transition = .immediate
             }
             // Search is laid out on the horizontal axis only.
-            let search = component.axis == .horizontal ? component.search : nil
+            let search = component.axis == .horizontal ? component.search.flatMap { search in
+                MellowsgramGlobalSettingsRuntime.shared.bool(for: .searchButton) || search.isActive ? search : nil
+            } : nil
             let alphaTransition: ComponentTransition = transition.animation.isImmediate ? .immediate : .easeInOut(duration: 0.25)
             let _ = alphaTransition
 
@@ -919,7 +924,7 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: false,
-                        showsTitle: true,
+                        showsTitle: showsTitle,
                         isSelected: false,
                         tintSelectedItem: true,
                         isSystemLayout: isSystemLayout,
@@ -982,7 +987,7 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: search?.isActive == true,
-                        showsTitle: !component.isCompact,
+                        showsTitle: showsTitle,
                         isSelected: false,
                         tintSelectedItem: component.tintSelectedItem,
                         isSystemLayout: isSystemLayout,
@@ -997,7 +1002,7 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: search?.isActive == true,
-                        showsTitle: !component.isCompact,
+                        showsTitle: showsTitle,
                         isSelected: true,
                         tintSelectedItem: component.tintSelectedItem,
                         isSystemLayout: isSystemLayout,
