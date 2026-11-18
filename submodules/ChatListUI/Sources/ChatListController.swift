@@ -4480,15 +4480,12 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         if !skipConfirmation,
            MellowsgramGlobalSettingsRuntime.shared.bool(for: .askBeforeViewingStories),
            peerId != self.context.account.peerId {
-            let alert = UIAlertController(
-                title: "View story?",
-                message: "The author may see that you viewed this story. Continue?",
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-            alert.addAction(UIAlertAction(title: "Continue", style: .default, handler: { [weak self] _ in
-                self?.openStories(peerId: peerId, completion: completion, skipConfirmation: true)
-            }))
+            let alert = textAlertController(context: self.context, title: "View story?", text: "The author may see that you viewed this story. Continue?", actions: [
+                TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
+                TextAlertAction(type: .defaultAction, title: "Continue", action: { [weak self] in
+                    self?.openStories(peerId: peerId, completion: completion, skipConfirmation: true)
+                })
+            ])
             self.present(alert, in: .window(.root))
             return
         }
