@@ -96,7 +96,7 @@ public final class MellowsgramBackgroundNotificationManager {
 
         for (accountId, account) in updatedAccounts {
             if self.accountSettingsDisposables[accountId] == nil {
-                self.accountSettingsDisposables[accountId] = (mellowsgramSettings(postbox: account.postbox)
+                self.accountSettingsDisposables[accountId] = (account.mellowsgramSettingsSignal
                 |> deliverOnMainQueue).startStrict(next: { [weak self] settings in
                     guard let self else {
                         return

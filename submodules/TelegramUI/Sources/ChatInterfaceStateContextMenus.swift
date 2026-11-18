@@ -2342,22 +2342,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     } else {
                         threadId = nil
                     }
-                    let _ = (context.account.postbox.transaction { transaction -> [EngineMessage.Id] in
-                        var ids: [EngineMessage.Id] = []
-                        transaction.withAllMessages(peerId: message.id.peerId) { candidate in
-                            guard ids.count < 500 else {
-                                return false
-                            }
-                            guard candidate.author?.id == authorId,
-                                  threadId == nil || candidate.threadId == threadId,
-                                  !candidate.media.contains(where: { $0 is TelegramMediaAction }) else {
-                                return true
-                            }
-                            ids.append(candidate.id)
-                            return true
-                        }
-                        return ids
-                    } |> deliverOnMainQueue).start(next: { ids in
+                    let _ = (context.engine.messages.messageIdsByAuthor(peerId: message.id.peerId, authorId: authorId, threadId: threadId)
+                    |> deliverOnMainQueue).start(next: { ids in
                         guard !ids.isEmpty else {
                             f(.default)
                             return

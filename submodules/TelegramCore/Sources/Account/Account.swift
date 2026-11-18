@@ -92,6 +92,17 @@ public class UnauthorizedAccount {
     }
     
     public let shouldBeServiceTaskMaster = Promise<AccountServiceTaskMasterMode>()
+
+    /// Account-local Mellowsgram settings exposed without leaking Postbox
+    /// access into UI modules.
+    public var mellowsgramSettingsSignal: Signal<MellowsgramSettings, NoError> {
+        return mellowsgramSettings(postbox: self.postbox)
+    }
+
+    /// Live Ghost Mode presence policy used by profile UI and account state.
+    public var mellowsgramGhostModeOnlinePresence: Signal<Bool, NoError> {
+        return self.postbox.mellowsgramGhostModeOnlinePresence
+    }
     
     init(accountManager: AccountManager<TelegramAccountManagerTypes>, networkArguments: NetworkInitializationArguments, id: AccountRecordId, rootPath: String, basePath: String, testingEnvironment: Bool, postbox: Postbox, network: Network, shouldKeepAutoConnection: Bool = true) {
         self.networkArguments = networkArguments

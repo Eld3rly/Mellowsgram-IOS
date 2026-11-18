@@ -392,7 +392,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         if isMyProfile {
             self.currentAccountPresenceDisposable.set((combineLatest(
                 context.account.shouldKeepOnlinePresence.get(),
-                context.account.postbox.mellowsgramGhostModeOnlinePresence
+                context.account.mellowsgramGhostModeOnlinePresence
             )
             |> map { shouldKeepOnlinePresence, ghostModeSuppressesOnlinePresence in
                 return shouldKeepOnlinePresence && !ghostModeSuppressesOnlinePresence
