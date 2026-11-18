@@ -202,7 +202,7 @@ public final class MellowsgramGlobalSettingsRuntime {
     public static let shared = MellowsgramGlobalSettingsRuntime()
 
     private let settings = Atomic(value: MellowsgramGlobalSettings.defaultSettings)
-    private let nativeValues = Atomic<[String: String]>([:])
+    private let nativeValues = Atomic<[String: String]>(value: [:])
     private let settingsPromise = ValuePromise(MellowsgramGlobalSettings.defaultSettings, ignoreRepeated: false)
 
     public var signal: Signal<MellowsgramGlobalSettings, NoError> {
@@ -213,8 +213,8 @@ public final class MellowsgramGlobalSettingsRuntime {
     }
 
     public func update(_ settings: MellowsgramGlobalSettings, nativeValues: [MellowsgramGlobalSettingKey: String] = [:]) {
-        self.settings.swap(settings)
-        self.nativeValues.swap(Dictionary(uniqueKeysWithValues: nativeValues.map { ($0.key.rawValue, $0.value) }))
+        _ = self.settings.swap(settings)
+        _ = self.nativeValues.swap(Dictionary(uniqueKeysWithValues: nativeValues.map { ($0.key.rawValue, $0.value) }))
         // TelegramCore cannot depend on TelegramUIPreferences without creating
         // a module cycle. These two values are mirrored for its network layer;
         // AccountManager remains the persistence source of truth.
