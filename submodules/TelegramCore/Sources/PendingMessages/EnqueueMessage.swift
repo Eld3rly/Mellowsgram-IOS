@@ -1114,7 +1114,14 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                         var quoteText = formatting.preview
                         var quoteEntities: [MessageTextEntity] = []
                         if isGroupChat, let authorId = record.authorId, let authorPeer = transaction.getPeer(authorId) {
-                            let authorName = EnginePeer(authorPeer).compactDisplayTitle
+                            let rawAuthorName: String
+                            switch authorPeer.indexName {
+                            case let .title(title, _):
+                                rawAuthorName = title
+                            case let .personName(first, last, _, _):
+                                rawAuthorName = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+                            }
+                            let authorName = rawAuthorName
                                 .replacingOccurrences(of: "\n", with: " ")
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
                             if !authorName.isEmpty {
