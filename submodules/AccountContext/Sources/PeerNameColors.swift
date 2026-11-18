@@ -8,17 +8,11 @@ private extension PeerNameColors.Colors {
         if colors.colors.isEmpty {
             return nil
         }
-        self.main = UIColor(rgb: colors.colors[0])
-        if colors.colors.count > 1 {
-            self.secondary = UIColor(rgb: colors.colors[1])
-        } else {
-            self.secondary = nil
-        }
-        if colors.colors.count > 2 {
-            self.tertiary = UIColor(rgb: colors.colors[2])
-        } else {
-            self.tertiary = nil
-        }
+        self.init(
+            main: UIColor(rgb: colors.colors[0]),
+            secondary: colors.colors.count > 1 ? UIColor(rgb: colors.colors[1]) : nil,
+            tertiary: colors.colors.count > 2 ? UIColor(rgb: colors.colors[2]) : nil
+        )
     }
 }
 
