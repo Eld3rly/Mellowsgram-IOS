@@ -1295,6 +1295,9 @@ public class Account {
     public var mellowsgramGhostModeOnlinePresence: Signal<Bool, NoError> {
         return self.postbox.mellowsgramGhostModeOnlinePresence
     }
+    public var mellowsgramSettingsSignal: Signal<MellowsgramSettings, NoError> {
+        return mellowsgramSettings(postbox: self.postbox)
+    }
     public let autolockReportDeadline = Promise<Int32?>()
     public let shouldExplicitelyKeepWorkerConnections = Promise<Bool>(false)
     public let shouldKeepBackgroundDownloadConnections = Promise<Bool>(false)

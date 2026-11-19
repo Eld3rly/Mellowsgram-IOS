@@ -31,6 +31,7 @@ import Pasteboard
 import BrowserUI
 import ChatRichTextEditorComposer
 import SettingsUI
+import PeerInfoUI
 import TextNodeWithEntities
 import ChatControllerInteraction
 import ChatMessageItemCommon
@@ -371,6 +372,7 @@ func updatedChatEditInterfaceMessageState(context: AccountContext, state: ChatPr
 private func ephemeralReplacementContextMenuItems(chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, message: EngineRawMessage, controllerInteraction: ChatControllerInteraction, interfaceInteraction: ChatPanelInterfaceInteraction) -> Signal<ContextController.Items, NoError> {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
     let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+    let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message)
     let replacementMessage = message.activeEphemeralReplacementMessage
 
     var richMessageInstantPage: InstantPage?

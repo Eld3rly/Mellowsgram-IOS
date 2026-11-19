@@ -136,7 +136,7 @@ public final class MellowsgramBackgroundNotificationManager {
         self.updateAudioKeepAlive()
     }
 
-    private func handle(_ messageList: [([Message], PeerGroupId, Bool, MessageHistoryThreadData?)], accountId: AccountRecordId) {
+    private func handle(_ messageList: [([EngineRawMessage], EnginePeerGroupId, Bool, EngineMessageHistoryThreadData?)], accountId: AccountRecordId) {
         guard !self.inForeground, self.notificationsAuthorized, self.enabledAccountIdsValue.contains(accountId) else {
             return
         }
@@ -241,7 +241,7 @@ public final class MellowsgramBackgroundNotificationManager {
 
     private func refreshNotificationAuthorization() {
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            let isAuthorized = settings.authorizationStatus != .denied && settings.authorizationStatus != .restricted
+            let isAuthorized = settings.authorizationStatus != .denied
             Queue.mainQueue().async {
                 guard let self else {
                     return
