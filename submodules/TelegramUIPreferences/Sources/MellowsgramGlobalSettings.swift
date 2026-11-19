@@ -240,8 +240,16 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeyValue.self)
         var values = MellowsgramGlobalSettings.defaultSettings.values
         if let legacyKey = CodingKeyValue(stringValue: Self.legacyValuesKey),
-           let legacyValues = try container.decodeIfPresent([String: String].self, forKey: legacyKey) {
-            values.merge(legacyValues, uniquingKeysWith: { _, new in new })
+           let legacyValues = try container.decodeIfPresent(EngineAdaptedPostboxDecoder.RawObjectData.self, forKey: legacyKey) {
+            // Dictionary.Decodable asks the keyed container for `allKeys`, which
+            // Postbox deliberately does not implement. Read the known legacy
+            // setting keys directly from the raw Postbox object instead.
+            for key in MellowsgramGlobalSettingKey.allCases where !key.isTelegramPreference {
+                let legacyDecoder = EnginePostboxDecoder(buffer: EngineMemoryBuffer(data: legacyValues.data))
+                if let value = legacyDecoder.decodeOptionalStringForKey(key.rawValue) {
+                    values[key.rawValue] = value
+                }
+            }
         }
         for key in MellowsgramGlobalSettingKey.allCases where !key.isTelegramPreference {
             guard let codingKey = CodingKeyValue(stringValue: key.rawValue),
