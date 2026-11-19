@@ -2312,7 +2312,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 }
                 let _ = (mellowsgramLocallyAvailableSavedMedia(context: context, media: mediaToSave)
                 |> deliverOnMainQueue
-                |> mapToSignal { availableMedia -> Signal<[MessageId?], NoError> in
+                |> mapToSignal { availableMedia -> Signal<[EngineMessage.Id?], NoError> in
                     var outgoingMessages: [EnqueueMessage] = []
                     if availableMedia.isEmpty {
                         if !originalText.isEmpty {
