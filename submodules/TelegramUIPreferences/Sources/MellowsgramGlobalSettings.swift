@@ -193,6 +193,8 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
     }
 
     private static let legacyValuesKey = "values"
+    private static let lastFolderAccountKeysKey = "lastFolderAccountKeys"
+    private static let lastFolderIdsKey = "lastFolderIds"
 
     private static func storedInteger(for key: String, value: String) -> Int32? {
         if value == "true" { return 1 }
@@ -248,9 +250,12 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
             }
             values[key.rawValue] = Self.decodedValue(for: key.rawValue, integer: integer)
         }
-        for codingKey in container.allKeys where codingKey.stringValue.hasPrefix("lastFolder.") {
-            if let integer = try container.decodeIfPresent(Int32.self, forKey: codingKey) {
-                values[codingKey.stringValue] = "\(integer)"
+        if let accountKeysCodingKey = CodingKeyValue(stringValue: Self.lastFolderAccountKeysKey),
+           let folderIdsCodingKey = CodingKeyValue(stringValue: Self.lastFolderIdsKey),
+           let accountKeys = try container.decodeIfPresent([String].self, forKey: accountKeysCodingKey),
+           let folderIds = try container.decodeIfPresent([Int32].self, forKey: folderIdsCodingKey) {
+            for (accountKey, folderId) in zip(accountKeys, folderIds) {
+                values["lastFolder.\(accountKey)"] = "\(folderId)"
             }
         }
         self.values = values
@@ -259,11 +264,29 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeyValue.self)
         for key in self.values.keys.sorted() {
+            guard !key.hasPrefix("lastFolder.") else {
+                continue
+            }
             guard let value = self.values[key], let integer = Self.storedInteger(for: key, value: value),
                   let codingKey = CodingKeyValue(stringValue: key) else {
                 continue
             }
             try container.encode(integer, forKey: codingKey)
+        }
+
+        let lastFolderEntries = self.values
+            .compactMap { key, value -> (accountKey: String, folderId: Int32)? in
+                guard key.hasPrefix("lastFolder."), let folderId = Int32(value) else {
+                    return nil
+                }
+                return (String(key.dropFirst("lastFolder.".count)), folderId)
+            }
+            .sorted { $0.accountKey < $1.accountKey }
+        if !lastFolderEntries.isEmpty,
+           let accountKeysCodingKey = CodingKeyValue(stringValue: Self.lastFolderAccountKeysKey),
+           let folderIdsCodingKey = CodingKeyValue(stringValue: Self.lastFolderIdsKey) {
+            try container.encode(lastFolderEntries.map { $0.accountKey }, forKey: accountKeysCodingKey)
+            try container.encode(lastFolderEntries.map { $0.folderId }, forKey: folderIdsCodingKey)
         }
     }
 }
