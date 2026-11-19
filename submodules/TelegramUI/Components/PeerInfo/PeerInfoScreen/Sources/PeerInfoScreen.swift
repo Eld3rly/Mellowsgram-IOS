@@ -1719,11 +1719,10 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
 
         if isSettings {
             self.mellowsgramGlobalSettingsDisposable.set(
-                MellowsgramGlobalSettingsRuntime.shared.signal
+                (MellowsgramGlobalSettingsRuntime.shared.signal
                 |> map { $0.bool(for: .hidePhoneInSettings) }
                 |> distinctUntilChanged
-                |> deliverOnMainQueue
-                |> start(next: { [weak self] _ in
+                |> deliverOnMainQueue).start(next: { [weak self] _ in
                     self?.headerNode.requestUpdateLayout?(false)
                 })
             )
