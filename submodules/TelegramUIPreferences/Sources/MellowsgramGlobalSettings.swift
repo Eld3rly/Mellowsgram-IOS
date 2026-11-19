@@ -222,6 +222,9 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
         guard let setting = MellowsgramGlobalSettingKey(rawValue: key) else {
             return "\(integer)"
         }
+        if setting.defaultValue == "true" || setting.defaultValue == "false" {
+            return integer == 0 ? "false" : "true"
+        }
         switch setting {
         case .allChatsTitle:
             return ["default", "short", "long"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
