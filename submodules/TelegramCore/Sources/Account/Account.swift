@@ -1298,6 +1298,12 @@ public class Account {
     public var mellowsgramSettingsSignal: Signal<MellowsgramSettings, NoError> {
         return mellowsgramSettings(postbox: self.postbox)
     }
+    public var mellowsgramLocalizationLanguageCode: Signal<String, NoError> {
+        return self.accountManager.sharedData(keys: [SharedDataKeys.localizationSettings])
+        |> map { sharedData in
+            return sharedData.entries[SharedDataKeys.localizationSettings]?.get(LocalizationSettings.self)?.primaryComponent.languageCode ?? "en"
+        }
+    }
     public let autolockReportDeadline = Promise<Int32?>()
     public let shouldExplicitelyKeepWorkerConnections = Promise<Bool>(false)
     public let shouldKeepBackgroundDownloadConnections = Promise<Bool>(false)

@@ -8,6 +8,40 @@ import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
 import AppBundle
+import TelegramUIPreferences
+
+private func mellowsgramAppIconDisplayName(_ iconName: String, languageCode: String) -> String {
+    let variant = String(iconName.dropFirst("Mellowsgram".count))
+    let russianName: String
+    switch variant {
+    case "Mint": russianName = "Мята"
+    case "Sage": russianName = "Шалфей"
+    case "Lavender": russianName = "Лаванда"
+    case "Rose": russianName = "Роза"
+    case "Coral": russianName = "Коралл"
+    case "Apricot": russianName = "Абрикос"
+    case "Graphite": russianName = "Графит"
+    case "Sand": russianName = "Песок"
+    case "Midnight": russianName = "Полночь"
+    case "Forest": russianName = "Лес"
+    case "Bordeaux": russianName = "Бордо"
+    case "Plum": russianName = "Слива"
+    case "LimeNoir": russianName = "Лайм нуар"
+    case "LilacNoir": russianName = "Сиреневый нуар"
+    case "PeachNoir": russianName = "Персиковый нуар"
+    case "Berry": russianName = "Ягода"
+    case "Lemon": russianName = "Лимон"
+    case "Pistachio": russianName = "Фисташка"
+    case "Lilac": russianName = "Сиреневый"
+    case "Peach": russianName = "Персиковый"
+    case "Raspberry": russianName = "Малиновый"
+    case "Electric": russianName = "Электрик"
+    case "Sunset": russianName = "Закат"
+    case "Aurora": russianName = "Аврора"
+    default: return iconName
+    }
+    return mellowsgramLocalizedString(english: "Mellowsgram \(variant)", russian: "Mellowsgram \(russianName)", languageCode: languageCode)
+}
 
 private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selected: Bool) -> UIImage? {
     return generateImage(CGSize(width: 30.0, height: 30.0), rotatedContext: { size, context in
@@ -405,54 +439,8 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = item.strings.Appearance_AppIconNew1
                                 case "New2":
                                     name = item.strings.Appearance_AppIconNew2
-                                case "MellowsgramMint":
-                                    name = "Mellowsgram Mint"
-                                case "MellowsgramSage":
-                                    name = "Mellowsgram Sage"
-                                case "MellowsgramLavender":
-                                    name = "Mellowsgram Lavender"
-                                case "MellowsgramRose":
-                                    name = "Mellowsgram Rose"
-                                case "MellowsgramCoral":
-                                    name = "Mellowsgram Coral"
-                                case "MellowsgramApricot":
-                                    name = "Mellowsgram Apricot"
-                                case "MellowsgramGraphite":
-                                    name = "Mellowsgram Graphite"
-                                case "MellowsgramSand":
-                                    name = "Mellowsgram Sand"
-                                case "MellowsgramMidnight":
-                                    name = "Mellowsgram Midnight"
-                                case "MellowsgramForest":
-                                    name = "Mellowsgram Forest"
-                                case "MellowsgramBordeaux":
-                                    name = "Mellowsgram Bordeaux"
-                                case "MellowsgramPlum":
-                                    name = "Mellowsgram Plum"
-                                case "MellowsgramLimeNoir":
-                                    name = "Mellowsgram Lime Noir"
-                                case "MellowsgramLilacNoir":
-                                    name = "Mellowsgram Lilac Noir"
-                                case "MellowsgramPeachNoir":
-                                    name = "Mellowsgram Peach Noir"
-                                case "MellowsgramBerry":
-                                    name = "Mellowsgram Berry"
-                                case "MellowsgramLemon":
-                                    name = "Mellowsgram Lemon"
-                                case "MellowsgramPistachio":
-                                    name = "Mellowsgram Pistachio"
-                                case "MellowsgramLilac":
-                                    name = "Mellowsgram Lilac"
-                                case "MellowsgramPeach":
-                                    name = "Mellowsgram Peach"
-                                case "MellowsgramRaspberry":
-                                    name = "Mellowsgram Raspberry"
-                                case "MellowsgramElectric":
-                                    name = "Mellowsgram Electric"
-                                case "MellowsgramSunset":
-                                    name = "Mellowsgram Sunset"
-                                case "MellowsgramAurora":
-                                    name = "Mellowsgram Aurora"
+                                case let mellowsgramIconName where mellowsgramIconName.hasPrefix("Mellowsgram"):
+                                    name = mellowsgramAppIconDisplayName(mellowsgramIconName, languageCode: item.strings.primaryComponent.languageCode)
                                 case "Premium":
                                     name = item.strings.Appearance_AppIconPremium
                                 case "PremiumBlack":

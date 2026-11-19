@@ -611,7 +611,9 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 }
                 
                 var statusUpdated = mediaUpdated
-                if currentMessage?.id != arguments.message.id || currentMessage?.flags != arguments.message.flags {
+                let currentMessageIsDeleted = currentMessage.map(engineMellowsgramMessageIsDeleted) ?? false
+                let updatedMessageIsDeleted = engineMellowsgramMessageIsDeleted(arguments.message)
+                if currentMessage?.id != arguments.message.id || currentMessage?.flags != arguments.message.flags || currentMessageIsDeleted != updatedMessageIsDeleted {
                     statusUpdated = true
                 }
                 

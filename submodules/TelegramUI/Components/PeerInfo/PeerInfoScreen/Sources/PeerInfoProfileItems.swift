@@ -139,7 +139,8 @@ func infoItems(
             let components = rawDate.split(separator: ".")
             if components.count == 2, let month = Int32(components[0]), let year = Int32(components[1]), (1 ... 12).contains(month) {
                 let dateText = stringForMonth(strings: presentationData.strings, month: month - 1, ofYear: year - 1900)
-                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9202, context: context, label: "Registration date", text: dateText, action: nil, requestLayout: { _ in
+                let label = mellowsgramLocalizedString(english: "Registration date", russian: "Дата регистрации", languageCode: presentationData.strings.primaryComponent.languageCode)
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9202, context: context, label: label, text: dateText, action: nil, requestLayout: { _ in
                     interaction.requestLayout(false)
                 }))
             }
@@ -932,7 +933,10 @@ func infoItems(
         if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showDataCenter),
            let image = peer.smallProfileImage,
            let resource = image.resource as? CloudPeerPhotoSizeMediaResource {
-            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9201, context: context, label: "DC", text: "dc: \(resource.datacenterId)", action: nil, requestLayout: { _ in
+            let languageCode = presentationData.strings.primaryComponent.languageCode
+            let label = mellowsgramLocalizedString(english: "DC", russian: "ДЦ", languageCode: languageCode)
+            let value = mellowsgramLocalizedString(english: "DC", russian: "ДЦ", languageCode: languageCode).lowercased() + ": \(resource.datacenterId)"
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9201, context: context, label: label, text: value, action: nil, requestLayout: { _ in
                 interaction.requestLayout(false)
             }))
         }
@@ -952,10 +956,12 @@ func infoItems(
             }
             if creationDate > 0 {
                 let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: presentationData.strings.primaryComponent.languageCode)
                 formatter.dateStyle = .medium
                 formatter.timeStyle = .none
                 let dateText = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(creationDate)))
-                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9203, context: context, label: "Chat creation date", text: dateText, action: nil, requestLayout: { _ in
+                let label = mellowsgramLocalizedString(english: "Chat creation date", russian: "Дата создания чата", languageCode: presentationData.strings.primaryComponent.languageCode)
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9203, context: context, label: label, text: dateText, action: nil, requestLayout: { _ in
                     interaction.requestLayout(false)
                 }))
             }

@@ -53,6 +53,166 @@ private struct MessageContextMenuData {
     let messageActions: ChatAvailableMessageActions
 }
 
+private struct MellowsgramSavedMediaCandidate {
+    let resources: [TelegramMediaResource]
+    let makeMedia: ([Bool]) -> Media?
+}
+
+private func mellowsgramSavedMediaCandidates(_ media: [Media]) -> [MellowsgramSavedMediaCandidate] {
+    var candidates: [MellowsgramSavedMediaCandidate] = []
+
+    for item in media {
+        guard !(item is TelegramMediaExpiredContent) else {
+            continue
+        }
+
+        if let image = item as? TelegramMediaImage {
+            let imageResourceCount = image.representations.count
+            let videoRepresentationCount = image.videoRepresentations.count
+            let hasVideoFile = image.video != nil
+            let resources = image.representations.map(\.resource)
+                + image.videoRepresentations.map(\.resource)
+                + (image.video.map { [$0.resource] } ?? [])
+            guard imageResourceCount > 0 || hasVideoFile else {
+                continue
+            }
+
+            candidates.append(MellowsgramSavedMediaCandidate(resources: resources, makeMedia: { isLocal in
+                guard isLocal.count == resources.count else {
+                    return nil
+                }
+
+                let localRepresentations = zip(image.representations, isLocal.prefix(imageResourceCount)).compactMap { pair in
+                    return pair.1 ? pair.0 : nil
+                }
+
+                let videoRepresentationsStart = imageResourceCount
+                let localVideoRepresentations = zip(
+                    image.videoRepresentations,
+                    isLocal.dropFirst(videoRepresentationsStart).prefix(videoRepresentationCount)
+                ).compactMap { pair in
+                    return pair.1 ? pair.0 : nil
+                }
+
+                let videoFile: TelegramMediaFile?
+                if hasVideoFile, isLocal.last == true {
+                    videoFile = image.video?.withUpdatedPartialReference(nil)
+                } else {
+                    videoFile = nil
+                }
+
+                if localRepresentations.isEmpty {
+                    return videoFile
+                }
+
+                let hasLocalVideo = !localVideoRepresentations.isEmpty || videoFile != nil
+                let sendableRepresentations = localRepresentations.map { representation -> TelegramMediaImageRepresentation in
+                    guard representation.hasVideo && !hasLocalVideo else {
+                        return representation
+                    }
+                    return TelegramMediaImageRepresentation(
+                        dimensions: representation.dimensions,
+                        resource: representation.resource,
+                        progressiveSizes: representation.progressiveSizes,
+                        immediateThumbnailData: representation.immediateThumbnailData,
+                        hasVideo: false,
+                        isPersonal: representation.isPersonal,
+                        typeHint: representation.typeHint
+                    )
+                }
+
+                var flags = image.flags
+                if !hasLocalVideo {
+                    flags.remove(.isLivePhoto)
+                }
+
+                return TelegramMediaImage(
+                    imageId: image.imageId,
+                    representations: sendableRepresentations,
+                    videoRepresentations: localVideoRepresentations,
+                    immediateThumbnailData: image.immediateThumbnailData,
+                    emojiMarkup: image.emojiMarkup,
+                    reference: nil,
+                    partialReference: nil,
+                    flags: flags,
+                    video: videoFile
+                )
+            }))
+        } else if let file = item as? TelegramMediaFile {
+            candidates.append(MellowsgramSavedMediaCandidate(resources: [file.resource], makeMedia: { isLocal in
+                guard isLocal.count == 1, isLocal[0] else {
+                    return nil
+                }
+                return file.withUpdatedPartialReference(nil)
+            }))
+        }
+    }
+
+    return candidates
+}
+
+private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, media: [Media]) -> Signal<[Media], NoError> {
+    let candidates = mellowsgramSavedMediaCandidates(media)
+    let candidateSignals: [Signal<Media?, NoError>] = candidates.map { candidate in
+        let resourceSignals: [Signal<Bool, NoError>] = candidate.resources.map { resource in
+            return context.engine.resources.status(resource: EngineMediaResource(resource))
+            |> take(1)
+            |> map { status in
+                if case .Local = status {
+                    return true
+                }
+                return false
+            }
+        }
+        return combineLatest(resourceSignals)
+        |> map { candidate.makeMedia($0) }
+    }
+
+    guard !candidateSignals.isEmpty else {
+        return .single([])
+    }
+    return combineLatest(candidateSignals)
+    |> map { $0.compactMap { $0 } }
+}
+
+private func mellowsgramArchivedMediaHasExpired(message: EngineRawMessage, record: EngineMellowsgramMessageArchiveRecord?) -> Bool {
+    if message.effectiveMedia.contains(where: { $0 is TelegramMediaExpiredContent }) {
+        return true
+    }
+
+    let archiveRecord = record ?? message.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.record }.first
+    let attributes: [MessageAttribute]
+    if let archiveRecord {
+        attributes = engineMellowsgramMessageAttributes(archiveRecord.attributesData)
+    } else {
+        attributes = message.attributes
+    }
+    let currentTimestamp = Int32(Date().timeIntervalSince1970)
+
+    for attribute in attributes {
+        let timeout: Int32
+        let countdownBeginTime: Int32?
+        if let attribute = attribute as? AutoremoveTimeoutMessageAttribute {
+            timeout = attribute.timeout
+            countdownBeginTime = attribute.countdownBeginTime
+        } else if let attribute = attribute as? AutoclearTimeoutMessageAttribute {
+            timeout = attribute.timeout
+            countdownBeginTime = attribute.countdownBeginTime
+        } else {
+            continue
+        }
+
+        guard let countdownBeginTime, countdownBeginTime != 0 else {
+            continue
+        }
+        if timeout == viewOnceTimeout || currentTimestamp >= autoremoveExpiryTimestamp(countdownBeginTime: countdownBeginTime, timeout: timeout) {
+            return true
+        }
+    }
+
+    return false
+}
+
 func canEditMessage(context: AccountContext, limitsConfiguration: EngineConfiguration.Limits, message: EngineRawMessage) -> Bool {
     return canEditMessage(accountPeerId: context.account.peerId, limitsConfiguration: limitsConfiguration, message: message)
 }
@@ -416,7 +576,7 @@ private func ephemeralReplacementContextMenuItems(chatPresentationInterfaceState
 
         var actions: [ContextMenuItem] = []
 
-        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextJSON), !isMellowsgramDeletedMessage {
+        if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextJSON), !isCopyProtected, !isMellowsgramDeletedMessage {
             var mediaTypes: [String] = []
             for media in message.media {
                 if media is TelegramMediaImage {
@@ -427,11 +587,17 @@ private func ephemeralReplacementContextMenuItems(chatPresentationInterfaceState
                     mediaTypes.append(String(describing: type(of: media)))
                 }
             }
+            let authorId: Any
+            if let author = message.author {
+                authorId = String(describing: author.id)
+            } else {
+                authorId = NSNull()
+            }
             let value: [String: Any] = [
                 "message_id": String(message.id.id),
                 "peer_id": String(describing: message.id.peerId),
                 "date": message.timestamp,
-                "from_id": message.author.map { String(describing: $0.id) } as Any? ?? NSNull(),
+                "from_id": authorId,
                 "text": message.text,
                 "media": mediaTypes
             ]
@@ -955,7 +1121,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         mellowsgramArchiveRecordSignal = .single(nil)
     }
     
-    let dataSignal: Signal<(MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?), NoError> = combineLatest(
+    let dataSignal: Signal<(MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, NotificationSoundList?, EnginePeer?), NoError> = combineLatest(
         loadLimits,
         loadStickerSaveStatusSignal,
         loadResourceStatusSignal,
@@ -966,11 +1132,11 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         readCounters,
         ApplicationSpecificNotice.getMessageViewsPrivacyTips(accountManager: context.sharedContext.accountManager),
         context.engine.stickers.availableReactions(),
-        context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings, SharedDataKeys.loggingSettings]) |> take(1),
+        context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings]) |> take(1),
         context.engine.peers.notificationSoundList() |> take(1),
         context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
     )
-    |> map { limitsAndAppConfig, stickerSaveStatus, resourceStatus, messageActions, updatingMessageMedia, infoSummaryData, isMessageRead, messageViewsPrivacyTips, availableReactions, sharedData, notificationSoundList, accountPeer -> (MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, LoggingSettings, NotificationSoundList?, EnginePeer?) in
+    |> map { limitsAndAppConfig, stickerSaveStatus, resourceStatus, messageActions, updatingMessageMedia, infoSummaryData, isMessageRead, messageViewsPrivacyTips, availableReactions, sharedData, notificationSoundList, accountPeer -> (MessageContextMenuData, [EngineMessage.Id: ChatUpdatingMessageMedia], InfoSummaryData, AppConfiguration, Bool, Int32, AvailableReactions?, TranslationSettings, NotificationSoundList?, EnginePeer?) in
         let (limitsConfiguration, appConfig) = limitsAndAppConfig
         var canEdit = false
         if !isAction && !isMellowsgramDeletedMessage {
@@ -983,13 +1149,6 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             translationSettings = current
         } else {
             translationSettings = TranslationSettings.defaultSettings
-        }
-        
-        let loggingSettings: LoggingSettings
-        if let current = sharedData.entries[SharedDataKeys.loggingSettings]?.get(LoggingSettings.self) {
-            loggingSettings = current
-        } else {
-            loggingSettings = LoggingSettings.defaultSettings
         }
         
         var messageActions = messageActions
@@ -1033,19 +1192,60 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             messageActions: messageActions
         )
         
-        return (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer)
+        return (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, messageViewsPrivacyTips, availableReactions, translationSettings, notificationSoundList, accountPeer)
     }
     
     return combineLatest(dataSignal, mellowsgramArchiveRecordSignal)
     |> deliverOnMainQueue
     |> map { [context] menuData, mellowsgramArchiveRecord -> ContextController.Items in
-        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, _, availableReactions, translationSettings, loggingSettings, notificationSoundList, accountPeer) = menuData
+        let (data, updatingMessageMedia, infoSummaryData, appConfig, isMessageRead, _, availableReactions, translationSettings, notificationSoundList, accountPeer) = menuData
         let isPremium = accountPeer?.isPremium ?? false
 
         var actions: [ContextMenuItem] = []
 
+        if messages.count == 1,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextJSON),
+           !chatPresentationInterfaceState.copyProtectionEnabled,
+           !message.isCopyProtected() {
+            var mediaTypes: [String] = []
+            for media in message.media {
+                if media is TelegramMediaImage {
+                    mediaTypes.append("photo")
+                } else if let file = media as? TelegramMediaFile {
+                    mediaTypes.append(file.isVideo ? "video" : file.isVoice ? "voice" : file.isMusic ? "audio" : file.isSticker ? "sticker" : "file")
+                } else {
+                    mediaTypes.append(String(describing: type(of: media)))
+                }
+            }
+            let authorId: Any
+            if let author = message.author {
+                authorId = String(describing: author.id)
+            } else {
+                authorId = NSNull()
+            }
+            let value: [String: Any] = [
+                "message_id": String(message.id.id),
+                "peer_id": String(describing: message.id.peerId),
+                "date": message.timestamp,
+                "from_id": authorId,
+                "text": message.text,
+                "media": mediaTypes
+            ]
+            actions.append(.action(ContextMenuActionItem(text: "JSON", icon: { theme in
+                return generateTintedImage(image: UIImage(systemName: "curlybraces"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                if let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]), let json = String(data: data, encoding: .utf8) {
+                    UIPasteboard.general.string = json
+                    controllerInteraction.displayUndo(.copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied))
+                }
+                f(.default)
+            })))
+            actions.append(.separator)
+        }
+
         if let mellowsgramArchiveRecord, !mellowsgramArchiveRecord.revisions.isEmpty {
-            actions.append(.action(ContextMenuActionItem(text: "История редактирования", icon: { theme in
+            let editHistoryTitle = mellowsgramLocalizedString(english: "Edit History", russian: "История редактирования", languageCode: chatPresentationInterfaceState.strings.primaryComponent.languageCode)
+            actions.append(.action(ContextMenuActionItem(text: editHistoryTitle, icon: { theme in
                 return generateTintedImage(image: UIImage(systemName: "clock.arrow.circlepath"), color: theme.actionSheet.primaryTextColor)
             }, action: { _, f in
                 f(.dismissWithoutContent)
@@ -1640,52 +1840,24 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        var downloadableMediaResourceInfos: [String] = []
-        for media in message.effectiveMedia {
-            if let file = media as? TelegramMediaFile {
-                if let info = extractMediaResourceDebugInfo(resource: file.resource) {
-                    downloadableMediaResourceInfos.append(info)
-                }
-            } else if let image = media as? TelegramMediaImage {
-                for representation in image.representations {
-                    if let info = extractMediaResourceDebugInfo(resource: representation.resource) {
-                        downloadableMediaResourceInfos.append(info)
-                    }
-                }
-            }
-        }
-        
         if !isCopyProtected, MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToFiles) {
             for media in message.effectiveMedia {
                 if let file = media as? TelegramMediaFile {
-                    if file.isMusic {
-                        actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveToFiles, icon: { theme in
-                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
-                        }, action: { _, f in
-                            if isMellowsgramDeletedMessage {
-                                let _ = saveMediaToFiles(context: context, fileReference: .standalone(media: file), present: { controller, arguments in
-                                    controllerInteraction.presentControllerInCurrent(controller, arguments)
-                                })
-                            } else {
-                                controllerInteraction.saveMediaToFiles(message.id)
-                            }
-                            f(.default)
-                        })))
-                    }
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveToFiles, icon: { theme in
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+                    }, action: { _, f in
+                        if isMellowsgramDeletedMessage {
+                            let _ = saveMediaToFiles(context: context, fileReference: .standalone(media: file), present: { controller, arguments in
+                                controllerInteraction.presentControllerInCurrent(controller, arguments)
+                            })
+                        } else {
+                            controllerInteraction.saveMediaToFiles(message.id)
+                        }
+                        f(.default)
+                    })))
                     break
                 }
             }
-        }
-        
-        if (loggingSettings.logToFile || loggingSettings.logToConsole) && !downloadableMediaResourceInfos.isEmpty {
-            actions.append(.action(ContextMenuActionItem(text: "Send Logs", icon: { theme in
-                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Message"), color: theme.actionSheet.primaryTextColor)
-            }, action: { _, f in
-                triggerDebugSendLogsUI(context: context, additionalInfo: "User has requested download logs for \(downloadableMediaResourceInfos)", pushController: { c in
-                    controllerInteraction.navigationController()?.pushViewController(c)
-                })
-                f(.default)
-            })))
         }
         
         var threadId: Int64?
@@ -2085,7 +2257,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 })))
 
                 if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToCloud), message.id.peerId != context.account.peerId, !isMellowsgramDeletedMessage {
-                    actions.append(.action(ContextMenuActionItem(text: "Save to Cloud", icon: { theme in
+                    let saveToSavedMessagesTitle = mellowsgramLocalizedString(english: "Save to Saved Messages", russian: "Сохранить в Избранное", languageCode: chatPresentationInterfaceState.strings.primaryComponent.languageCode)
+                    actions.append(.action(ContextMenuActionItem(text: saveToSavedMessagesTitle, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
                         let selectedMessages = selectAll || isImage ? messages : [message]
@@ -2118,6 +2291,87 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     })))
                 }
             }
+        }
+
+        if isMellowsgramDeletedMessage,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToCloud),
+           message.id.peerId != context.account.peerId,
+           !isCopyProtected {
+            let saveToSavedMessagesTitle = mellowsgramLocalizedString(english: "Save to Saved Messages", russian: "Сохранить в Избранное", languageCode: chatPresentationInterfaceState.strings.primaryComponent.languageCode)
+            actions.append(.action(ContextMenuActionItem(text: saveToSavedMessagesTitle, icon: { theme in
+                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                let originalText = message.text
+                let textAttributes = message.attributes.filter { attribute in
+                    attribute is TextEntitiesMessageAttribute || attribute is RichTextMessageAttribute
+                }
+                let mediaToSave: [Media]
+                if mellowsgramArchivedMediaHasExpired(message: message, record: mellowsgramArchiveRecord) {
+                    mediaToSave = []
+                } else {
+                    mediaToSave = message.effectiveMedia
+                }
+                let _ = (mellowsgramLocallyAvailableSavedMedia(context: context, media: mediaToSave)
+                |> deliverOnMainQueue
+                |> mapToSignal { availableMedia -> Signal<[MessageId?], NoError> in
+                    var outgoingMessages: [EnqueueMessage] = []
+                    if availableMedia.isEmpty {
+                        if !originalText.isEmpty {
+                            outgoingMessages.append(.message(
+                                text: originalText,
+                                attributes: textAttributes,
+                                inlineStickers: [:],
+                                mediaReference: nil,
+                                threadId: nil,
+                                replyToMessageId: nil,
+                                replyToStoryId: nil,
+                                localGroupingKey: nil,
+                                correlationId: nil,
+                                bubbleUpEmojiOrStickersets: []
+                            ))
+                        }
+                    } else {
+                        var groupingKey: Int64? = availableMedia.count > 1 ? Int64.random(in: .min ..< .max) : nil
+                        for (index, media) in availableMedia.enumerated() {
+                            if index > 0 && index % 10 == 0 {
+                                groupingKey = Int64.random(in: .min ..< .max)
+                            }
+                            let isLast = index == availableMedia.count - 1
+                            outgoingMessages.append(.message(
+                                text: isLast ? originalText : "",
+                                attributes: isLast ? textAttributes : [],
+                                inlineStickers: [:],
+                                mediaReference: .standalone(media: media),
+                                threadId: nil,
+                                replyToMessageId: nil,
+                                replyToStoryId: nil,
+                                localGroupingKey: groupingKey,
+                                correlationId: nil,
+                                bubbleUpEmojiOrStickersets: []
+                            ))
+                        }
+                    }
+
+                    guard !outgoingMessages.isEmpty else {
+                        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                        let title = mellowsgramLocalizedString(english: "Nothing to save", russian: "Нечего сохранить", languageCode: presentationData.strings.primaryComponent.languageCode)
+                        let text = mellowsgramLocalizedString(english: "No unexpired media is available locally.", russian: "На устройстве нет доступных и не истёкших медиафайлов.", languageCode: presentationData.strings.primaryComponent.languageCode)
+                        controllerInteraction.displayUndo(.info(title: title, text: text, timeout: nil, customUndoText: nil))
+                        return .single([])
+                    }
+
+                    return enqueueMessages(account: context.account, peerId: context.account.peerId, messages: outgoingMessages)
+                }
+                |> deliverOnMainQueue).startStandalone(next: { savedMessageIds in
+                    let savedCount = savedMessageIds.compactMap { $0 }.count
+                    guard savedCount > 0 else {
+                        return
+                    }
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    controllerInteraction.presentControllerInCurrent(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: true, text: savedCount == 1 ? presentationData.strings.Conversation_ForwardTooltip_SavedMessages_One : presentationData.strings.Conversation_ForwardTooltip_SavedMessages_Many), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in false }), nil)
+                })
+                f(.default)
+            })))
         }
         
         if data.messageActions.options.contains(.report), MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextReport) {
@@ -2335,7 +2589,8 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     didAddSeparator = true
                     actions.append(.separator)
                 }
-                actions.append(.action(ContextMenuActionItem(text: "Select from Author", icon: { theme in
+                let selectFromAuthorTitle = mellowsgramLocalizedString(english: "Select from Author", russian: "Выбрать сообщения автора", languageCode: chatPresentationInterfaceState.strings.primaryComponent.languageCode)
+                actions.append(.action(ContextMenuActionItem(text: selectFromAuthorTitle, icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)
                 }, action: { _, f in
                     let threadId: Int64?

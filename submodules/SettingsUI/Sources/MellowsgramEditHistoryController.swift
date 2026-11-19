@@ -4,6 +4,7 @@ import Display
 import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
+import TelegramUIPreferences
 import ItemListUI
 import AccountContext
 
@@ -39,13 +40,14 @@ private enum MellowsgramEditHistoryEntry: ItemListNodeEntry {
     }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let languageCode = presentationData.strings.primaryComponent.languageCode
         switch self {
         case .header:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Версии сообщения", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramLocalizedString(english: "Message Versions", russian: "Версии сообщения", languageCode: languageCode), sectionId: self.section)
         case let .current(text):
             return ItemListMultilineTextItem(
                 presentationData: presentationData,
-                text: "Текущая\n\(text)",
+                text: "\(mellowsgramLocalizedString(english: "Current", russian: "Текущая", languageCode: languageCode))\n\(text)",
                 enabledEntityTypes: [],
                 sectionId: self.section,
                 style: .blocks,
@@ -56,7 +58,7 @@ private enum MellowsgramEditHistoryEntry: ItemListNodeEntry {
         case let .revision(_, text, timestamp):
             return ItemListMultilineTextItem(
                 presentationData: presentationData,
-                text: "\(MellowsgramEditHistoryEntry.dateString(timestamp))\n\(text)",
+                text: "\(MellowsgramEditHistoryEntry.dateString(timestamp, languageCode: languageCode))\n\(text)",
                 enabledEntityTypes: [],
                 sectionId: self.section,
                 style: .blocks,
@@ -67,14 +69,15 @@ private enum MellowsgramEditHistoryEntry: ItemListNodeEntry {
         case .footer:
             return ItemListTextItem(
                 presentationData: presentationData,
-                text: .plain("Нажмите на версию, чтобы скопировать её текст."),
+                text: .plain(mellowsgramLocalizedString(english: "Tap a version to copy its text.", russian: "Нажмите на версию, чтобы скопировать её текст.", languageCode: languageCode)),
                 sectionId: self.section
             )
         }
     }
 
-    private static func dateString(_ timestamp: Int32) -> String {
+    private static func dateString(_ timestamp: Int32, languageCode: String) -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: languageCode)
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
@@ -102,7 +105,7 @@ public func mellowsgramEditHistoryController(context: AccountContext, record: En
         let itemListPresentationData = ItemListPresentationData(presentationData)
         let controllerState = ItemListControllerState(
             presentationData: itemListPresentationData,
-            title: .text("История редактирования"),
+            title: .text(mellowsgramLocalizedString(english: "Edit History", russian: "История редактирования", languageCode: presentationData.strings.primaryComponent.languageCode)),
             leftNavigationButton: nil,
             rightNavigationButton: nil,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

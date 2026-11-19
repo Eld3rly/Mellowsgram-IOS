@@ -8,6 +8,7 @@ import SwiftSignalKit
 import TelegramCore
 import AccountContext
 import TelegramPresentationData
+import TelegramUIPreferences
 
 /// Keeps opted-in Telegram accounts connected while the app is backgrounded
 /// and turns incoming AccountStateManager events into local notifications.
@@ -164,6 +165,7 @@ public final class MellowsgramBackgroundNotificationManager {
             }
 
             let presentationData = self.presentationData()
+            let languageCode = presentationData?.strings.primaryComponent.languageCode ?? "en"
             let chatPeer = message.peers[message.id.peerId]
             let senderPeer = message.effectiveAuthor ?? chatPeer
             let chatTitle = chatPeer.flatMap { peer in
@@ -178,18 +180,39 @@ public final class MellowsgramBackgroundNotificationManager {
             if !text.isEmpty {
                 body = text
             } else if message.media.contains(where: { $0 is TelegramMediaImage }) {
-                body = "Фото"
+                body = mellowsgramLocalizedString(english: "Photo", russian: "Фото", languageCode: languageCode)
             } else if message.media.contains(where: { $0 is TelegramMediaFile }) {
-                body = "Медиафайл"
+                body = mellowsgramLocalizedString(english: "Media file", russian: "Медиафайл", languageCode: languageCode)
             } else if message.media.contains(where: { $0 is TelegramMediaWebpage }) {
-                body = "Ссылка"
+                body = mellowsgramLocalizedString(english: "Link", russian: "Ссылка", languageCode: languageCode)
             } else {
-                body = "Новое сообщение"
+                body = mellowsgramLocalizedString(english: "New message", russian: "Новое сообщение", languageCode: languageCode)
             }
 
             var notificationContent = UNMutableNotificationContent()
             notificationContent.title = senderTitle
-            notificationContent.body = messages.count > 1 ? "\(messages.count) новых сообщений" : body
+            if messages.count > 1 {
+                let primaryLanguageCode = languageCode.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first
+                if primaryLanguageCode == "ru" {
+                    let lastTwoDigits = messages.count % 100
+                    let lastDigit = messages.count % 10
+                    let countNoun: String
+                    if (11 ... 14).contains(lastTwoDigits) {
+                        countNoun = "новых сообщений"
+                    } else if lastDigit == 1 {
+                        countNoun = "новое сообщение"
+                    } else if (2 ... 4).contains(lastDigit) {
+                        countNoun = "новых сообщения"
+                    } else {
+                        countNoun = "новых сообщений"
+                    }
+                    notificationContent.body = "\(messages.count) \(countNoun)"
+                } else {
+                    notificationContent.body = "\(messages.count) new messages"
+                }
+            } else {
+                notificationContent.body = body
+            }
             notificationContent.sound = .default
             notificationContent.threadIdentifier = "mellowsgram-\(accountId.int64)-\(message.id.peerId.toInt64())"
             notificationContent.userInfo = [

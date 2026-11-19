@@ -765,8 +765,15 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
     } else {
         signal = .single(messages.map { (false, $0) })
     }
-    return signal
-    |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
+    let hasReply = messages.contains { message in
+        if case let .message(_, _, _, _, _, replyToMessageId, _, _, _, _) = message {
+            return replyToMessageId != nil
+        }
+        return false
+    }
+    let languageCodeSignal: Signal<String, NoError> = hasReply ? (account.mellowsgramLocalizationLanguageCode |> take(1)) : .single("en")
+    return combineLatest(signal, languageCodeSignal)
+    |> mapToSignal { messages, languageCode -> Signal<[MessageId?], NoError> in
         return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
             var resultIds = Array<MessageId?>(repeating: nil, count: messages.count)
             var ephemeralMessageIds: [MessageId] = []
@@ -787,7 +794,7 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
             }
 
             if !normalMessages.isEmpty {
-                let normalIds = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: normalMessages)
+                let normalIds = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: normalMessages, mellowsgramLanguageCode: languageCode)
                 for i in 0 ..< min(normalIds.count, normalMessageIndices.count) {
                     resultIds[normalMessageIndices[i]] = normalIds[i]
                 }
@@ -835,65 +842,69 @@ public func enqueueWelcomeMessages(account: Account, peerId: PeerId, messages: [
 }
 
 public func resendMessages(account: Account, messageIds: [MessageId]) -> Signal<Void, NoError> {
-    return account.postbox.transaction { transaction -> Void in
-        var removeMessageIds: [MessageId] = []
-        for (peerId, ids) in messagesIdsGroupedByPeerId(messageIds) {
-            var sendPaidMessageStars: StarsAmount?
-            let peer = transaction.getPeer(peerId)
-            if let user = peer as? TelegramUser, user.flags.contains(.requireStars) {
-                if let cachedUserData = transaction.getPeerCachedData(peerId: user.id) as? CachedUserData {
-                    sendPaidMessageStars = cachedUserData.sendPaidMessageStars
+    return account.mellowsgramLocalizationLanguageCode
+    |> take(1)
+    |> mapToSignal { languageCode -> Signal<Void, NoError> in
+        return account.postbox.transaction { transaction -> Void in
+            var removeMessageIds: [MessageId] = []
+            for (peerId, ids) in messagesIdsGroupedByPeerId(messageIds) {
+                var sendPaidMessageStars: StarsAmount?
+                let peer = transaction.getPeer(peerId)
+                if let user = peer as? TelegramUser, user.flags.contains(.requireStars) {
+                    if let cachedUserData = transaction.getPeerCachedData(peerId: user.id) as? CachedUserData {
+                        sendPaidMessageStars = cachedUserData.sendPaidMessageStars
+                    }
+                } else if let channel = peer as? TelegramChannel {
+                    if channel.flags.contains(.isCreator) || channel.adminRights != nil {
+                    } else {
+                        sendPaidMessageStars = channel.sendPaidMessageStars
+                    }
                 }
-            } else if let channel = peer as? TelegramChannel {
-                if channel.flags.contains(.isCreator) || channel.adminRights != nil {
-                } else {
-                    sendPaidMessageStars = channel.sendPaidMessageStars
-                }
-            }
             
-            var messages: [EnqueueMessage] = []
-            for id in ids {
-                if let message = transaction.getMessage(id), !message.flags.contains(.Incoming) {
-                    removeMessageIds.append(id)
+                var messages: [EnqueueMessage] = []
+                for id in ids {
+                    if let message = transaction.getMessage(id), !message.flags.contains(.Incoming) {
+                        removeMessageIds.append(id)
                     
-                    var filteredAttributes: [MessageAttribute] = []
-                    var replyToMessageId: EngineMessageReplySubject?
-                    var replyToStoryId: StoryId?
-                    var bubbleUpEmojiOrStickersets: [ItemCollectionId] = []
-                    var forwardSource: MessageId?
-                    inner: for attribute in message.attributes {
-                        if let attribute = attribute as? ReplyMessageAttribute {
-                            replyToMessageId = resentReplySubject(attribute)
-                        } else if let attribute = attribute as? ReplyStoryAttribute {
-                            replyToStoryId = attribute.storyId
-                        } else if let attribute = attribute as? OutgoingMessageInfoAttribute {
-                            bubbleUpEmojiOrStickersets = attribute.bubbleUpEmojiOrStickersets
-                            continue inner
-                        } else if let attribute = attribute as? ForwardSourceInfoAttribute {
-                            forwardSource = attribute.messageId
-                        } else if let attribute = resentMessageRequestedAttribute(attribute, isSecretChat: peerId.namespace == Namespaces.Peer.SecretChat) {
-                            filteredAttributes.append(attribute)
+                        var filteredAttributes: [MessageAttribute] = []
+                        var replyToMessageId: EngineMessageReplySubject?
+                        var replyToStoryId: StoryId?
+                        var bubbleUpEmojiOrStickersets: [ItemCollectionId] = []
+                        var forwardSource: MessageId?
+                        inner: for attribute in message.attributes {
+                            if let attribute = attribute as? ReplyMessageAttribute {
+                                replyToMessageId = resentReplySubject(attribute)
+                            } else if let attribute = attribute as? ReplyStoryAttribute {
+                                replyToStoryId = attribute.storyId
+                            } else if let attribute = attribute as? OutgoingMessageInfoAttribute {
+                                bubbleUpEmojiOrStickersets = attribute.bubbleUpEmojiOrStickersets
+                                continue inner
+                            } else if let attribute = attribute as? ForwardSourceInfoAttribute {
+                                forwardSource = attribute.messageId
+                            } else if let attribute = resentMessageRequestedAttribute(attribute, isSecretChat: peerId.namespace == Namespaces.Peer.SecretChat) {
+                                filteredAttributes.append(attribute)
+                            }
+                        }
+                    
+                        if let sendPaidMessageStars {
+                            filteredAttributes.append(PaidStarsMessageAttribute(stars: sendPaidMessageStars, postponeSending: false))
+                        }
+
+                        if let forwardSource = forwardSource {
+                            messages.append(.forward(source: forwardSource, threadId: nil, grouping: .auto, attributes: filteredAttributes, correlationId: nil))
+                        } else {
+                            messages.append(.message(text: message.text, attributes: filteredAttributes, inlineStickers: [:], mediaReference: message.media.first.flatMap(AnyMediaReference.standalone), threadId: message.threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: message.groupingKey, correlationId: nil, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets))
                         }
                     }
-                    
-                    if let sendPaidMessageStars {
-                        filteredAttributes.append(PaidStarsMessageAttribute(stars: sendPaidMessageStars, postponeSending: false))
-                    }
-
-                    if let forwardSource = forwardSource {
-                        messages.append(.forward(source: forwardSource, threadId: nil, grouping: .auto, attributes: filteredAttributes, correlationId: nil))
-                    } else {
-                        messages.append(.message(text: message.text, attributes: filteredAttributes, inlineStickers: [:], mediaReference: message.media.first.flatMap(AnyMediaReference.standalone), threadId: message.threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: message.groupingKey, correlationId: nil, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets))
-                    }
                 }
+                let _ = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: messages.map { (false, $0) }, mellowsgramLanguageCode: languageCode)
             }
-            let _ = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: messages.map { (false, $0) })
+            _internal_deleteMessages(transaction: transaction, mediaBox: account.postbox.mediaBox, ids: removeMessageIds, deleteMedia: false)
         }
-        _internal_deleteMessages(transaction: transaction, mediaBox: account.postbox.mediaBox, ids: removeMessageIds, deleteMedia: false)
     }
 }
 
-func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId, messages: [(Bool, EnqueueMessage)], disableAutoremove: Bool = false, transformGroupingKeysWithPeerId: Bool = false) -> [MessageId?] {
+func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId, messages: [(Bool, EnqueueMessage)], disableAutoremove: Bool = false, transformGroupingKeysWithPeerId: Bool = false, mellowsgramLanguageCode: String = "en") -> [MessageId?] {
     /**
      * If it is a support account, mark messages as read here as they are
      * not marked as read when chat is opened.
@@ -1095,7 +1106,7 @@ func enqueueMessages(transaction: Transaction, account: Account, peerId: PeerId,
                     
                     attributes.append(contentsOf: outgoingMessageAttributes(requestedAttributes: requestedAttributes, isSecretChat: peer is TelegramSecretChat, peerAutoremoveTimeout: peerAutoremoveTimeout))
 
-                    if let record = mellowsgramDeletedReplyRecord, let formatting = mellowsgramDeletedReplyFormatting(record: record) {
+                    if let record = mellowsgramDeletedReplyRecord, let formatting = mellowsgramDeletedReplyFormatting(record: record, languageCode: mellowsgramLanguageCode) {
                         // A requested ReplyMessageAttribute can be present on a
                         // resend or a transformed send. It is unsafe for a
                         // tombstone target as well, so remove it regardless of

@@ -10,6 +10,10 @@ import ItemListUI
 import AccountContext
 import LegacyComponents
 
+private func mellowsgramText(_ english: String, _ russian: String, languageCode: String) -> String {
+    return mellowsgramLocalizedString(english: english, russian: russian, languageCode: languageCode)
+}
+
 private enum MellowsgramSettingsCategory: Int32, CaseIterable {
     case spyAndGhost
     case appearance
@@ -17,18 +21,18 @@ private enum MellowsgramSettingsCategory: Int32, CaseIterable {
     case mediaAndVoice
     case messagesAndContext
 
-    var title: String {
+    func title(languageCode: String) -> String {
         switch self {
         case .spyAndGhost:
-            return "Spy&Ghost"
+            return mellowsgramText("Spy&Ghost", "Шпионаж и невидимость", languageCode: languageCode)
         case .appearance:
-            return "Appearance"
+            return mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode)
         case .profilesAndCalls:
-            return "Profiles & Calls"
+            return mellowsgramText("Profiles & Calls", "Профили и звонки", languageCode: languageCode)
         case .mediaAndVoice:
-            return "Media & Voice"
+            return mellowsgramText("Media & Voice", "Медиа и голос", languageCode: languageCode)
         case .messagesAndContext:
-            return "Messages & Context"
+            return mellowsgramText("Messages & Context", "Сообщения и меню", languageCode: languageCode)
         }
     }
 }
@@ -56,20 +60,20 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
         }
     }
 
-    var title: String {
+    func title(languageCode: String) -> String {
         switch self {
-        case .ghostMode: return "Ghost Mode"
-        case .ghostDontReadMessages: return "Don't Read Messages"
-        case .ghostDontReadStories: return "Don't Read Stories"
-        case .ghostDontSendOnline: return "Don't Send Online"
-        case .ghostDontSendTyping: return "Don't Send Typing"
-        case .ghostGoOfflineAutomatically: return "Go Offline Automatically"
-        case .saveDeletedMessages: return "Save Deleted Messages"
-        case .showDeletedMessages: return "Show Deleted Messages"
-        case .saveEditedMessages: return "Save Edits History"
-        case .translucentDeletedMessages: return "Translucent Deleted Messages"
-        case .backgroundNotifications: return "Background Notifications"
-        case .backgroundNotificationsAllAccounts: return "All Accounts in Background"
+        case .ghostMode: return mellowsgramText("Ghost Mode", "Режим невидимки", languageCode: languageCode)
+        case .ghostDontReadMessages: return mellowsgramText("Don't Read Messages", "Не отмечать сообщения прочитанными", languageCode: languageCode)
+        case .ghostDontReadStories: return mellowsgramText("Don't Read Stories", "Не отмечать истории просмотренными", languageCode: languageCode)
+        case .ghostDontSendOnline: return mellowsgramText("Don't Send Online", "Не отправлять статус «в сети»", languageCode: languageCode)
+        case .ghostDontSendTyping: return mellowsgramText("Don't Send Typing", "Не отправлять статус «печатает»", languageCode: languageCode)
+        case .ghostGoOfflineAutomatically: return mellowsgramText("Go Offline Automatically", "Автоматически уходить в офлайн", languageCode: languageCode)
+        case .saveDeletedMessages: return mellowsgramText("Save Deleted Messages", "Сохранять удалённые сообщения", languageCode: languageCode)
+        case .showDeletedMessages: return mellowsgramText("Show Deleted Messages", "Показывать удалённые сообщения", languageCode: languageCode)
+        case .saveEditedMessages: return mellowsgramText("Save Edits History", "Сохранять историю изменений", languageCode: languageCode)
+        case .translucentDeletedMessages: return mellowsgramText("Translucent Deleted Messages", "Полупрозрачные удалённые сообщения", languageCode: languageCode)
+        case .backgroundNotifications: return mellowsgramText("Background Notifications", "Уведомления в фоне", languageCode: languageCode)
+        case .backgroundNotificationsAllAccounts: return mellowsgramText("All Accounts in Background", "Все аккаунты в фоне", languageCode: languageCode)
         }
     }
 }
@@ -80,10 +84,9 @@ private extension MellowsgramGlobalSettingKey {
         case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
              .hideTabBar, .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
              .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder,
-             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat:
+             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat,
+             .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
             return .appearance
-        case .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
-            return .spyAndGhost
         case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .callConfirmation, .hidePhoneInSettings:
             return .profilesAndCalls
         case .outgoingPhotoQuality, .sendHDPhotos, .translationService, .quickTranslateButton, .translateEntireChats,
@@ -98,72 +101,72 @@ private extension MellowsgramGlobalSettingKey {
         }
     }
 
-    var mellowsgramTitle: String {
+    func mellowsgramTitle(languageCode: String) -> String {
         switch self {
-        case .accountColorsSaturation: return "Account Colors Saturation"
-        case .stickerSize: return "Stickers and Emoji Size"
-        case .showStickerTimestamp: return "Show Timestamp"
-        case .wideChannelPosts: return "Wide posts in channels"
-        case .channelBottomPanel: return "Channel Bottom Panel"
-        case .outgoingPhotoQuality: return "Outgoing Photo Quality"
-        case .sendHDPhotos: return "Send HD Photos"
-        case .hideTabBar: return "Hide Tab bar"
-        case .showContactsTab: return "Show Contacts Tab"
-        case .showCallsTab: return "Show Calls Tab"
-        case .showTabNames: return "Show Tab Names"
-        case .searchButton: return "Search Button"
-        case .wideTabBar: return "Wide Tab bar"
-        case .foldersAtBottom: return "Folders at Bottom"
-        case .hideAllChats: return "Hide \"All Chats\""
-        case .smallerFolderSpacing: return "Smaller spacing"
-        case .allChatsTitle: return "\"All Chats\" title"
-        case .openLastFolder: return "Open Last Folder"
-        case .compactChatList: return "Compact Chat List"
-        case .compactMessagePreview: return "Compact Message Preview"
-        case .chatListSwipeOptions: return "Chat List Swipe Options"
-        case .swipeToDeleteChat: return "Swipe to Delete Chat"
-        case .hideStories: return "Hide Stories"
-        case .disableSwipeToRecordStory: return "Disable Swipe to Record"
-        case .askBeforeViewingStories: return "Ask Before Viewing"
-        case .repostToStory: return "Repost to Story"
-        case .showProfileId: return "Show Profile ID"
-        case .showDataCenter: return "Show Data Center"
-        case .showRegistrationDate: return "Show Registration Date"
-        case .showChatCreationDate: return "Show Chat Creation Date"
-        case .callConfirmation: return "Call Confirmation"
-        case .hidePhoneInSettings: return "Hide Phone in Settings"
-        case .translationService: return "Translation Service"
-        case .quickTranslateButton: return "Quick Translate button"
-        case .translateEntireChats: return "Translate Entire Chats"
-        case .transcriptionService: return "Voice-to-Text Service"
-        case .forceDeviceMicrophone: return "Force Device Microphone"
-        case .startRoundVideoWithRearCamera: return "Start with Rear Camera"
-        case .videoPipWithSwipe: return "Video PIP with Swipe"
-        case .cameraInGallery: return "Camera in Gallery"
-        case .cameraPreviewInGallery: return "Camera Preview in Gallery"
-        case .uploadBoost: return "Upload Boost"
-        case .downloadBoost: return "Download Boost"
-        case .contextSaveToCloud: return "Save to Cloud"
-        case .contextHideSenderNames: return "Hide Sender Names"
-        case .contextSelectFromAuthor: return "Select from Author"
-        case .contextRestrict: return "Restrict"
-        case .contextReport: return "Report"
-        case .contextReply: return "Reply"
-        case .contextPin: return "Pin"
-        case .contextSaveToFiles: return "Save to Files"
-        case .contextViewThread: return "View Thread"
-        case .contextJSON: return "JSON"
-        case .secondsInMessages: return "Seconds in Messages"
-        case .doubleTapToEdit: return "Double-tap to edit message"
-        case .voiceRecordingButton: return "Voice Recording Button"
-        case .messageDeletionEffects: return "Message Deletion Effects"
-        case .sendAsButton: return "\"Send Message As…\" Button"
-        case .pullToNextUnreadChannel: return "Pull to Next Unread Channel"
-        case .pullToNextTopic: return "Pull to Next Topic"
-        case .hideReactions: return "Hide Reactions"
-        case .sendWithReturnKey: return "Send with \"return\" key"
-        case .emojiTabFirst: return "Emoji tab first"
-        case .standardEmojisFirst: return "Standard emojis first"
+        case .accountColorsSaturation: return mellowsgramText("Account Colors Saturation", "Насыщенность цветов аккаунтов", languageCode: languageCode)
+        case .stickerSize: return mellowsgramText("Stickers and Emoji Size", "Размер стикеров и эмодзи", languageCode: languageCode)
+        case .showStickerTimestamp: return mellowsgramText("Show Timestamp", "Показывать время", languageCode: languageCode)
+        case .wideChannelPosts: return mellowsgramText("Wide posts in channels", "Широкие публикации в каналах", languageCode: languageCode)
+        case .channelBottomPanel: return mellowsgramText("Channel Bottom Panel", "Нижняя панель канала", languageCode: languageCode)
+        case .outgoingPhotoQuality: return mellowsgramText("Outgoing Photo Quality", "Качество отправляемых фото", languageCode: languageCode)
+        case .sendHDPhotos: return mellowsgramText("Send HD Photos", "Отправлять фото в HD", languageCode: languageCode)
+        case .hideTabBar: return mellowsgramText("Hide Tab Bar", "Скрыть панель вкладок", languageCode: languageCode)
+        case .showContactsTab: return mellowsgramText("Show Contacts Tab", "Показывать вкладку контактов", languageCode: languageCode)
+        case .showCallsTab: return mellowsgramText("Show Calls Tab", "Показывать вкладку звонков", languageCode: languageCode)
+        case .showTabNames: return mellowsgramText("Show Tab Names", "Показывать названия вкладок", languageCode: languageCode)
+        case .searchButton: return mellowsgramText("Search Button", "Кнопка поиска", languageCode: languageCode)
+        case .wideTabBar: return mellowsgramText("Wide Tab Bar", "Растянуть панель вкладок", languageCode: languageCode)
+        case .foldersAtBottom: return mellowsgramText("Folders at Bottom", "Папки внизу", languageCode: languageCode)
+        case .hideAllChats: return mellowsgramText("Hide \"All Chats\"", "Скрыть «Все чаты»", languageCode: languageCode)
+        case .smallerFolderSpacing: return mellowsgramText("Smaller Spacing", "Уменьшить расстояние между папками", languageCode: languageCode)
+        case .allChatsTitle: return mellowsgramText("\"All Chats\" Title", "Название «Все чаты»", languageCode: languageCode)
+        case .openLastFolder: return mellowsgramText("Open Last Folder", "Открывать последнюю папку", languageCode: languageCode)
+        case .compactChatList: return mellowsgramText("Compact Chat List", "Компактный список чатов", languageCode: languageCode)
+        case .compactMessagePreview: return mellowsgramText("Compact Message Preview", "Компактный предпросмотр сообщений", languageCode: languageCode)
+        case .chatListSwipeOptions: return mellowsgramText("Chat List Swipe Options", "Действия при свайпе по чату", languageCode: languageCode)
+        case .swipeToDeleteChat: return mellowsgramText("Swipe to Delete Chat", "Удалять чат свайпом", languageCode: languageCode)
+        case .hideStories: return mellowsgramText("Hide Stories", "Скрыть истории", languageCode: languageCode)
+        case .disableSwipeToRecordStory: return mellowsgramText("Disable Swipe to Record", "Отключить свайп для записи", languageCode: languageCode)
+        case .askBeforeViewingStories: return mellowsgramText("Ask Before Viewing", "Спрашивать перед просмотром", languageCode: languageCode)
+        case .repostToStory: return mellowsgramText("Repost to Story", "Публиковать в истории", languageCode: languageCode)
+        case .showProfileId: return mellowsgramText("Show Profile ID", "Показывать ID профиля", languageCode: languageCode)
+        case .showDataCenter: return mellowsgramText("Show Data Center", "Показывать дата-центр", languageCode: languageCode)
+        case .showRegistrationDate: return mellowsgramText("Show Registration Date", "Показывать дату регистрации", languageCode: languageCode)
+        case .showChatCreationDate: return mellowsgramText("Show Chat Creation Date", "Показывать дату создания чата", languageCode: languageCode)
+        case .callConfirmation: return mellowsgramText("Call Confirmation", "Подтверждать звонки", languageCode: languageCode)
+        case .hidePhoneInSettings: return mellowsgramText("Hide Phone in Settings", "Скрывать номер в настройках", languageCode: languageCode)
+        case .translationService: return mellowsgramText("Translation Service", "Сервис перевода", languageCode: languageCode)
+        case .quickTranslateButton: return mellowsgramText("Quick Translate Button", "Кнопка быстрого перевода", languageCode: languageCode)
+        case .translateEntireChats: return mellowsgramText("Translate Entire Chats", "Переводить весь чат", languageCode: languageCode)
+        case .transcriptionService: return mellowsgramText("Voice-to-Text Service", "Сервис расшифровки голосовых", languageCode: languageCode)
+        case .forceDeviceMicrophone: return mellowsgramText("Force Device Microphone", "Использовать микрофон устройства", languageCode: languageCode)
+        case .startRoundVideoWithRearCamera: return mellowsgramText("Start with Rear Camera", "Начинать с задней камеры", languageCode: languageCode)
+        case .videoPipWithSwipe: return mellowsgramText("Video PiP with Swipe", "Открывать видео в PiP свайпом", languageCode: languageCode)
+        case .cameraInGallery: return mellowsgramText("Camera in Gallery", "Камера в галерее", languageCode: languageCode)
+        case .cameraPreviewInGallery: return mellowsgramText("Camera Preview in Gallery", "Предпросмотр камеры в галерее", languageCode: languageCode)
+        case .uploadBoost: return mellowsgramText("Upload Boost", "Ускорение отправки", languageCode: languageCode)
+        case .downloadBoost: return mellowsgramText("Download Boost", "Ускорение загрузки", languageCode: languageCode)
+        case .contextSaveToCloud: return mellowsgramText("Save to Saved Messages", "Сохранить в Избранное", languageCode: languageCode)
+        case .contextHideSenderNames: return mellowsgramText("Hide Sender Names", "Скрыть имена отправителей", languageCode: languageCode)
+        case .contextSelectFromAuthor: return mellowsgramText("Select from Author", "Выбрать сообщения автора", languageCode: languageCode)
+        case .contextRestrict: return mellowsgramText("Restrict", "Ограничить пользователя", languageCode: languageCode)
+        case .contextReport: return mellowsgramText("Report", "Пожаловаться", languageCode: languageCode)
+        case .contextReply: return mellowsgramText("Reply", "Ответить", languageCode: languageCode)
+        case .contextPin: return mellowsgramText("Pin", "Закрепить", languageCode: languageCode)
+        case .contextSaveToFiles: return mellowsgramText("Save to Files", "Сохранить в Файлы", languageCode: languageCode)
+        case .contextViewThread: return mellowsgramText("View Thread", "Открыть ветку", languageCode: languageCode)
+        case .contextJSON: return mellowsgramText("JSON", "JSON", languageCode: languageCode)
+        case .secondsInMessages: return mellowsgramText("Seconds in Messages", "Секунды во времени сообщений", languageCode: languageCode)
+        case .doubleTapToEdit: return mellowsgramText("Double-tap to Edit Message", "Изменять сообщение двойным касанием", languageCode: languageCode)
+        case .voiceRecordingButton: return mellowsgramText("Voice Recording Button", "Кнопка записи голосового", languageCode: languageCode)
+        case .messageDeletionEffects: return mellowsgramText("Message Deletion Effects", "Анимация удаления сообщений", languageCode: languageCode)
+        case .sendAsButton: return mellowsgramText("\"Send Message As…\" Button", "Кнопка «Отправить как…»", languageCode: languageCode)
+        case .pullToNextUnreadChannel: return mellowsgramText("Pull to Next Unread Channel", "Свайп к следующему непрочитанному каналу", languageCode: languageCode)
+        case .pullToNextTopic: return mellowsgramText("Pull to Next Topic", "Свайп к следующей теме", languageCode: languageCode)
+        case .hideReactions: return mellowsgramText("Hide Reactions", "Скрыть реакции", languageCode: languageCode)
+        case .sendWithReturnKey: return mellowsgramText("Send with Return Key", "Отправлять клавишей Return", languageCode: languageCode)
+        case .emojiTabFirst: return mellowsgramText("Emoji Tab First", "Сначала вкладка эмодзи", languageCode: languageCode)
+        case .standardEmojisFirst: return mellowsgramText("Standard Emojis First", "Сначала обычные эмодзи", languageCode: languageCode)
         }
     }
 
@@ -185,28 +188,28 @@ private extension MellowsgramGlobalSettingKey {
         }
     }
 
-    var mellowsgramSliderLimits: (minimum: String, maximum: String) {
+    func mellowsgramSliderLimits(languageCode: String) -> (minimum: String, maximum: String) {
         switch self {
         case .accountColorsSaturation:
-            return ("No color", "Full color")
+            return (mellowsgramText("No color", "Без цвета", languageCode: languageCode), mellowsgramText("Full color", "Полная насыщенность", languageCode: languageCode))
         case .stickerSize:
-            return ("Small", "Large")
+            return (mellowsgramText("Small", "Маленький", languageCode: languageCode), mellowsgramText("Large", "Большой", languageCode: languageCode))
         case .outgoingPhotoQuality:
-            return ("More compression", "Higher quality")
+            return (mellowsgramText("More compression", "Сильнее сжатие", languageCode: languageCode), mellowsgramText("Higher quality", "Выше качество", languageCode: languageCode))
         default:
             return ("0%", "100%")
         }
     }
 
-    var mellowsgramChoices: [(String, String)] {
+    func mellowsgramChoices(languageCode: String) -> [(String, String)] {
         switch self {
-        case .allChatsTitle: return [("default", "Default"), ("short", "All"), ("long", "All Chats")]
+        case .allChatsTitle: return [("default", mellowsgramText("Default", "По умолчанию", languageCode: languageCode)), ("short", mellowsgramText("All", "Все", languageCode: languageCode)), ("long", mellowsgramText("All Chats", "Все чаты", languageCode: languageCode))]
         case .translationService:
-            var values: [(String, String)] = [("telegram", "Telegram"), ("google", "Google Translate")]
-            if #available(iOS 18.0, *) { values.append(("system", "iOS System")) }
+            var values: [(String, String)] = [("telegram", "Telegram"), ("google", mellowsgramText("Google Translate", "Google Переводчик", languageCode: languageCode))]
+            if #available(iOS 18.0, *) { values.append(("system", mellowsgramText("iOS System", "Система iOS", languageCode: languageCode))) }
             return values
         case .transcriptionService: return [("telegram", "Telegram"), ("apple", "Apple")]
-        case .downloadBoost: return [("default", "None"), ("medium", "Medium"), ("maximum", "Maximum")]
+        case .downloadBoost: return [("default", mellowsgramText("None", "Нет", languageCode: languageCode)), ("medium", mellowsgramText("Medium", "Среднее", languageCode: languageCode)), ("maximum", mellowsgramText("Maximum", "Максимальное", languageCode: languageCode))]
         default: return []
         }
     }
@@ -367,11 +370,12 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! MellowsgramRootControllerArguments
+        let languageCode = presentationData.strings.primaryComponent.languageCode
         switch self {
         case .header:
             return MellowsgramHeaderItem(sectionId: self.section)
         case .categoriesHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Categories", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Categories", "Категории", languageCode: languageCode), sectionId: self.section)
         case let .category(category):
             let icon: UIImage?
             switch category {
@@ -390,7 +394,7 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 systemStyle: .glass,
                 icon: icon,
-                title: category.title,
+                title: category.title(languageCode: languageCode),
                 label: "",
                 sectionId: self.section,
                 style: .blocks,
@@ -400,12 +404,12 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
                 }
             )
         case .linksHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Links", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Links", "Ссылки", languageCode: languageCode), sectionId: self.section)
         case .channel:
             return ItemListDisclosureItem(
                 presentationData: presentationData,
                 systemStyle: .glass,
-                title: "Channel",
+                title: mellowsgramText("Channel", "Канал", languageCode: languageCode),
                 label: "@mellowsgram",
                 labelStyle: .coloredText(presentationData.theme.list.itemAccentColor),
                 sectionId: self.section,
@@ -420,13 +424,13 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
                 presentationData: presentationData,
                 systemStyle: .glass,
                 title: "GitHub",
-                label: "telegram.org",
+                label: "github.com/Eld3rly/Mellowsgram-IOS",
                 labelStyle: .coloredText(presentationData.theme.list.itemAccentColor),
                 sectionId: self.section,
                 style: .blocks,
                 disclosureStyle: .arrow,
                 action: {
-                    arguments.openExternalUrl("https://telegram.org")
+                    arguments.openExternalUrl("https://github.com/Eld3rly/Mellowsgram-IOS")
                 }
             )
         }
@@ -594,63 +598,64 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! MellowsgramCategoryControllerArguments
+        let languageCode = presentationData.strings.primaryComponent.languageCode
         switch self {
         case .spyAndGhostHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Ghost essentials", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Ghost essentials", "Основные настройки невидимости", languageCode: languageCode), sectionId: self.section)
         case let .ghostMode(value, enabledCount):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Ghost Mode \(enabledCount)/5", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateGhostMode)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "\(mellowsgramText("Ghost Mode", "Режим невидимки", languageCode: languageCode)) \(enabledCount)/5", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateGhostMode)
         case let .ghostDontReadMessages(value):
-            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: "Don't Read Messages", style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Don't Read Messages", "Не отмечать сообщения прочитанными", languageCode: languageCode), style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.updateGhostDontReadMessages(!value)
             })
         case let .ghostDontReadStories(value):
-            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: "Don't Read Stories", style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Don't Read Stories", "Не отмечать истории просмотренными", languageCode: languageCode), style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.updateGhostDontReadStories(!value)
             })
         case let .ghostDontSendOnline(value):
-            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: "Don't Send Online", style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Don't Send Online", "Не отправлять статус «в сети»", languageCode: languageCode), style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.updateGhostDontSendOnline(!value)
             })
         case let .ghostDontSendTyping(value):
-            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: "Don't Send Typing", style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Don't Send Typing", "Не отправлять статус «печатает»", languageCode: languageCode), style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.updateGhostDontSendTyping(!value)
             })
         case let .ghostGoOfflineAutomatically(value):
-            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: "Go Offline Automatically", style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+            return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Go Offline Automatically", "Автоматически уходить в офлайн", languageCode: languageCode), style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.updateGhostGoOfflineAutomatically(!value)
             })
         case .ghostEssentialsFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Toggle each safeguard independently. Ghost Mode applies only to the selected options."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Toggle each safeguard independently. Ghost Mode applies only to the selected options.", "Каждую защиту можно включать отдельно. Режим невидимки применяет только выбранные параметры.", languageCode: languageCode)), sectionId: self.section)
         case .spyEssentialsHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Spy essentials", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Spy essentials", "Архив сообщений", languageCode: languageCode), sectionId: self.section)
         case let .saveDeletedMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Save Deleted Messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSaveDeletedMessages)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Save Deleted Messages", "Сохранять удалённые сообщения", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSaveDeletedMessages)
         case let .showDeletedMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Show Deleted Messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateShowDeletedMessages)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Show Deleted Messages", "Показывать удалённые сообщения", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateShowDeletedMessages)
         case let .saveEditedMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Save Edits History", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSaveEditedMessages)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Save Edits History", "Сохранять историю изменений", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSaveEditedMessages)
         case .spyAndGhostFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Ghost Mode скрывает сетевые receipts, а архив хранится только локально на этом аккаунте."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Ghost Mode suppresses network read and presence updates. The archive is stored only on this account.", "Режим невидимки подавляет сетевые отметки о прочтении и статусе. Архив хранится только в этом аккаунте.", languageCode: languageCode)), sectionId: self.section)
         case let .backgroundNotifications(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Background Notifications", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsEnabled)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Background Notifications", "Уведомления в фоне", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsEnabled)
         case let .backgroundNotificationsAllAccounts(value, enabled):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "All Accounts in Background", value: value, enabled: enabled, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsAllAccounts)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("All Accounts in Background", "Все аккаунты в фоне", languageCode: languageCode), value: value, enabled: enabled, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsAllAccounts)
         case .backgroundNotificationsFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Держит выбранные Telegram-сессии активными в фоне для локальных уведомлений. Это расходует батарею; после принудительного закрытия приложения iOS остановит соединение."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Keeps selected Telegram sessions active in the background for local notifications. This uses battery; iOS stops the connection after you force-quit the app.", "Поддерживает выбранные сессии Telegram в фоне для локальных уведомлений. Это расходует заряд; после принудительного закрытия iOS остановит соединение.", languageCode: languageCode)), sectionId: self.section)
         case .appearanceHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Appearance", sectionId: self.section)
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode), sectionId: self.section)
         case let .translucentDeletedMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Translucent Deleted Messages", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateTranslucentDeletedMessages)
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Translucent Deleted Messages", "Полупрозрачные удалённые сообщения", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateTranslucentDeletedMessages)
         case .appearanceFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Изменяет только отображение локальных строк удалённых сообщений."), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Changes only the appearance of locally archived deleted-message rows.", "Меняет только отображение локальных строк удалённых сообщений.", languageCode: languageCode)), sectionId: self.section)
         case let .globalSettingsHeader(title):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: title, sectionId: self.section)
         case let .globalSetting(key, value, enabled):
             if key.mellowsgramIsPercentageSlider {
                 return MellowsgramPercentageSliderItem(
                     theme: presentationData.theme,
-                    title: key.mellowsgramTitle,
-                    limits: key.mellowsgramSliderLimits,
+                    title: key.mellowsgramTitle(languageCode: languageCode),
+                    limits: key.mellowsgramSliderLimits(languageCode: languageCode),
                     value: Int32(value) ?? Int32(key.defaultValue) ?? 0,
                     sectionId: self.section,
                     updated: { updatedValue in
@@ -659,16 +664,16 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
                 )
             } else if key.mellowsgramIsChoice {
                 let title: String
-                if let selected = key.mellowsgramChoices.first(where: { $0.0 == value }) {
+                if let selected = key.mellowsgramChoices(languageCode: languageCode).first(where: { $0.0 == value }) {
                     title = selected.1
                 } else {
                     title = value
                 }
-                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: key.mellowsgramTitle, enabled: enabled, label: title, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: key.mellowsgramTitle(languageCode: languageCode), enabled: enabled, label: title, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
                     arguments.selectGlobalSetting(key, value)
                 })
             }
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: key.mellowsgramTitle, value: value == "true", enabled: enabled, sectionId: self.section, style: .blocks, updated: { updatedValue in
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: key.mellowsgramTitle(languageCode: languageCode), value: value == "true", enabled: enabled, sectionId: self.section, style: .blocks, updated: { updatedValue in
                 arguments.updateGlobalSetting(key, updatedValue ? "true" : "false")
             })
         }
@@ -892,7 +897,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     }
 }
 
-private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsCategory, settings: MellowsgramSettings, snapshot: MellowsgramSettingsSnapshot, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> [MellowsgramCategoryControllerEntry] {
+private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsCategory, settings: MellowsgramSettings, snapshot: MellowsgramSettingsSnapshot, languageCode: String, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> [MellowsgramCategoryControllerEntry] {
     var entries: [MellowsgramCategoryControllerEntry]
     switch category {
     case .spyAndGhost:
@@ -939,7 +944,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             entries.removeLast()
         }
         if category != .appearance || onlySetting != nil {
-            entries.append(.globalSettingsHeader(category.title))
+            entries.append(.globalSettingsHeader(category.title(languageCode: languageCode)))
         }
         entries.append(contentsOf: globalKeys.map { key in
             let enabled: Bool
@@ -1118,7 +1123,8 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
         selectGlobalSetting: { key, selectedValue in
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
             let actionSheet = ActionSheetController(presentationData: presentationData)
-            let options = key.mellowsgramChoices.map { rawValue, title in
+            let languageCode = presentationData.strings.primaryComponent.languageCode
+            let options = key.mellowsgramChoices(languageCode: languageCode).map { rawValue, title in
                 let title = rawValue == selectedValue ? "✓  \(title)" : title
                 return ActionSheetButtonItem(title: title, color: .accent, action: { [weak actionSheet] in
                     actionSheet?.dismissAnimated()
@@ -1140,14 +1146,14 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
     |> map { presentationData, settings, snapshot -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
-            title: .text(category.title),
+            title: .text(category.title(languageCode: presentationData.strings.primaryComponent.languageCode)),
             leftNavigationButton: nil,
             rightNavigationButton: nil,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
         )
         let listState = ItemListNodeState(
             presentationData: ItemListPresentationData(presentationData),
-            entries: mellowsgramCategoryControllerEntries(category: category, settings: settings, snapshot: snapshot, onlySetting: onlySetting, onlyAccountSetting: onlyAccountSetting),
+            entries: mellowsgramCategoryControllerEntries(category: category, settings: settings, snapshot: snapshot, languageCode: presentationData.strings.primaryComponent.languageCode, onlySetting: onlySetting, onlyAccountSetting: onlyAccountSetting),
             style: .blocks,
             animateChanges: true
         )

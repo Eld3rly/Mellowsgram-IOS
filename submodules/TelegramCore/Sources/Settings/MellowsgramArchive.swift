@@ -279,38 +279,43 @@ struct MellowsgramDeletedReplyFormatting {
     let preview: String
 }
 
-private func mellowsgramDeletedReplyMediaDescription(_ media: [EngineRawMedia]) -> String? {
+private func mellowsgramUsesRussian(languageCode: String) -> Bool {
+    return languageCode.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first == "ru"
+}
+
+private func mellowsgramDeletedReplyMediaDescription(_ media: [EngineRawMedia], languageCode: String) -> String? {
+    let isRussian = mellowsgramUsesRussian(languageCode: languageCode)
     for item in media {
         if item is TelegramMediaImage {
-            return "Фото"
+            return isRussian ? "Фото" : "Photo"
         } else if let file = item as? TelegramMediaFile {
             if file.isInstantVideo {
-                return "Видеосообщение"
+                return isRussian ? "Видеосообщение" : "Video message"
             } else if file.isVoice {
-                return "Голосовое сообщение"
+                return isRussian ? "Голосовое сообщение" : "Voice message"
             } else if file.isVideo {
-                return "Видео"
+                return isRussian ? "Видео" : "Video"
             } else if file.isSticker || file.isAnimatedSticker || file.isVideoSticker {
-                return "Стикер"
+                return isRussian ? "Стикер" : "Sticker"
             } else if file.isMusic {
-                return "Аудио"
+                return isRussian ? "Аудио" : "Audio"
             } else {
-                return "Файл"
+                return isRussian ? "Файл" : "File"
             }
         } else if item is TelegramMediaPoll {
-            return "Опрос"
+            return isRussian ? "Опрос" : "Poll"
         } else if item is TelegramMediaContact {
-            return "Контакт"
+            return isRussian ? "Контакт" : "Contact"
         } else if item is TelegramMediaMap {
-            return "Геопозиция"
+            return isRussian ? "Геопозиция" : "Location"
         } else if item is TelegramMediaWebpage {
-            return "Ссылка"
+            return isRussian ? "Ссылка" : "Link"
         }
     }
     return nil
 }
 
-func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRecord) -> MellowsgramDeletedReplyFormatting? {
+func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRecord, languageCode: String) -> MellowsgramDeletedReplyFormatting? {
     guard record.deletedAt != nil else {
         return nil
     }
@@ -320,7 +325,8 @@ func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRe
     let normalizedText = record.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let preview: String
     if normalizedText.isEmpty {
-        preview = mellowsgramDeletedReplyMediaDescription(engineMellowsgramMessageMedia(record.mediaData)) ?? "Вложение"
+        let isRussian = mellowsgramUsesRussian(languageCode: languageCode)
+        preview = mellowsgramDeletedReplyMediaDescription(engineMellowsgramMessageMedia(record.mediaData), languageCode: languageCode) ?? (isRussian ? "Вложение" : "Attachment")
     } else {
         preview = String(normalizedText.prefix(256))
     }

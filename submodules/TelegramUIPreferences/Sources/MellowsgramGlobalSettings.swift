@@ -2,6 +2,14 @@ import Foundation
 import TelegramCore
 import SwiftSignalKit
 
+public func mellowsgramLocalizedString(english: String, russian: String, languageCode: String) -> String {
+    let primaryLanguageCode = languageCode
+        .lowercased()
+        .split(whereSeparator: { $0 == "-" || $0 == "_" })
+        .first
+    return primaryLanguageCode == "ru" ? russian : english
+}
+
 /// App-wide Mellowsgram preferences. Settings that already belong to a native
 /// Telegram preference model are intentionally not stored here.
 public enum MellowsgramGlobalSettingKey: String, CaseIterable {
