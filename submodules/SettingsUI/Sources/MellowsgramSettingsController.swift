@@ -1210,7 +1210,6 @@ public func mellowsgramSettingsController(context: AccountContext) -> ViewContro
     var openCategoryImpl: ((MellowsgramSettingsCategory, MellowsgramGlobalSettingKey?, MellowsgramAccountSetting?) -> Void)?
     var openExternalUrlImpl: ((String) -> Void)?
     let searchQuery = ValuePromise("", ignoreRepeated: true)
-    let searchQueryValue = Atomic(value: "")
 
     let arguments = MellowsgramRootControllerArguments(
         context: context,
@@ -1221,7 +1220,6 @@ public func mellowsgramSettingsController(context: AccountContext) -> ViewContro
             openExternalUrlImpl?(url)
         },
         updateSearchQuery: { query in
-            searchQueryValue.swap(query)
             searchQuery.set(query)
         }
     )
