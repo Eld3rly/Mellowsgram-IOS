@@ -1,5 +1,8 @@
 import Postbox
 
+extension TextEntitiesMessageAttribute: MellowsgramMessageArchiveRevisionAttribute {
+}
+
 extension EphemeralMessageAttribute: MellowsgramMessageArchiveExclusion {
     public var mellowsgramShouldNotArchive: Bool {
         return true

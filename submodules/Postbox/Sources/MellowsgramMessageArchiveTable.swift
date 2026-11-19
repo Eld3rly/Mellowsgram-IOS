@@ -4,6 +4,12 @@ public protocol MellowsgramMessageArchiveExclusion {
     var mellowsgramShouldNotArchive: Bool { get }
 }
 
+/// Marks message attributes that change the user-visible text representation
+/// and therefore belong in edit history. Transport, read-state, and playback
+/// attributes must not create text revisions.
+public protocol MellowsgramMessageArchiveRevisionAttribute {
+}
+
 public struct MellowsgramMessageRevision: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case text
@@ -250,7 +256,9 @@ final class MellowsgramMessageArchiveTable: Table {
             return
         }
         let updatedAttributesData = Self.encodeAttributes(updatedMessage.attributes)
-        guard previousMessage.text != updatedMessage.text || previousMessage.attributesData.makeData() != updatedAttributesData else {
+        let previousRevisionAttributesData = Self.encodeRevisionAttributes(Self.decodeAttributes(previousMessage.attributesData))
+        let updatedRevisionAttributesData = Self.encodeRevisionAttributes(updatedMessage.attributes)
+        guard previousMessage.text != updatedMessage.text || previousRevisionAttributesData != updatedRevisionAttributesData else {
             return
         }
 
@@ -344,6 +352,45 @@ final class MellowsgramMessageArchiveTable: Table {
             buffer.write(data)
         }
         return buffer.makeData()
+    }
+
+    private static func encodeRevisionAttributes(_ attributes: [MessageAttribute]) -> Data {
+        return Self.encodeAttributes(attributes.filter { $0 is MellowsgramMessageArchiveRevisionAttribute })
+    }
+
+    private static func decodeAttributes(_ data: ReadBuffer) -> [MessageAttribute] {
+        let buffer = data.sharedBufferNoCopy()
+        guard buffer.length >= 4 else {
+            return []
+        }
+
+        var attributeCount: Int32 = 0
+        buffer.read(&attributeCount, offset: 0, length: 4)
+        guard attributeCount >= 0 else {
+            return []
+        }
+
+        var attributes: [MessageAttribute] = []
+        for _ in 0 ..< attributeCount {
+            guard buffer.offset + 4 <= buffer.length else {
+                break
+            }
+            var attributeLength: Int32 = 0
+            buffer.read(&attributeLength, offset: 0, length: 4)
+            guard attributeLength >= 0, buffer.offset + Int(attributeLength) <= buffer.length else {
+                break
+            }
+            if let attribute = PostboxDecoder(buffer: MemoryBuffer(
+                memory: buffer.memory.advanced(by: buffer.offset),
+                capacity: Int(attributeLength),
+                length: Int(attributeLength),
+                freeWhenDone: false
+            )).decodeRootObject() as? MessageAttribute {
+                attributes.append(attribute)
+            }
+            buffer.skip(Int(attributeLength))
+        }
+        return attributes
     }
 
     private static func encodeMedia(_ media: [Media]) -> Data {
