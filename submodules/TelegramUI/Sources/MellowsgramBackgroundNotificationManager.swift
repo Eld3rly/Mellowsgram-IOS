@@ -159,7 +159,7 @@ public final class MellowsgramBackgroundNotificationManager {
 
             let peerTitle: String
             if let peer = message.peers[message.id.peerId], let presentationData = self.presentationData() {
-                peerTitle = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+                peerTitle = EnginePeer(peer).displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
             } else {
                 peerTitle = "Mellowsgram"
             }
