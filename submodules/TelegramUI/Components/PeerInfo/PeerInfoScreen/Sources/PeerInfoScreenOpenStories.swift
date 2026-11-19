@@ -6,6 +6,7 @@ import StoryContainerScreen
 import SwiftSignalKit
 import AlertUI
 import TelegramUIPreferences
+import PresentationDataUtils
 
 extension PeerInfoScreenNode {
     func openStories(fromAvatar: Bool, skipConfirmation: Bool = false) {
