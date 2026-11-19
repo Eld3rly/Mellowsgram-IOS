@@ -5,6 +5,8 @@ import AccountContext
 import SwiftSignalKit
 import TelegramCore
 import AvatarNode
+import AlertUI
+import TelegramUIPreferences
 
 public extension StoryContainerScreen {
     static func openArchivedStories(context: AccountContext, parentController: ViewController, avatarNode: AvatarNode, sharedProgressDisposable: MetaDisposable?) {
@@ -87,7 +89,22 @@ public extension StoryContainerScreen {
         }
     }
     
-    static func openPeerStories(context: AccountContext, peerId: EnginePeer.Id, parentController: ViewController, avatarNode: AvatarNode?, sharedProgressDisposable: MetaDisposable? = nil) {
+    static func openPeerStories(context: AccountContext, peerId: EnginePeer.Id, parentController: ViewController, avatarNode: AvatarNode?, sharedProgressDisposable: MetaDisposable? = nil, skipConfirmation: Bool = false) {
+        if !skipConfirmation,
+           peerId != context.account.peerId,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .askBeforeViewingStories) {
+            let alert = textAlertController(context: context, title: "View story?", text: "The author may see that you viewed this story. Continue?", actions: [
+                TextAlertAction(type: .genericAction, title: context.sharedContext.currentPresentationData.with { $0 }.strings.Common_Cancel, action: {}),
+                TextAlertAction(type: .defaultAction, title: "Continue", action: { [weak parentController, weak avatarNode] in
+                    guard let parentController else {
+                        return
+                    }
+                    Self.openPeerStories(context: context, peerId: peerId, parentController: parentController, avatarNode: avatarNode, sharedProgressDisposable: sharedProgressDisposable, skipConfirmation: true)
+                })
+            ])
+            parentController.present(alert, in: .window(.root))
+            return
+        }
         return openPeerStoriesCustom(
             context: context,
             peerId: peerId,

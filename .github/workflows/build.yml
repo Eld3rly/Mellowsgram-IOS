@@ -23,7 +23,7 @@ jobs:
       - name: Checkout source and submodules
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 2
           submodules: recursive
 
       - name: Select Xcode and inspect SDK
@@ -68,7 +68,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
+          git show --check --format= HEAD
           python3 -m py_compile ci/mellowsgram_configuration.py
           python3 build-system/Make/PostboxImportCheck.py
           swiftc_path="$(xcrun --find swiftc)"
@@ -84,7 +84,12 @@ jobs:
             submodules/TelegramUI/Sources/MellowsgramBackgroundNotificationManager.swift \
             submodules/TelegramUI/Sources/SharedWakeupManager.swift \
             submodules/TelegramUI/Sources/AppDelegate.swift \
+            submodules/TelegramUI/Sources/ChatController.swift \
+            submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift \
             submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift \
+            submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenStories.swift \
+            submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/OpenStories.swift \
+            submodules/TranslateUI/Sources/Translate.swift \
             submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift \
             submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift \
             submodules/SettingsUI/Sources/MellowsgramSettingsController.swift \

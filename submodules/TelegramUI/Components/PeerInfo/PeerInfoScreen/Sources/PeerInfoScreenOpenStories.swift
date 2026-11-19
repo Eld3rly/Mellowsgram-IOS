@@ -4,15 +4,29 @@ import Display
 import AccountContext
 import StoryContainerScreen
 import SwiftSignalKit
+import AlertUI
+import TelegramUIPreferences
 
 extension PeerInfoScreenNode {
-    func openStories(fromAvatar: Bool) {
+    func openStories(fromAvatar: Bool, skipConfirmation: Bool = false) {
         guard let controller = self.controller else {
+            return
+        }
+        if !skipConfirmation,
+           self.peerId != self.context.account.peerId,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .askBeforeViewingStories) {
+            let alert = textAlertController(context: self.context, updatedPresentationData: controller.updatedPresentationData, title: "View story?", text: "The author may see that you viewed this story. Continue?", actions: [
+                TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
+                TextAlertAction(type: .defaultAction, title: "Continue", action: { [weak self] in
+                    self?.openStories(fromAvatar: fromAvatar, skipConfirmation: true)
+                })
+            ])
+            controller.present(alert, in: .window(.root))
             return
         }
         if let expiringStoryList = self.expiringStoryList, let expiringStoryListState = self.expiringStoryListState, !expiringStoryListState.items.isEmpty {
             if fromAvatar {
-                StoryContainerScreen.openPeerStories(context: self.context, peerId: self.peerId, parentController: controller, avatarNode: self.headerNode.avatarListNode.avatarContainerNode.avatarNode)
+                StoryContainerScreen.openPeerStories(context: self.context, peerId: self.peerId, parentController: controller, avatarNode: self.headerNode.avatarListNode.avatarContainerNode.avatarNode, skipConfirmation: skipConfirmation)
                 return
             }
             

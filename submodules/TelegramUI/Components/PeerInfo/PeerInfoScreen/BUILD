@@ -15,6 +15,7 @@ swift_library(
         "//submodules/TelegramUI/Components/NavigationBarComponent",
         "//submodules/TelegramUI/Components/NavigationExpansionTransition",
         "//submodules/AccountContext",
+        "//submodules/AlertUI:AlertUI",
         "//submodules/AccountUtils",
         "//submodules/ActionSheetPeerItem",
         "//submodules/ActivityIndicator",

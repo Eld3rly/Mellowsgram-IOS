@@ -9873,9 +9873,21 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.navigateToMessage(from: nil, to: messageLocation, scrollPosition: scrollPosition, rememberInStack: false, forceInCurrentChat: forceInCurrentChat, dropStack: dropStack, animated: animated, completion: completion, customPresentProgress: customPresentProgress)
     }
     
-    func openStories(peerId: EnginePeer.Id, avatarHeaderNode: ChatMessageAvatarHeaderNodeImpl?, avatarNode: AvatarNode?) {
+    func openStories(peerId: EnginePeer.Id, avatarHeaderNode: ChatMessageAvatarHeaderNodeImpl?, avatarNode: AvatarNode?, skipConfirmation: Bool = false) {
+        if !skipConfirmation,
+           peerId != self.context.account.peerId,
+           MellowsgramGlobalSettingsRuntime.shared.bool(for: .askBeforeViewingStories) {
+            let alert = textAlertController(context: self.context, updatedPresentationData: self.updatedPresentationData, title: "View story?", text: "The author may see that you viewed this story. Continue?", actions: [
+                TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
+                TextAlertAction(type: .defaultAction, title: "Continue", action: { [weak self] in
+                    self?.openStories(peerId: peerId, avatarHeaderNode: avatarHeaderNode, avatarNode: avatarNode, skipConfirmation: true)
+                })
+            ])
+            self.present(alert, in: .window(.root))
+            return
+        }
         if let avatarNode = avatarHeaderNode?.avatarNode ?? avatarNode {
-            StoryContainerScreen.openPeerStories(context: self.context, peerId: peerId, parentController: self, avatarNode: avatarNode)
+            StoryContainerScreen.openPeerStories(context: self.context, peerId: peerId, parentController: self, avatarNode: avatarNode, skipConfirmation: skipConfirmation)
         }
     }
     

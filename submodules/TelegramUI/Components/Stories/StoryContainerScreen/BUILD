@@ -20,6 +20,7 @@ swift_library(
         "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode",
         "//submodules/TelegramUI/Components/ChatInputNode",
         "//submodules/AccountContext",
+        "//submodules/AlertUI:AlertUI",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/AppBundle",
         "//submodules/TelegramCore",

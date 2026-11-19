@@ -458,14 +458,17 @@ func alternativeTranslateText(text: String, fromLang: String?, toLang: String) -
                 }
             }
             
-            var uri = "https://translate.goo"
-            uri += "gleapis.com/transl"
-            uri += "ate_a"
-            uri += "/singl"
-            uri += "e?client=gtx&sl=\(effectiveFromLang.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            uri += "&tl=\(toLang.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            uri += "&dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q="
-            uri += text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let queryValueAllowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            guard let encodedFromLanguage = effectiveFromLang.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters),
+                  let encodedToLanguage = toLang.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters),
+                  let encodedText = text.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters) else {
+                subscriber.putError(.generic)
+                return
+            }
+
+            var uri = "https://translate.googleapis.com/translate_a/single?client=gtx"
+            uri += "&sl=\(encodedFromLanguage)&tl=\(encodedToLanguage)"
+            uri += "&dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q=\(encodedText)"
             
             guard let url = URL(string: uri) else {
                 subscriber.putError(.generic)
