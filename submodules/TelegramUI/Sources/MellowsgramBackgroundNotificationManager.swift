@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Display
 import UserNotifications
 import Intents
 import AVFAudio
@@ -203,7 +204,7 @@ public final class MellowsgramBackgroundNotificationManager {
                 let senderImage = mellowsgramNotificationAvatar(
                     resourcePath: representation.map { engine.resources.resourcePath(resource: EngineMediaResource($0.resource)) },
                     resourceId: representation?.resource.id.stringRepresentation,
-                    peer: senderPeer
+                    peer: EnginePeer(senderPeer)
                 )
                 var personNameComponents = PersonNameComponents()
                 personNameComponents.nickname = senderTitle
@@ -357,7 +358,7 @@ public final class MellowsgramBackgroundNotificationManager {
 }
 
 @available(iOS 15.0, *)
-private func mellowsgramNotificationAvatar(resourcePath: String?, resourceId: String?, peer: Peer) -> INImage? {
+private func mellowsgramNotificationAvatar(resourcePath: String?, resourceId: String?, peer: EnginePeer) -> INImage? {
     if let resourcePath,
        let resourceId,
        FileManager.default.fileExists(atPath: resourcePath) {
