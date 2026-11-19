@@ -13,13 +13,9 @@ import LegacyComponents
 private enum MellowsgramSettingsCategory: Int32, CaseIterable {
     case spyAndGhost
     case appearance
-    case chatsAndTabs
-    case stories
     case profilesAndCalls
-    case translationAndVoice
-    case mediaAndPerformance
-    case contextMenu
-    case messagesAndInput
+    case mediaAndVoice
+    case messagesAndContext
 
     var title: String {
         switch self {
@@ -27,20 +23,12 @@ private enum MellowsgramSettingsCategory: Int32, CaseIterable {
             return "Spy&Ghost"
         case .appearance:
             return "Appearance"
-        case .chatsAndTabs:
-            return "Chats & Tabs"
-        case .stories:
-            return "Stories"
         case .profilesAndCalls:
             return "Profiles & Calls"
-        case .translationAndVoice:
-            return "Translation & Voice"
-        case .mediaAndPerformance:
-            return "Media & Performance"
-        case .contextMenu:
-            return "Context Menu"
-        case .messagesAndInput:
-            return "Messages & Input"
+        case .mediaAndVoice:
+            return "Media & Voice"
+        case .messagesAndContext:
+            return "Messages & Context"
         }
     }
 }
@@ -89,22 +77,24 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
 private extension MellowsgramGlobalSettingKey {
     var mellowsgramCategory: MellowsgramSettingsCategory {
         switch self {
-        case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel, .outgoingPhotoQuality, .sendHDPhotos:
+        case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
+             .hideTabBar, .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
+             .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder,
+             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat:
             return .appearance
-        case .hideTabBar, .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab, .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder, .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat:
-            return .chatsAndTabs
         case .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
-            return .stories
+            return .spyAndGhost
         case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .callConfirmation, .hidePhoneInSettings:
             return .profilesAndCalls
-        case .translationService, .quickTranslateButton, .translateEntireChats, .transcriptionService, .forceDeviceMicrophone:
-            return .translationAndVoice
-        case .startRoundVideoWithRearCamera, .videoPipWithSwipe, .cameraInGallery, .cameraPreviewInGallery, .uploadBoost, .downloadBoost:
-            return .mediaAndPerformance
-        case .contextSaveToCloud, .contextHideSenderNames, .contextSelectFromAuthor, .contextRestrict, .contextReport, .contextReply, .contextPin, .contextSaveToFiles, .contextViewThread, .contextJSON:
-            return .contextMenu
-        case .secondsInMessages, .doubleTapToEdit, .voiceRecordingButton, .messageDeletionEffects, .sendAsButton, .pullToNextUnreadChannel, .pullToNextTopic, .hideReactions, .sendWithReturnKey, .emojiTabFirst, .standardEmojisFirst:
-            return .messagesAndInput
+        case .outgoingPhotoQuality, .sendHDPhotos, .translationService, .quickTranslateButton, .translateEntireChats,
+             .transcriptionService, .forceDeviceMicrophone, .startRoundVideoWithRearCamera, .videoPipWithSwipe,
+             .cameraInGallery, .cameraPreviewInGallery, .uploadBoost, .downloadBoost:
+            return .mediaAndVoice
+        case .contextSaveToCloud, .contextHideSenderNames, .contextSelectFromAuthor, .contextRestrict, .contextReport,
+             .contextReply, .contextPin, .contextSaveToFiles, .contextViewThread, .contextJSON,
+             .secondsInMessages, .doubleTapToEdit, .voiceRecordingButton, .messageDeletionEffects, .sendAsButton,
+             .pullToNextUnreadChannel, .pullToNextTopic, .hideReactions, .sendWithReturnKey, .emojiTabFirst, .standardEmojisFirst:
+            return .messagesAndContext
         }
     }
 
@@ -192,6 +182,19 @@ private extension MellowsgramGlobalSettingKey {
             return true
         default:
             return false
+        }
+    }
+
+    var mellowsgramSliderLimits: (minimum: String, maximum: String) {
+        switch self {
+        case .accountColorsSaturation:
+            return ("No color", "Full color")
+        case .stickerSize:
+            return ("Small", "Large")
+        case .outgoingPhotoQuality:
+            return ("More compression", "Higher quality")
+        default:
+            return ("0%", "100%")
         }
     }
 
@@ -307,21 +310,15 @@ private final class MellowsgramHeaderItemNode: ListViewItemNode {
 }
 
 private final class MellowsgramRootControllerArguments {
-    let context: AccountContext
     let openCategory: (MellowsgramSettingsCategory, MellowsgramGlobalSettingKey?, MellowsgramAccountSetting?) -> Void
     let openExternalUrl: (String) -> Void
-    let updateSearchQuery: (String) -> Void
 
     init(
-        context: AccountContext,
         openCategory: @escaping (MellowsgramSettingsCategory, MellowsgramGlobalSettingKey?, MellowsgramAccountSetting?) -> Void,
-        openExternalUrl: @escaping (String) -> Void,
-        updateSearchQuery: @escaping (String) -> Void
+        openExternalUrl: @escaping (String) -> Void
     ) {
-        self.context = context
         self.openCategory = openCategory
         self.openExternalUrl = openExternalUrl
-        self.updateSearchQuery = updateSearchQuery
     }
 }
 
@@ -332,19 +329,15 @@ private enum MellowsgramRootSection: Int32 {
 
 private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
     case header
-    case search(String)
     case categoriesHeader
     case category(MellowsgramSettingsCategory)
-    case searchResultsHeader
-    case searchResult(MellowsgramGlobalSettingKey)
-    case searchAccountSettingResult(MellowsgramAccountSetting)
     case linksHeader
     case channel
     case github
 
     var section: ItemListSectionId {
         switch self {
-        case .header, .search, .categoriesHeader, .category, .searchResultsHeader, .searchResult, .searchAccountSettingResult:
+        case .header, .categoriesHeader, .category:
             return MellowsgramRootSection.categories.rawValue
         case .linksHeader, .channel, .github:
             return MellowsgramRootSection.links.rawValue
@@ -355,18 +348,10 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
         switch self {
         case .header:
             return 0
-        case .search:
-            return 1
         case .categoriesHeader:
             return 2
         case let .category(category):
             return 3 + category.rawValue
-        case .searchResultsHeader:
-            return 20
-        case let .searchResult(key):
-            return 100 + Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
-        case let .searchAccountSettingResult(setting):
-            return 200 + Int32(MellowsgramAccountSetting.allCases.firstIndex(of: setting) ?? 0)
         case .linksHeader:
             return 1000
         case .channel:
@@ -385,19 +370,6 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
         switch self {
         case .header:
             return MellowsgramHeaderItem(sectionId: self.section)
-        case let .search(query):
-            return ItemListSingleLineInputItem(
-                context: arguments.context,
-                presentationData: presentationData,
-                systemStyle: .glass,
-                title: NSAttributedString(string: ""),
-                text: query,
-                placeholder: "Search Mellowsgram settings",
-                clearType: .always,
-                sectionId: self.section,
-                textUpdated: arguments.updateSearchQuery,
-                action: {}
-            )
         case .categoriesHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: "Categories", sectionId: self.section)
         case let .category(category):
@@ -407,8 +379,12 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
                 icon = PresentationResourcesSettings.security
             case .appearance:
                 icon = PresentationResourcesSettings.appearance
-            default:
-                icon = nil
+            case .profilesAndCalls:
+                icon = PresentationResourcesSettings.devices
+            case .mediaAndVoice:
+                icon = PresentationResourcesSettings.dataAndStorage
+            case .messagesAndContext:
+                icon = PresentationResourcesSettings.chatHistory
             }
             return ItemListDisclosureItem(
                 presentationData: presentationData,
@@ -421,34 +397,6 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
                 disclosureStyle: .arrow,
                 action: {
                     arguments.openCategory(category, nil, nil)
-                }
-            )
-        case .searchResultsHeader:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: "Search Results", sectionId: self.section)
-        case let .searchResult(key):
-            return ItemListDisclosureItem(
-                presentationData: presentationData,
-                systemStyle: .glass,
-                title: key.mellowsgramTitle,
-                label: key.mellowsgramCategory.title,
-                sectionId: self.section,
-                style: .blocks,
-                disclosureStyle: .arrow,
-                action: {
-                    arguments.openCategory(key.mellowsgramCategory, key, nil)
-                }
-            )
-        case let .searchAccountSettingResult(setting):
-            return ItemListDisclosureItem(
-                presentationData: presentationData,
-                systemStyle: .glass,
-                title: setting.title,
-                label: setting.category.title,
-                sectionId: self.section,
-                style: .blocks,
-                disclosureStyle: .arrow,
-                action: {
-                    arguments.openCategory(setting.category, nil, setting)
                 }
             )
         case .linksHeader:
@@ -485,25 +433,10 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
     }
 }
 
-private func mellowsgramRootControllerEntries(query: String) -> [MellowsgramRootControllerEntry] {
-    var entries: [MellowsgramRootControllerEntry] = [.header, .search(query)]
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    if normalizedQuery.isEmpty {
-        entries.append(.categoriesHeader)
-        entries.append(contentsOf: MellowsgramSettingsCategory.allCases.map { .category($0) })
-    } else {
-        entries.append(.searchResultsHeader)
-        entries.append(contentsOf: MellowsgramAccountSetting.allCases.filter { setting in
-            setting.title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).contains(normalizedQuery)
-                || setting.category.title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).contains(normalizedQuery)
-        }.map { .searchAccountSettingResult($0) })
-        entries.append(contentsOf: MellowsgramGlobalSettingKey.allCases.filter { key in
-            key.mellowsgramTitle.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).contains(normalizedQuery)
-                || key.mellowsgramCategory.title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).contains(normalizedQuery)
-        }.map { .searchResult($0) })
-    }
-    entries.append(contentsOf: [.linksHeader, .channel, .github])
-    return entries
+private func mellowsgramRootControllerEntries() -> [MellowsgramRootControllerEntry] {
+    return [.header, .categoriesHeader]
+        + MellowsgramSettingsCategory.allCases.map { .category($0) }
+        + [.linksHeader, .channel, .github]
 }
 
 private final class MellowsgramCategoryControllerArguments {
@@ -716,6 +649,8 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             if key.mellowsgramIsPercentageSlider {
                 return MellowsgramPercentageSliderItem(
                     theme: presentationData.theme,
+                    title: key.mellowsgramTitle,
+                    limits: key.mellowsgramSliderLimits,
                     value: Int32(value) ?? Int32(key.defaultValue) ?? 0,
                     sectionId: self.section,
                     updated: { updatedValue in
@@ -742,12 +677,16 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
 
 private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem {
     let theme: PresentationTheme
+    let title: String
+    let limits: (minimum: String, maximum: String)
     let value: Int32
     let sectionId: ItemListSectionId
     let updated: (Int32) -> Void
 
-    init(theme: PresentationTheme, value: Int32, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
+    init(theme: PresentationTheme, title: String, limits: (minimum: String, maximum: String), value: Int32, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
         self.theme = theme
+        self.title = title
+        self.limits = limits
         self.value = min(100, max(0, value))
         self.sectionId = sectionId
         self.updated = updated
@@ -789,11 +728,15 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     private let topStripeNode: ASDisplayNode
     private let bottomStripeNode: ASDisplayNode
     private let maskNode: ASImageNode
+    private let titleTextNode: ImmediateTextNode
     private let minimumTextNode: ImmediateTextNode
     private let valueTextNode: ImmediateTextNode
     private let maximumTextNode: ImmediateTextNode
     private var sliderView: TGPhotoEditorSliderView?
     private var item: MellowsgramPercentageSliderItem?
+    private var valueTextRightInset: CGFloat = 16.0
+    private var sliderFrame: CGRect = .zero
+    private var sliderHitTestRightInset: CGFloat = -16.0
 
     init() {
         self.backgroundNode = ASDisplayNode()
@@ -803,6 +746,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         self.bottomStripeNode = ASDisplayNode()
         self.bottomStripeNode.isLayerBacked = true
         self.maskNode = ASImageNode()
+        self.titleTextNode = ImmediateTextNode()
         self.minimumTextNode = ImmediateTextNode()
         self.valueTextNode = ImmediateTextNode()
         self.maximumTextNode = ImmediateTextNode()
@@ -811,6 +755,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         self.addSubnode(self.topStripeNode)
         self.addSubnode(self.bottomStripeNode)
         self.addSubnode(self.maskNode)
+        self.addSubnode(self.titleTextNode)
         self.addSubnode(self.minimumTextNode)
         self.addSubnode(self.valueTextNode)
         self.addSubnode(self.maximumTextNode)
@@ -823,22 +768,28 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         sliderView.enablePanHandling = true
         sliderView.trackCornerRadius = 1.0
         sliderView.lineSize = 4.0
+        sliderView.dotSize = 5.0
         sliderView.minimumValue = 0.0
         sliderView.maximumValue = 1.0
         sliderView.startValue = 0.0
         sliderView.disablesInteractiveTransitionGestureRecognizer = true
         sliderView.displayEdges = true
         sliderView.addTarget(self, action: #selector(self.sliderValueChanged), for: .valueChanged)
-        sliderView.addTarget(self, action: #selector(self.sliderEditingEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        sliderView.interactionEnded = { [weak self] in
+            self?.sliderEditingEnded()
+        }
         self.view.addSubview(sliderView)
         self.sliderView = sliderView
+        if let item = self.item {
+            self.updateSliderView(sliderView, item: item, themeUpdated: true)
+        }
     }
 
     func asyncLayout() -> (_ item: MellowsgramPercentageSliderItem, _ params: ListViewItemLayoutParams, _ neighbors: ItemListNeighbors) -> (ListViewItemNodeLayout, () -> Void) {
         let currentItem = self.item
         return { [weak self] item, params, neighbors in
             let themeUpdated = currentItem?.theme !== item.theme
-            let contentSize = CGSize(width: params.width, height: 88.0)
+            let contentSize = CGSize(width: params.width, height: 104.0)
             let insets = itemListNeighborsGroupedInsets(neighbors, params)
             let layout = ListViewItemNodeLayout(contentSize: contentSize, insets: insets)
             return (layout, { [weak self] in
@@ -883,30 +834,42 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
                 self.bottomStripeNode.frame = CGRect(x: separatorInset, y: contentSize.height - separatorHeight, width: params.width - separatorInset, height: separatorHeight)
 
                 let secondaryColor = item.theme.list.itemSecondaryTextColor
-                self.minimumTextNode.attributedText = NSAttributedString(string: "0%", font: Font.regular(13.0), textColor: secondaryColor)
-                self.valueTextNode.attributedText = NSAttributedString(string: "\(item.value)%", font: Font.regular(15.0), textColor: item.theme.list.itemPrimaryTextColor)
-                self.maximumTextNode.attributedText = NSAttributedString(string: "100%", font: Font.regular(13.0), textColor: secondaryColor)
-                let minimumSize = self.minimumTextNode.updateLayout(CGSize(width: 100.0, height: 30.0))
-                let valueSize = self.valueTextNode.updateLayout(CGSize(width: 120.0, height: 30.0))
-                let maximumSize = self.maximumTextNode.updateLayout(CGSize(width: 100.0, height: 30.0))
-                self.minimumTextNode.frame = CGRect(x: params.leftInset + 18.0, y: 14.0, width: minimumSize.width, height: minimumSize.height)
-                self.valueTextNode.frame = CGRect(x: floor((params.width - valueSize.width) / 2.0), y: 12.0, width: valueSize.width, height: valueSize.height)
-                self.maximumTextNode.frame = CGRect(x: params.width - params.rightInset - 18.0 - maximumSize.width, y: 14.0, width: maximumSize.width, height: maximumSize.height)
+                self.titleTextNode.attributedText = NSAttributedString(string: item.title, font: Font.regular(15.0), textColor: item.theme.list.itemPrimaryTextColor)
+                self.minimumTextNode.attributedText = NSAttributedString(string: item.limits.minimum, font: Font.regular(12.0), textColor: secondaryColor)
+                self.valueTextNode.attributedText = NSAttributedString(string: "\(item.value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
+                self.maximumTextNode.attributedText = NSAttributedString(string: item.limits.maximum, font: Font.regular(12.0), textColor: secondaryColor)
+                let titleSize = self.titleTextNode.updateLayout(CGSize(width: max(0.0, params.width - params.leftInset - params.rightInset - 112.0), height: 24.0))
+                let minimumSize = self.minimumTextNode.updateLayout(CGSize(width: max(0.0, params.width * 0.5), height: 20.0))
+                let valueSize = self.valueTextNode.updateLayout(CGSize(width: 84.0, height: 24.0))
+                let maximumSize = self.maximumTextNode.updateLayout(CGSize(width: max(0.0, params.width * 0.5), height: 20.0))
+                self.valueTextRightInset = params.rightInset + 16.0
+                self.titleTextNode.frame = CGRect(x: params.leftInset + 16.0, y: 10.0, width: titleSize.width, height: titleSize.height)
+                self.valueTextNode.frame = CGRect(x: params.width - params.rightInset - 16.0 - valueSize.width, y: 10.0, width: valueSize.width, height: valueSize.height)
+                self.minimumTextNode.frame = CGRect(x: params.leftInset + 16.0, y: 78.0, width: minimumSize.width, height: minimumSize.height)
+                self.maximumTextNode.frame = CGRect(x: params.width - params.rightInset - 16.0 - maximumSize.width, y: 78.0, width: maximumSize.width, height: maximumSize.height)
 
+                self.sliderFrame = CGRect(x: params.leftInset + 16.0, y: 34.0, width: params.width - params.leftInset - params.rightInset - 32.0, height: 40.0)
+                self.sliderHitTestRightInset = -(params.rightInset + 16.0)
                 if let sliderView = self.sliderView {
-                    if themeUpdated || sliderView.backgroundColor == nil {
-                        sliderView.backgroundColor = item.theme.list.itemBlocksBackgroundColor
-                        sliderView.backColor = item.theme.list.itemSwitchColors.frameColor
-                        sliderView.trackColor = item.theme.list.itemAccentColor
-                        sliderView.knobImage = PresentationResourcesItemList.knobImage(item.theme)
-                    }
-                    sliderView.value = CGFloat(item.value) / 100.0
-                    sliderView.accessibilityLabel = "\(item.value)%"
-                    sliderView.accessibilityValue = "\(item.value)%"
-                    sliderView.frame = CGRect(x: params.leftInset + 18.0, y: 36.0, width: params.width - params.leftInset - params.rightInset - 36.0, height: 44.0)
+                    self.updateSliderView(sliderView, item: item, themeUpdated: themeUpdated)
                 }
             })
         }
+    }
+
+    private func updateSliderView(_ sliderView: TGPhotoEditorSliderView, item: MellowsgramPercentageSliderItem, themeUpdated: Bool) {
+        if themeUpdated || sliderView.backgroundColor == nil {
+            sliderView.backgroundColor = item.theme.list.itemBlocksBackgroundColor
+            sliderView.backColor = item.theme.list.itemSwitchColors.frameColor
+            sliderView.startColor = item.theme.list.itemSwitchColors.frameColor
+            sliderView.trackColor = item.theme.list.itemAccentColor
+            sliderView.knobImage = PresentationResourcesItemList.knobImage(item.theme)
+        }
+        sliderView.value = CGFloat(item.value) / 100.0
+        sliderView.accessibilityLabel = item.title
+        sliderView.accessibilityValue = "\(item.value)%"
+        sliderView.frame = self.sliderFrame
+        sliderView.hitTestEdgeInsets = UIEdgeInsets(top: -sliderView.frame.minY, left: 0.0, bottom: 0.0, right: self.sliderHitTestRightInset)
     }
 
     @objc private func sliderValueChanged() {
@@ -914,10 +877,10 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
             return
         }
         let value = Int32((sliderView.value * 100.0).rounded())
-        self.valueTextNode.attributedText = NSAttributedString(string: "\(value)%", font: Font.regular(15.0), textColor: item.theme.list.itemPrimaryTextColor)
-        let valueSize = self.valueTextNode.updateLayout(CGSize(width: 120.0, height: 30.0))
-        self.valueTextNode.frame = CGRect(x: floor((self.bounds.width - valueSize.width) / 2.0), y: 12.0, width: valueSize.width, height: valueSize.height)
-        sliderView.accessibilityLabel = "\(value)%"
+        self.valueTextNode.attributedText = NSAttributedString(string: "\(value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
+        let valueSize = self.valueTextNode.updateLayout(CGSize(width: 84.0, height: 24.0))
+        self.valueTextNode.frame = CGRect(x: self.bounds.width - self.valueTextRightInset - valueSize.width, y: 10.0, width: valueSize.width, height: valueSize.height)
+        sliderView.accessibilityLabel = self.item?.title ?? "Slider"
         sliderView.accessibilityValue = "\(value)%"
     }
 
@@ -1209,24 +1172,19 @@ private func openMellowsgramExternalUrl(context: AccountContext, url: String, na
 public func mellowsgramSettingsController(context: AccountContext) -> ViewController {
     var openCategoryImpl: ((MellowsgramSettingsCategory, MellowsgramGlobalSettingKey?, MellowsgramAccountSetting?) -> Void)?
     var openExternalUrlImpl: ((String) -> Void)?
-    let searchQuery = ValuePromise("", ignoreRepeated: true)
 
     let arguments = MellowsgramRootControllerArguments(
-        context: context,
         openCategory: { category, setting, accountSetting in
             openCategoryImpl?(category, setting, accountSetting)
         },
         openExternalUrl: { url in
             openExternalUrlImpl?(url)
-        },
-        updateSearchQuery: { query in
-            searchQuery.set(query)
         }
     )
 
-    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, searchQuery.get())
+    let signal = context.sharedContext.presentationData
     |> deliverOnMainQueue
-    |> map { presentationData, query -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
             title: .text("Mellowsgram"),
@@ -1236,7 +1194,7 @@ public func mellowsgramSettingsController(context: AccountContext) -> ViewContro
         )
         let listState = ItemListNodeState(
             presentationData: ItemListPresentationData(presentationData),
-            entries: mellowsgramRootControllerEntries(query: query),
+            entries: mellowsgramRootControllerEntries(),
             style: .blocks,
             animateChanges: true
         )

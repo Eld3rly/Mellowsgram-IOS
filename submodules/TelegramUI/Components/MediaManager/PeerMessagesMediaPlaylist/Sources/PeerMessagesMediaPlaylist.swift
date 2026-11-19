@@ -554,7 +554,12 @@ public final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
         if case .custom = self.messagesLocation.effectiveLocation(context: self.context) {
         } else if item?.message.id != self.currentlyObservedMessageId {
             self.currentlyObservedMessageId = item?.message.id
-            if let id = item?.message.id {
+            if let message = item?.message, engineMellowsgramMessageIsDeleted(message) {
+                // Deleted rows are archive projections. Their original
+                // Postbox message is expected to be absent; observing it here
+                // would immediately tear down the standalone audio playlist.
+                self.currentlyObservedMessageDisposable.set(nil)
+            } else if let id = item?.message.id {
                 self.currentlyObservedMessageDisposable.set((self.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.Message(id: id))
                 |> filter { message in
                     if let _ = message {

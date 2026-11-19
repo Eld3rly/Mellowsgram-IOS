@@ -73,18 +73,15 @@ The project is designed around three principles:
 
 ### Settings
 
-The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings. The root screen provides search, links and separate native category screens for:
+The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings. Its root screen has category buttons and links; each category opens a separate native settings screen:
 
-- Spy&Ghost;
-- Appearance;
-- Chats & Tabs;
-- Stories;
-- Profiles & Calls;
-- Translation & Voice;
-- Media & Performance;
-- Context Menu;
-- Messages & Input;
-- Links.
+- **Spy&Ghost** — Ghost Mode, deleted-message and edit-history archives, background notifications, and story behavior;
+- **Appearance** — deleted-message opacity, account-color saturation, sticker size and timestamps, channel layout, tabs, folders, and chat-list layout;
+- **Profiles & Calls** — profile and chat details, call confirmation, and phone visibility;
+- **Media & Voice** — outgoing photo quality and HD photos, camera and PiP behavior, transfer boosts, translation, and voice transcription;
+- **Messages & Context** — context-menu actions, message behavior, and input controls.
+
+Channel and GitHub links remain on the Mellowsgram root screen. Appearance sliders show their current value and what their minimum and maximum mean. The outgoing photo-quality slider and **Send HD Photos** are grouped with media settings, not appearance settings.
 
 Ghost Mode, deleted-message archive and edit history remain account-scoped. Client customization is stored app-wide, while settings already owned by Telegram continue using Telegram's shared preferences. The screen includes controls for tabs and folders, story behavior, profile details, translation and transcription services, media quality, context-menu actions, and message input.
 

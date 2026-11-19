@@ -178,21 +178,93 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
         return MellowsgramGlobalSettings(values: values)
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case values
+    private struct CodingKeyValue: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+
+        init?(intValue: Int) {
+            return nil
+        }
+    }
+
+    private static let legacyValuesKey = "values"
+
+    private static func storedInteger(for key: String, value: String) -> Int32? {
+        if value == "true" { return 1 }
+        if value == "false" { return 0 }
+        if let integer = Int32(value) { return integer }
+
+        guard let setting = MellowsgramGlobalSettingKey(rawValue: key) else {
+            return nil
+        }
+        switch setting {
+        case .allChatsTitle:
+            return ["default": 0, "short": 1, "long": 2][value]
+        case .translationService:
+            return ["telegram": 0, "google": 1, "system": 2][value]
+        case .transcriptionService:
+            return ["telegram": 0, "apple": 1][value]
+        case .downloadBoost:
+            return ["default": 0, "none": 0, "medium": 1, "maximum": 2][value]
+        default:
+            return nil
+        }
+    }
+
+    private static func decodedValue(for key: String, integer: Int32) -> String {
+        guard let setting = MellowsgramGlobalSettingKey(rawValue: key) else {
+            return "\(integer)"
+        }
+        switch setting {
+        case .allChatsTitle:
+            return ["default", "short", "long"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
+        case .translationService:
+            return ["telegram", "google", "system"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
+        case .transcriptionService:
+            return ["telegram", "apple"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
+        case .downloadBoost:
+            return ["default", "medium", "maximum"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
+        default:
+            return "\(integer)"
+        }
     }
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedValues = try container.decodeIfPresent([String: String].self, forKey: .values) ?? [:]
+        let container = try decoder.container(keyedBy: CodingKeyValue.self)
         var values = MellowsgramGlobalSettings.defaultSettings.values
-        values.merge(decodedValues, uniquingKeysWith: { _, new in new })
+        if let legacyKey = CodingKeyValue(stringValue: Self.legacyValuesKey),
+           let legacyValues = try container.decodeIfPresent([String: String].self, forKey: legacyKey) {
+            values.merge(legacyValues, uniquingKeysWith: { _, new in new })
+        }
+        for key in MellowsgramGlobalSettingKey.allCases where !key.isTelegramPreference {
+            guard let codingKey = CodingKeyValue(stringValue: key.rawValue),
+                  let integer = try container.decodeIfPresent(Int32.self, forKey: codingKey) else {
+                continue
+            }
+            values[key.rawValue] = Self.decodedValue(for: key.rawValue, integer: integer)
+        }
+        for codingKey in container.allKeys where codingKey.stringValue.hasPrefix("lastFolder.") {
+            if let integer = try container.decodeIfPresent(Int32.self, forKey: codingKey) {
+                values[codingKey.stringValue] = "\(integer)"
+            }
+        }
         self.values = values
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(self.values, forKey: .values)
+        var container = encoder.container(keyedBy: CodingKeyValue.self)
+        for key in self.values.keys.sorted() {
+            guard let value = self.values[key], let integer = Self.storedInteger(for: key, value: value),
+                  let codingKey = CodingKeyValue(stringValue: key) else {
+                continue
+            }
+            try container.encode(integer, forKey: codingKey)
+        }
     }
 }
 

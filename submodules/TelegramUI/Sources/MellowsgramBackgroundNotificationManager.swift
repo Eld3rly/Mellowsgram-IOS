@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import UserNotifications
+import Intents
 import AVFAudio
 import SwiftSignalKit
 import TelegramCore
@@ -22,6 +23,7 @@ public final class MellowsgramBackgroundNotificationManager {
     private var accountNotificationDisposables: [AccountRecordId: Disposable] = [:]
     private var accountSettingsDisposables: [AccountRecordId: Disposable] = [:]
     private var accounts: [AccountRecordId: Account] = [:]
+    private var engines: [AccountRecordId: TelegramEngine] = [:]
     private var settings: [AccountRecordId: MellowsgramSettings] = [:]
     private var primaryAccountId: AccountRecordId?
     private var enabledAccountIdsValue: Set<AccountRecordId> = []
@@ -83,15 +85,18 @@ public final class MellowsgramBackgroundNotificationManager {
 
     private func updateAccounts(_ activeAccounts: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)) {
         let updatedAccounts = Dictionary(uniqueKeysWithValues: activeAccounts.accounts.map { ($0.0, $0.1.account) })
+        let updatedEngines = Dictionary(uniqueKeysWithValues: activeAccounts.accounts.map { ($0.0, $0.1.engine) })
         let removedIds = Set(self.accounts.keys).subtracting(updatedAccounts.keys)
 
         for accountId in removedIds {
             self.accountNotificationDisposables.removeValue(forKey: accountId)?.dispose()
             self.accountSettingsDisposables.removeValue(forKey: accountId)?.dispose()
             self.settings.removeValue(forKey: accountId)
+            self.engines.removeValue(forKey: accountId)
         }
 
         self.accounts = updatedAccounts
+        self.engines = updatedEngines
         self.primaryAccountId = activeAccounts.primary?.account.id
 
         for (accountId, account) in updatedAccounts {
@@ -157,12 +162,15 @@ public final class MellowsgramBackgroundNotificationManager {
                 continue
             }
 
-            let peerTitle: String
-            if let peer = message.peers[message.id.peerId], let presentationData = self.presentationData() {
-                peerTitle = EnginePeer(peer).displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
-            } else {
-                peerTitle = "Mellowsgram"
-            }
+            let presentationData = self.presentationData()
+            let chatPeer = message.peers[message.id.peerId]
+            let senderPeer = message.effectiveAuthor ?? chatPeer
+            let chatTitle = chatPeer.flatMap { peer in
+                presentationData.map { EnginePeer(peer).displayTitle(strings: $0.strings, displayOrder: $0.nameDisplayOrder) }
+            } ?? "Mellowsgram"
+            let senderTitle = senderPeer.flatMap { peer in
+                presentationData.map { EnginePeer(peer).displayTitle(strings: $0.strings, displayOrder: $0.nameDisplayOrder) }
+            } ?? chatTitle
 
             let body: String
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -178,8 +186,8 @@ public final class MellowsgramBackgroundNotificationManager {
                 body = "Новое сообщение"
             }
 
-            let notificationContent = UNMutableNotificationContent()
-            notificationContent.title = peerTitle
+            var notificationContent = UNMutableNotificationContent()
+            notificationContent.title = senderTitle
             notificationContent.body = messages.count > 1 ? "\(messages.count) новых сообщений" : body
             notificationContent.sound = .default
             notificationContent.threadIdentifier = "mellowsgram-\(accountId.int64)-\(message.id.peerId.toInt64())"
@@ -189,6 +197,58 @@ public final class MellowsgramBackgroundNotificationManager {
                 "messageId.namespace": message.id.namespace,
                 "messageId.id": message.id.id
             ]
+
+            if #available(iOS 15.0, *), let senderPeer, let engine = self.engines[accountId] {
+                let representation = smallestImageRepresentation(senderPeer.profileImageRepresentations)
+                let senderImage = mellowsgramNotificationAvatar(
+                    resourcePath: representation.map { engine.resources.resourcePath(resource: EngineMediaResource($0.resource)) },
+                    resourceId: representation?.resource.id.stringRepresentation,
+                    peer: senderPeer
+                )
+                var personNameComponents = PersonNameComponents()
+                personNameComponents.nickname = senderTitle
+                let sender = INPerson(
+                    personHandle: INPersonHandle(value: "\(senderPeer.id.toInt64())", type: .unknown),
+                    nameComponents: personNameComponents,
+                    displayName: senderTitle,
+                    image: senderImage,
+                    contactIdentifier: nil,
+                    customIdentifier: "\(senderPeer.id.toInt64())",
+                    isMe: false,
+                    suggestionType: .none
+                )
+                let recipient = INPerson(
+                    personHandle: INPersonHandle(value: "0", type: .unknown),
+                    nameComponents: nil,
+                    displayName: nil,
+                    image: nil,
+                    contactIdentifier: nil,
+                    customIdentifier: nil,
+                    isMe: true,
+                    suggestionType: .none
+                )
+                let intent = INSendMessageIntent(
+                    recipients: [recipient],
+                    outgoingMessageType: .outgoingMessageText,
+                    content: notificationContent.body,
+                    speakableGroupName: INSpeakableString(spokenPhrase: chatTitle),
+                    conversationIdentifier: "\(message.id.peerId.toInt64())",
+                    serviceName: nil,
+                    sender: sender,
+                    attachments: nil
+                )
+                if let senderImage {
+                    intent.setImage(senderImage, forParameterNamed: \.sender)
+                }
+                do {
+                    if let updatedContent = try notificationContent.updating(from: intent) as? UNMutableNotificationContent {
+                        notificationContent = updatedContent
+                    }
+                } catch {
+                    // A plain local notification remains usable if iOS declines
+                    // to apply the optional Siri messaging presentation.
+                }
+            }
 
             let identifier = "mellowsgram-\(accountId.int64)-\(message.id.peerId.toInt64())-\(message.id.id)"
             let request = UNNotificationRequest(identifier: identifier, content: notificationContent, trigger: nil)
@@ -294,4 +354,45 @@ public final class MellowsgramBackgroundNotificationManager {
         bytes.append(contentsOf: repeatElement(UInt8(0), count: Int(dataSize)))
         return Data(bytes)
     }
+}
+
+@available(iOS 15.0, *)
+private func mellowsgramNotificationAvatar(resourcePath: String?, resourceId: String?, peer: Peer) -> INImage? {
+    if let resourcePath,
+       let resourceId,
+       FileManager.default.fileExists(atPath: resourcePath) {
+        let sourceUrl = URL(fileURLWithPath: resourcePath)
+        let ext = sourceUrl.pathExtension.isEmpty ? "jpg" : sourceUrl.pathExtension
+        let cacheDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("MellowsgramNotificationAvatars", isDirectory: true)
+        let resourceKey = resourceId.persistentHashValue
+        let destination = cacheDirectory.appendingPathComponent("\(peer.id.toInt64())-\(resourceKey).\(ext)")
+        do {
+            try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true, attributes: nil)
+            if !FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.copyItem(at: sourceUrl, to: destination)
+            }
+            return INImage(url: destination)
+        } catch {
+            // Fall through to a generated initials avatar.
+        }
+    }
+
+    let letters = peer.displayLetters.joined().isEmpty ? "?" : peer.displayLetters.joined()
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 64.0, height: 64.0))
+    let image = renderer.image { context in
+        UIColor(rgb: 0x4A90E2).setFill()
+        context.cgContext.fillEllipse(in: CGRect(x: 0.0, y: 0.0, width: 64.0, height: 64.0))
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: Font.medium(24.0),
+            .foregroundColor: UIColor.white
+        ]
+        let text = NSAttributedString(string: letters, attributes: attributes)
+        let textSize = text.size()
+        text.draw(at: CGPoint(x: floor((64.0 - textSize.width) / 2.0), y: floor((64.0 - textSize.height) / 2.0)))
+    }
+    guard let data = image.pngData() else {
+        return nil
+    }
+    return INImage(imageData: data)
 }
