@@ -919,6 +919,10 @@ func infoItems(
             peerIdText = String(group.id.id._internalGetInt64Value())
         case let .channel(channel):
             peerIdText = "-100\(channel.id.id._internalGetInt64Value())"
+        case let .community(community):
+            peerIdText = String(community.id.id._internalGetInt64Value())
+        case let .secretChat(secretChat):
+            peerIdText = String(secretChat.id.id._internalGetInt64Value())
         }
         if MellowsgramGlobalSettingsRuntime.shared.bool(for: .showProfileId) {
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 9200, context: context, label: "ID", text: peerIdText, action: nil, requestLayout: { _ in
@@ -941,6 +945,10 @@ func infoItems(
                 creationDate = group.creationDate
             case let .channel(channel):
                 creationDate = channel.creationDate
+            case let .community(community):
+                creationDate = community.creationDate
+            case let .secretChat(secretChat):
+                creationDate = secretChat.creationDate
             }
             if creationDate > 0 {
                 let formatter = DateFormatter()

@@ -1292,6 +1292,9 @@ public class Account {
     
     public let shouldBeServiceTaskMaster = Promise<AccountServiceTaskMasterMode>()
     public let shouldKeepOnlinePresence = Promise<Bool>()
+    public var mellowsgramGhostModeOnlinePresence: Signal<Bool, NoError> {
+        return self.postbox.mellowsgramGhostModeOnlinePresence
+    }
     public let autolockReportDeadline = Promise<Int32?>()
     public let shouldExplicitelyKeepWorkerConnections = Promise<Bool>(false)
     public let shouldKeepBackgroundDownloadConnections = Promise<Bool>(false)
