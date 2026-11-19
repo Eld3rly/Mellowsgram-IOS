@@ -1,6 +1,5 @@
 import Foundation
 import UIKit
-import Postbox
 import TelegramCore
 import AsyncDisplayKit
 import Display
@@ -56,18 +55,15 @@ private struct MessageContextMenuData {
 
 private struct MellowsgramSavedMediaCandidate {
     let resources: [TelegramMediaResource]
-    let makeMedia: ([Bool]) -> Media?
+    let makeMedia: ([Bool]) -> EngineMedia?
 }
 
-private func mellowsgramSavedMediaCandidates(_ media: [Media]) -> [MellowsgramSavedMediaCandidate] {
+private func mellowsgramSavedMediaCandidates(_ media: [EngineMedia]) -> [MellowsgramSavedMediaCandidate] {
     var candidates: [MellowsgramSavedMediaCandidate] = []
 
     for item in media {
-        guard !(item is TelegramMediaExpiredContent) else {
-            continue
-        }
-
-        if let image = item as? TelegramMediaImage {
+        switch item {
+        case let .image(image):
             let imageResourceCount = image.representations.count
             let videoRepresentationCount = image.videoRepresentations.count
             let hasVideoFile = image.video != nil
@@ -103,7 +99,7 @@ private func mellowsgramSavedMediaCandidates(_ media: [Media]) -> [MellowsgramSa
                 }
 
                 if localRepresentations.isEmpty {
-                    return videoFile
+                    return videoFile.map(EngineMedia.file)
                 }
 
                 let hasLocalVideo = !localVideoRepresentations.isEmpty || videoFile != nil
@@ -127,7 +123,7 @@ private func mellowsgramSavedMediaCandidates(_ media: [Media]) -> [MellowsgramSa
                     flags.remove(.isLivePhoto)
                 }
 
-                return TelegramMediaImage(
+                return .image(TelegramMediaImage(
                     imageId: image.imageId,
                     representations: sendableRepresentations,
                     videoRepresentations: localVideoRepresentations,
@@ -137,24 +133,26 @@ private func mellowsgramSavedMediaCandidates(_ media: [Media]) -> [MellowsgramSa
                     partialReference: nil,
                     flags: flags,
                     video: videoFile
-                )
+                ))
             }))
-        } else if let file = item as? TelegramMediaFile {
+        case let .file(file):
             candidates.append(MellowsgramSavedMediaCandidate(resources: [file.resource], makeMedia: { isLocal in
                 guard isLocal.count == 1, isLocal[0] else {
                     return nil
                 }
-                return file.withUpdatedPartialReference(nil)
+                return .file(file.withUpdatedPartialReference(nil))
             }))
+        default:
+            continue
         }
     }
 
     return candidates
 }
 
-private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, media: [Media]) -> Signal<[Media], NoError> {
+private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, media: [EngineMedia]) -> Signal<[EngineMedia], NoError> {
     let candidates = mellowsgramSavedMediaCandidates(media)
-    let candidateSignals: [Signal<Media?, NoError>] = candidates.map { candidate in
+    let candidateSignals: [Signal<EngineMedia?, NoError>] = candidates.map { candidate in
         let resourceSignals: [Signal<Bool, NoError>] = candidate.resources.map { resource in
             return context.engine.resources.status(resource: EngineMediaResource(resource))
             |> take(1)
@@ -182,7 +180,7 @@ private func mellowsgramArchivedMediaHasExpired(message: EngineRawMessage, recor
     }
 
     let archiveRecord = record ?? message.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.record }.first
-    let attributes: [MessageAttribute]
+    let attributes: [EngineMessage.Attribute]
     if let archiveRecord {
         attributes = engineMellowsgramMessageAttributes(archiveRecord.attributesData)
     } else {
@@ -2306,11 +2304,11 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 let textAttributes = message.attributes.filter { attribute in
                     attribute is TextEntitiesMessageAttribute || attribute is RichTextMessageAttribute
                 }
-                let mediaToSave: [Media]
+                let mediaToSave: [EngineMedia]
                 if mellowsgramArchivedMediaHasExpired(message: message, record: mellowsgramArchiveRecord) {
                     mediaToSave = []
                 } else {
-                    mediaToSave = message.effectiveMedia
+                    mediaToSave = message.effectiveMedia.map(EngineMedia.init)
                 }
                 let _ = (mellowsgramLocallyAvailableSavedMedia(context: context, media: mediaToSave)
                 |> deliverOnMainQueue
@@ -2342,7 +2340,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                 text: isLast ? originalText : "",
                                 attributes: isLast ? textAttributes : [],
                                 inlineStickers: [:],
-                                mediaReference: .standalone(media: media),
+                                mediaReference: .standalone(media: media._asMedia()),
                                 threadId: nil,
                                 replyToMessageId: nil,
                                 replyToStoryId: nil,
