@@ -8,6 +8,20 @@ import TelegramCore
 import AccountContext
 import TelegramUIPreferences
 
+private func mellowsgramThenAfterCompletion<T>(_ signal: Signal<Never, NoError>, _ nextSignal: Signal<T, NoError>) -> Signal<T, NoError> {
+    return Signal { subscriber in
+        let disposableSet = DisposableSet()
+        disposableSet.add(signal.start(completed: {
+            disposableSet.add(nextSignal.start(next: { value in
+                subscriber.putNext(value)
+            }, completed: {
+                subscriber.putCompletion()
+            }))
+        }))
+        return disposableSet
+    }
+}
+
 /// Registers Telegram Web Push tokens for the Bark relay. It never keeps an
 /// account connection alive and does not create local message notifications.
 public final class MellowsgramBarkNotificationManager {
@@ -181,20 +195,14 @@ public final class MellowsgramBarkNotificationManager {
                     }
                     if let oldToken, oldToken != token {
                         let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
-                        |> map { (_: Never) -> (AccountRecordId, Data?) in
-                            return (accountId, nil)
-                        }
-                        operations.append(unregisterOperation |> then(registerOperation))
+                        operations.append(mellowsgramThenAfterCompletion(unregisterOperation, registerOperation))
                     } else {
                         operations.append(registerOperation)
                     }
                 }
             } else if let oldToken {
                 let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
-                |> map { (_: Never) -> (AccountRecordId, Data?) in
-                    return (accountId, nil)
-                }
-                operations.append(unregisterOperation |> then(.single((accountId, nil))))
+                operations.append(mellowsgramThenAfterCompletion(unregisterOperation, .single((accountId, nil))))
             } else {
                 operations.append(.single((accountId, nil)))
             }
