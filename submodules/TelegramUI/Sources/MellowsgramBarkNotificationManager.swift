@@ -153,19 +153,26 @@ public final class MellowsgramBarkNotificationManager {
                 if self.registeredTokens[accountId] == token {
                     operations.append(.single((accountId, token)))
                 } else {
-                    var operation: Signal<Never, NoError> = .complete()
-                    if let oldToken, oldToken != token {
-                        operation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
-                    }
-                    operations.append(operation
-                    |> then(context.engine.accountData.registerNotificationToken(token: token, type: .webPush, sandbox: false, otherAccountUserIds: [], excludeMutedChats: true)
+                    let registerOperation = context.engine.accountData.registerNotificationToken(token: token, type: .webPush, sandbox: false, otherAccountUserIds: [], excludeMutedChats: true)
                     |> map { registered -> (AccountRecordId, Data?) in
                         return (accountId, registered ? token : nil)
-                    }))
+                    }
+                    if let oldToken, oldToken != token {
+                        let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
+                        |> map { (_: Never) -> (AccountRecordId, Data?) in
+                            return (accountId, nil)
+                        }
+                        operations.append(unregisterOperation |> then(registerOperation))
+                    } else {
+                        operations.append(registerOperation)
+                    }
                 }
             } else if let oldToken {
-                operations.append(context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
-                |> then(.single((accountId, nil))))
+                let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
+                |> map { (_: Never) -> (AccountRecordId, Data?) in
+                    return (accountId, nil)
+                }
+                operations.append(unregisterOperation |> then(.single((accountId, nil))))
             } else {
                 operations.append(.single((accountId, nil)))
             }
