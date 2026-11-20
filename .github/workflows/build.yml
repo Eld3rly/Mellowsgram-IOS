@@ -1,21 +1,34 @@
-name: Mellowsgram iOS simulator IPA
+name: Mellowsgram iOS IPA
 
-# The artifact is unsigned for the simulator and is intended for local testing.
+# Simulator artifacts run directly in Simulator. Device artifacts are prepared
+# for a final AltStore/SideStore re-sign and are not App Store signed.
 
 on:
   push:
     branches: [indev]
+    paths-ignore:
+      - '.github/workflows/build.yml'
   workflow_dispatch:
+    inputs:
+      target:
+        description: Build target
+        required: true
+        type: choice
+        options:
+          - simulator
+          - device
+        default: simulator
 
 permissions:
   contents: read
 
 concurrency:
-  group: mellowsgram-simulator-${{ github.ref }}
+  group: mellowsgram-${{ github.event_name == 'push' && 'simulator' || inputs.target }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-simulator:
+  build:
+    name: build-${{ github.event_name == 'push' && 'simulator' || inputs.target }}
     runs-on: xcode-27
     timeout-minutes: 120
 
@@ -70,6 +83,7 @@ jobs:
           set -euo pipefail
           git show --check --format= HEAD
           python3 -m py_compile ci/mellowsgram_configuration.py
+          python3 -m py_compile ci/mellowsgram_sideload.py
           python3 build-system/Make/PostboxImportCheck.py
           swiftc_path="$(xcrun --find swiftc)"
           for source in \
@@ -101,6 +115,7 @@ jobs:
           done
 
       - name: Build simulator IPA
+        if: github.event_name == 'push' || inputs.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,7 +133,34 @@ jobs:
             --disableProvisioningProfiles \
             --outputBuildArtifactsPath build/mellowsgram-simulator-artifacts
 
+      - name: Build device IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_number=$((10000 + $(git rev-list --count HEAD)))
+          echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir build-input/bazel-disk-cache \
+            build \
+            --configurationPath build-input/mellowsgram-configuration.json \
+            --xcodeManagedCodesigning \
+            --buildNumber "$build_number" \
+            --configuration debug_arm64 \
+            --continueOnError \
+            --disableProvisioningProfiles \
+            --outputBuildArtifactsPath build/mellowsgram-device-artifacts
+
+      - name: Prepare device IPA for AltStore and SideStore
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/mellowsgram_sideload.py --ipa build/mellowsgram-device-artifacts/Telegram.ipa
+
       - name: Verify simulator IPA
+        if: github.event_name == 'push' || inputs.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -126,10 +168,39 @@ jobs:
           unzip -l build/mellowsgram-simulator-artifacts/Telegram.ipa | head -40
           shasum -a 256 build/mellowsgram-simulator-artifacts/Telegram.ipa
 
+      - name: Verify device IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipa=build/mellowsgram-device-artifacts/Telegram.ipa
+          test -s "$ipa"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          unzip -q "$ipa" -d "$work"
+          app="$work/Payload/Telegram.app"
+          test -d "$app"
+          platform=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")
+          test "$platform" = 'iPhoneOS'
+          echo "Platform: $platform"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+          file "$app/Telegram"
+          shasum -a 256 "$ipa"
+
       - name: Upload simulator IPA artifact
+        if: github.event_name == 'push' || inputs.target == 'simulator'
         uses: actions/upload-artifact@v4
         with:
           name: Mellowsgram-iOS-simulator-IPA-${{ env.BUILD_NUMBER }}
           path: build/mellowsgram-simulator-artifacts/Telegram.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload device IPA artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mellowsgram-iOS-device-IPA-${{ env.BUILD_NUMBER }}
+          path: build/mellowsgram-device-artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 7
