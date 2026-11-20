@@ -16,6 +16,7 @@ private func mellowsgramText(_ english: String, _ russian: String, languageCode:
 
 private enum MellowsgramSettingsCategory: Int32, CaseIterable {
     case spyAndGhost
+    case backgroundNotifications
     case appearance
     case profilesAndCalls
     case mediaAndVoice
@@ -25,6 +26,8 @@ private enum MellowsgramSettingsCategory: Int32, CaseIterable {
         switch self {
         case .spyAndGhost:
             return mellowsgramText("Spy&Ghost", "Шпионаж и невидимость", languageCode: languageCode)
+        case .backgroundNotifications:
+            return mellowsgramText("Background Notifications", "Фоновые уведомления", languageCode: languageCode)
         case .appearance:
             return mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode)
         case .profilesAndCalls:
@@ -48,8 +51,6 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
     case showDeletedMessages
     case saveEditedMessages
     case translucentDeletedMessages
-    case backgroundNotifications
-    case backgroundNotificationsAllAccounts
 
     var category: MellowsgramSettingsCategory {
         switch self {
@@ -72,8 +73,6 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
         case .showDeletedMessages: return mellowsgramText("Show Deleted Messages", "Показывать удалённые сообщения", languageCode: languageCode)
         case .saveEditedMessages: return mellowsgramText("Save Edits History", "Сохранять историю изменений", languageCode: languageCode)
         case .translucentDeletedMessages: return mellowsgramText("Translucent Deleted Messages", "Полупрозрачные удалённые сообщения", languageCode: languageCode)
-        case .backgroundNotifications: return mellowsgramText("Background Notifications", "Уведомления в фоне", languageCode: languageCode)
-        case .backgroundNotificationsAllAccounts: return mellowsgramText("All Accounts in Background", "Все аккаунты в фоне", languageCode: languageCode)
         }
     }
 }
@@ -87,6 +86,8 @@ private extension MellowsgramGlobalSettingKey {
              .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat,
              .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
             return .appearance
+        case .barkNotificationsEnabled, .barkAllAccounts:
+            return .backgroundNotifications
         case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .callConfirmation, .hidePhoneInSettings:
             return .profilesAndCalls
         case .outgoingPhotoQuality, .sendHDPhotos, .translationService, .quickTranslateButton, .translateEntireChats,
@@ -109,6 +110,8 @@ private extension MellowsgramGlobalSettingKey {
         case .wideChannelPosts: return mellowsgramText("Wide posts in channels", "Широкие публикации в каналах", languageCode: languageCode)
         case .channelBottomPanel: return mellowsgramText("Channel Bottom Panel", "Нижняя панель канала", languageCode: languageCode)
         case .outgoingPhotoQuality: return mellowsgramText("Outgoing Photo Quality", "Качество отправляемых фото", languageCode: languageCode)
+        case .barkNotificationsEnabled: return mellowsgramText("Bark Notifications", "Уведомления через Bark", languageCode: languageCode)
+        case .barkAllAccounts: return mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
         case .sendHDPhotos: return mellowsgramText("Send HD Photos", "Отправлять фото в HD", languageCode: languageCode)
         case .hideTabBar: return mellowsgramText("Hide Tab Bar", "Скрыть панель вкладок", languageCode: languageCode)
         case .showContactsTab: return mellowsgramText("Show Contacts Tab", "Показывать вкладку контактов", languageCode: languageCode)
@@ -381,6 +384,8 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
             switch category {
             case .spyAndGhost:
                 icon = PresentationResourcesSettings.security
+            case .backgroundNotifications:
+                icon = PresentationResourcesSettings.notifications
             case .appearance:
                 icon = PresentationResourcesSettings.appearance
             case .profilesAndCalls:
@@ -454,8 +459,7 @@ private final class MellowsgramCategoryControllerArguments {
     let updateSaveEditedMessages: (Bool) -> Void
     let updateShowDeletedMessages: (Bool) -> Void
     let updateTranslucentDeletedMessages: (Bool) -> Void
-    let updateBackgroundNotificationsEnabled: (Bool) -> Void
-    let updateBackgroundNotificationsAllAccounts: (Bool) -> Void
+    let updateBarkDeviceKey: (String) -> Void
     let updateGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void
     let selectGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void
 
@@ -470,8 +474,7 @@ private final class MellowsgramCategoryControllerArguments {
         updateSaveEditedMessages: @escaping (Bool) -> Void,
         updateShowDeletedMessages: @escaping (Bool) -> Void,
         updateTranslucentDeletedMessages: @escaping (Bool) -> Void,
-        updateBackgroundNotificationsEnabled: @escaping (Bool) -> Void,
-        updateBackgroundNotificationsAllAccounts: @escaping (Bool) -> Void,
+        updateBarkDeviceKey: @escaping (String) -> Void,
         updateGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void,
         selectGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void
     ) {
@@ -485,8 +488,7 @@ private final class MellowsgramCategoryControllerArguments {
         self.updateSaveEditedMessages = updateSaveEditedMessages
         self.updateShowDeletedMessages = updateShowDeletedMessages
         self.updateTranslucentDeletedMessages = updateTranslucentDeletedMessages
-        self.updateBackgroundNotificationsEnabled = updateBackgroundNotificationsEnabled
-        self.updateBackgroundNotificationsAllAccounts = updateBackgroundNotificationsAllAccounts
+        self.updateBarkDeviceKey = updateBarkDeviceKey
         self.updateGlobalSetting = updateGlobalSetting
         self.selectGlobalSetting = selectGlobalSetting
     }
@@ -497,6 +499,7 @@ private struct MellowsgramSettingsSnapshot {
     let callList: CallListSettings
     let experimentalUI: ExperimentalUISettings
     let translation: TranslationSettings
+    let barkDeviceKey: String
 
     func value(for key: MellowsgramGlobalSettingKey) -> String {
         switch key {
@@ -532,9 +535,8 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case showDeletedMessages(Bool)
     case saveEditedMessages(Bool)
     case spyAndGhostFooter
-    case backgroundNotifications(Bool)
-    case backgroundNotificationsAllAccounts(Bool, Bool)
     case backgroundNotificationsFooter
+    case barkDeviceKey(String)
     case appearanceHeader
     case translucentDeletedMessages(Bool)
     case appearanceFooter
@@ -573,18 +575,16 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return 11
         case .spyAndGhostFooter:
             return 12
-        case .backgroundNotifications:
-            return 13
-        case .backgroundNotificationsAllAccounts:
-            return 14
         case .backgroundNotificationsFooter:
-            return 15
+            return 1000
+        case .barkDeviceKey:
+            return 20
         case .appearanceHeader:
-            return 16
+            return 23
         case .translucentDeletedMessages:
-            return 17
+            return 24
         case .appearanceFooter:
-            return 18
+            return 25
         case .globalSettingsHeader:
             return 30
         case let .globalSetting(key, _, _):
@@ -636,12 +636,10 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Save Edits History", "Сохранять историю изменений", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateSaveEditedMessages)
         case .spyAndGhostFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Ghost Mode suppresses network read and presence updates. The archive is stored only on this account.", "Режим невидимки подавляет сетевые отметки о прочтении и статусе. Архив хранится только в этом аккаунте.", languageCode: languageCode)), sectionId: self.section)
-        case let .backgroundNotifications(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Background Notifications", "Уведомления в фоне", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsEnabled)
-        case let .backgroundNotificationsAllAccounts(value, enabled):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("All Accounts in Background", "Все аккаунты в фоне", languageCode: languageCode), value: value, enabled: enabled, sectionId: self.section, style: .blocks, updated: arguments.updateBackgroundNotificationsAllAccounts)
         case .backgroundNotificationsFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Keeps selected Telegram sessions active in the background for local notifications. This uses battery; iOS stops the connection after you force-quit the app.", "Поддерживает выбранные сессии Telegram в фоне для локальных уведомлений. Это расходует заряд; после принудительного закрытия iOS остановит соединение.", languageCode: languageCode)), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Bark must be installed on the receiving device. The Telegram push is decrypted by the relay before it is forwarded to Bark, so the relay operator can see notification text. This client does not stay active in the background for notifications.", "На принимающем устройстве должен быть установлен Bark. Relay расшифровывает push Telegram перед отправкой в Bark, поэтому оператор relay может видеть текст уведомлений. Клиент не остаётся активным в фоне ради уведомлений.", languageCode: languageCode)), sectionId: self.section)
+        case let .barkDeviceKey(value):
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: value, placeholder: mellowsgramText("Bark device key", "Ключ устройства Bark", languageCode: languageCode), type: .password, returnKeyType: .done, sectionId: self.section, textUpdated: arguments.updateBarkDeviceKey, action: {})
         case .appearanceHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode), sectionId: self.section)
         case let .translucentDeletedMessages(value):
@@ -922,9 +920,10 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             .showDeletedMessages(settings.showDeletedMessages),
             .saveEditedMessages(settings.saveEditedMessages),
             .spyAndGhostFooter,
-            .backgroundNotifications(settings.backgroundNotificationsEnabled),
-            .backgroundNotificationsAllAccounts(settings.backgroundNotificationsAllAccounts, settings.backgroundNotificationsEnabled),
-            .backgroundNotificationsFooter
+        ]
+    case .backgroundNotifications:
+        entries = [
+            .barkDeviceKey(snapshot.barkDeviceKey)
         ]
     case .appearance:
         entries = [
@@ -949,6 +948,8 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
         entries.append(contentsOf: globalKeys.map { key in
             let enabled: Bool
             switch key {
+            case .barkAllAccounts:
+                enabled = snapshot.global.bool(for: .barkNotificationsEnabled)
             case .showContactsTab, .showCallsTab, .showTabNames, .searchButton, .wideTabBar:
                 enabled = !snapshot.global.bool(for: .hideTabBar)
             case .swipeToDeleteChat:
@@ -962,6 +963,10 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             }
             return .globalSetting(key, snapshot.value(for: key), enabled)
         })
+    }
+
+    if category == .backgroundNotifications && onlySetting == nil {
+        entries.append(.backgroundNotificationsFooter)
     }
 
     if let onlySetting = onlySetting {
@@ -999,10 +1004,6 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
                 if case .saveEditedMessages = entry { return true }
             case .translucentDeletedMessages:
                 if case .translucentDeletedMessages = entry { return true }
-            case .backgroundNotifications:
-                if case .backgroundNotifications = entry { return true }
-            case .backgroundNotificationsAllAccounts:
-                if case .backgroundNotificationsAllAccounts = entry { return true }
             }
             return false
         }
@@ -1011,18 +1012,19 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
 }
 
 private func mellowsgramGlobalSettingsSnapshot(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<MellowsgramSettingsSnapshot, NoError> {
-    return accountManager.sharedData(keys: [
+    return combineLatest(queue: .mainQueue(), accountManager.sharedData(keys: [
         ApplicationSpecificSharedDataKeys.mellowsgramGlobalSettings,
         ApplicationSpecificSharedDataKeys.callListSettings,
         ApplicationSpecificSharedDataKeys.experimentalUISettings,
         ApplicationSpecificSharedDataKeys.translationSettings
-    ])
-    |> map { sharedData in
+    ]), MellowsgramBarkCredentialStore.deviceKeySignal)
+    |> map { sharedData, barkDeviceKey in
         return MellowsgramSettingsSnapshot(
             global: sharedData.entries[ApplicationSpecificSharedDataKeys.mellowsgramGlobalSettings]?.get(MellowsgramGlobalSettings.self) ?? .defaultSettings,
             callList: sharedData.entries[ApplicationSpecificSharedDataKeys.callListSettings]?.get(CallListSettings.self) ?? .defaultSettings,
             experimentalUI: sharedData.entries[ApplicationSpecificSharedDataKeys.experimentalUISettings]?.get(ExperimentalUISettings.self) ?? .defaultSettings,
-            translation: sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) ?? .defaultSettings
+            translation: sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) ?? .defaultSettings,
+            barkDeviceKey: barkDeviceKey
         )
     }
 }
@@ -1109,15 +1111,8 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
                 return settings.withUpdatedTranslucentDeletedMessages(value)
             }.start()
         },
-        updateBackgroundNotificationsEnabled: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
-                return settings.withUpdatedBackgroundNotificationsEnabled(value)
-            }.start()
-        },
-        updateBackgroundNotificationsAllAccounts: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
-                return settings.withUpdatedBackgroundNotificationsAllAccounts(value)
-            }.start()
+        updateBarkDeviceKey: { value in
+            _ = MellowsgramBarkCredentialStore.updateDeviceKey(value)
         },
         updateGlobalSetting: updateGlobalSetting,
         selectGlobalSetting: { key, selectedValue in

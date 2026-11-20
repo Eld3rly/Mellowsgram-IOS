@@ -195,15 +195,15 @@ private enum QueuedWakeup: Int32 {
 final class SharedApplicationContext {
     let sharedContext: SharedAccountContextImpl
     let notificationManager: SharedNotificationManager
-    let mellowsgramBackgroundNotificationManager: MellowsgramBackgroundNotificationManager
+    let mellowsgramBarkNotificationManager: MellowsgramBarkNotificationManager
     let wakeupManager: SharedWakeupManager
     let overlayMediaController: ViewController & OverlayMediaController
     var minimizedContainer: [AccountRecordId: MinimizedContainer] = [:]
     
-    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, mellowsgramBackgroundNotificationManager: MellowsgramBackgroundNotificationManager, wakeupManager: SharedWakeupManager) {
+    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, mellowsgramBarkNotificationManager: MellowsgramBarkNotificationManager, wakeupManager: SharedWakeupManager) {
         self.sharedContext = sharedContext
         self.notificationManager = notificationManager
-        self.mellowsgramBackgroundNotificationManager = mellowsgramBackgroundNotificationManager
+        self.mellowsgramBarkNotificationManager = mellowsgramBarkNotificationManager
         self.wakeupManager = wakeupManager
         self.overlayMediaController = OverlayMediaControllerImpl()
     }
@@ -1253,13 +1253,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             setPresentationCall = { call in
                 notificationManager.setNotificationCall(call, strings: sharedContext.currentPresentationData.with({ $0 }).strings)
             }
-            let mellowsgramBackgroundNotificationManager = MellowsgramBackgroundNotificationManager(
-                activeAccounts: sharedContext.activeAccountContexts,
-                inForeground: applicationBindings.applicationInForeground,
-                hasActiveAudioSession: self.hasActiveAudioSession.get(),
-                presentationData: {
-                    return sharedContext.currentPresentationData.with({ $0 })
-                }
+            let mellowsgramBarkNotificationManager = MellowsgramBarkNotificationManager(
+                accountManager: sharedContext.accountManager,
+                activeAccounts: sharedContext.activeAccountContexts
             )
             let liveLocationPolling = self.context.get()
             |> mapToSignal { context -> Signal<AccountRecordId?, NoError> in
@@ -1296,12 +1292,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 application.endBackgroundTask(id)
             }, backgroundTimeRemaining: { application.backgroundTimeRemaining }, acquireIdleExtension: {
                 return applicationBindings.pushIdleTimerExtension()
-            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: .single(nil), inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), mellowsgramBackgroundNotificationAccountIds: mellowsgramBackgroundNotificationManager.enabledAccountIds, notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
+            }, activeAccounts: sharedContext.activeAccountContexts |> map { ($0.0?.account, $0.1.map { ($0.0, $0.1.account) }) }, liveLocationPolling: liveLocationPolling, watchTasks: .single(nil), inForeground: applicationBindings.applicationInForeground, hasActiveAudioSession: self.hasActiveAudioSession.get(), notificationManager: notificationManager, mediaManager: sharedContext.mediaManager, callManager: sharedContext.callManager, accountUserInterfaceInUse: { id in
                 return sharedContext.accountUserInterfaceInUse(id)
             }, presentationData: {
                 return sharedContext.currentPresentationData.with({ $0 })
             })
-            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, mellowsgramBackgroundNotificationManager: mellowsgramBackgroundNotificationManager, wakeupManager: wakeupManager)
+            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, mellowsgramBarkNotificationManager: mellowsgramBarkNotificationManager, wakeupManager: wakeupManager)
             sharedApplicationContext.sharedContext.mediaManager.overlayMediaManager.attachOverlayMediaController(sharedApplicationContext.overlayMediaController)
             
             return accountManager.transaction { transaction -> (SharedApplicationContext, LoggingSettings) in
@@ -3130,7 +3126,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             completionHandler()
             return
         }
-        
+
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
@@ -3321,7 +3317,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             completionHandler([])
             return
         }
-        
+
         let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if let context = self.contextValue {

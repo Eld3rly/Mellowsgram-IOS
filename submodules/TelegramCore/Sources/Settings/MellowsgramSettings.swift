@@ -25,14 +25,6 @@ public struct MellowsgramSettings: Codable, Equatable {
     /// autoremove/autoclear deadline. Secret and ephemeral messages are still
     /// excluded by the archive/privacy guards.
     public let ignoreAutoremoveTimers: Bool
-    /// Keep selected account connections alive while the app is backgrounded
-    /// so incoming Telegram updates can be converted into local notifications.
-    /// This is deliberately opt-in because it has a measurable battery cost.
-    public let backgroundNotificationsEnabled: Bool
-    /// When enabled, apply background notifications to every signed-in
-    /// account. Otherwise only the primary account is kept active.
-    public let backgroundNotificationsAllAccounts: Bool
-
     public static var defaultSettings: MellowsgramSettings {
         return MellowsgramSettings(
             ghostMode: false,
@@ -48,9 +40,7 @@ public struct MellowsgramSettings: Codable, Equatable {
             saveEditedMessages: true,
             showDeletedMessages: true,
             translucentDeletedMessages: false,
-            ignoreAutoremoveTimers: true,
-            backgroundNotificationsEnabled: false,
-            backgroundNotificationsAllAccounts: false
+            ignoreAutoremoveTimers: true
         )
     }
 
@@ -68,9 +58,7 @@ public struct MellowsgramSettings: Codable, Equatable {
         saveEditedMessages: Bool,
         showDeletedMessages: Bool,
         translucentDeletedMessages: Bool,
-        ignoreAutoremoveTimers: Bool = true,
-        backgroundNotificationsEnabled: Bool = false,
-        backgroundNotificationsAllAccounts: Bool = false
+        ignoreAutoremoveTimers: Bool = true
     ) {
         self.ghostMode = ghostMode
         self.ghostDontReadMessages = ghostDontReadMessages
@@ -86,8 +74,6 @@ public struct MellowsgramSettings: Codable, Equatable {
         self.showDeletedMessages = showDeletedMessages
         self.translucentDeletedMessages = translucentDeletedMessages
         self.ignoreAutoremoveTimers = ignoreAutoremoveTimers
-        self.backgroundNotificationsEnabled = backgroundNotificationsEnabled
-        self.backgroundNotificationsAllAccounts = backgroundNotificationsAllAccounts
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,8 +94,6 @@ public struct MellowsgramSettings: Codable, Equatable {
         self.showDeletedMessages = (try container.decodeIfPresent(Int32.self, forKey: "showDeletedMessages") ?? 1) != 0
         self.translucentDeletedMessages = (try container.decodeIfPresent(Int32.self, forKey: "translucentDeletedMessages") ?? 0) != 0
         self.ignoreAutoremoveTimers = (try container.decodeIfPresent(Int32.self, forKey: "ignoreAutoremoveTimers") ?? 1) != 0
-        self.backgroundNotificationsEnabled = (try container.decodeIfPresent(Int32.self, forKey: "backgroundNotificationsEnabled") ?? 0) != 0
-        self.backgroundNotificationsAllAccounts = (try container.decodeIfPresent(Int32.self, forKey: "backgroundNotificationsAllAccounts") ?? 0) != 0
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -128,8 +112,6 @@ public struct MellowsgramSettings: Codable, Equatable {
         try container.encode((self.showDeletedMessages ? 1 : 0) as Int32, forKey: "showDeletedMessages")
         try container.encode((self.translucentDeletedMessages ? 1 : 0) as Int32, forKey: "translucentDeletedMessages")
         try container.encode((self.ignoreAutoremoveTimers ? 1 : 0) as Int32, forKey: "ignoreAutoremoveTimers")
-        try container.encode((self.backgroundNotificationsEnabled ? 1 : 0) as Int32, forKey: "backgroundNotificationsEnabled")
-        try container.encode((self.backgroundNotificationsAllAccounts ? 1 : 0) as Int32, forKey: "backgroundNotificationsAllAccounts")
     }
 
     public func withUpdatedGhostMode(_ value: Bool) -> MellowsgramSettings {
@@ -188,14 +170,6 @@ public struct MellowsgramSettings: Codable, Equatable {
         return self.copy(ignoreAutoremoveTimers: value)
     }
 
-    public func withUpdatedBackgroundNotificationsEnabled(_ value: Bool) -> MellowsgramSettings {
-        return self.copy(backgroundNotificationsEnabled: value)
-    }
-
-    public func withUpdatedBackgroundNotificationsAllAccounts(_ value: Bool) -> MellowsgramSettings {
-        return self.copy(backgroundNotificationsAllAccounts: value)
-    }
-
     public var ghostModeOptions: MellowsgramGhostModeOptions {
         var result = MellowsgramGhostModeOptions()
         if self.ghostDontReadMessages {
@@ -230,9 +204,7 @@ public struct MellowsgramSettings: Codable, Equatable {
         saveEditedMessages: Bool? = nil,
         showDeletedMessages: Bool? = nil,
         translucentDeletedMessages: Bool? = nil,
-        ignoreAutoremoveTimers: Bool? = nil,
-        backgroundNotificationsEnabled: Bool? = nil,
-        backgroundNotificationsAllAccounts: Bool? = nil
+        ignoreAutoremoveTimers: Bool? = nil
     ) -> MellowsgramSettings {
         return MellowsgramSettings(
             ghostMode: ghostMode ?? self.ghostMode,
@@ -248,9 +220,7 @@ public struct MellowsgramSettings: Codable, Equatable {
             saveEditedMessages: saveEditedMessages ?? self.saveEditedMessages,
             showDeletedMessages: showDeletedMessages ?? self.showDeletedMessages,
             translucentDeletedMessages: translucentDeletedMessages ?? self.translucentDeletedMessages,
-            ignoreAutoremoveTimers: ignoreAutoremoveTimers ?? self.ignoreAutoremoveTimers,
-            backgroundNotificationsEnabled: backgroundNotificationsEnabled ?? self.backgroundNotificationsEnabled,
-            backgroundNotificationsAllAccounts: backgroundNotificationsAllAccounts ?? self.backgroundNotificationsAllAccounts
+            ignoreAutoremoveTimers: ignoreAutoremoveTimers ?? self.ignoreAutoremoveTimers
         )
     }
 }

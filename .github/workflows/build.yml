@@ -81,7 +81,8 @@ jobs:
             submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift \
             submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift \
             submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift \
-            submodules/TelegramUI/Sources/MellowsgramBackgroundNotificationManager.swift \
+            submodules/TelegramUI/Sources/MellowsgramBarkNotificationManager.swift \
+            submodules/TelegramUIPreferences/Sources/MellowsgramBarkCredentialStore.swift \
             submodules/TelegramUI/Sources/SharedWakeupManager.swift \
             submodules/TelegramUI/Sources/AppDelegate.swift \
             submodules/TelegramUI/Sources/ChatController.swift \

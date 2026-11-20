@@ -16,7 +16,6 @@ private struct AccountTasks {
     let backgroundLocation: Bool
     let backgroundDownloads: Bool
     let backgroundAudio: Bool
-    let backgroundNotifications: Bool
     let activeCalls: Bool
     let watchTasks: Bool
     let userInterfaceInUse: Bool
@@ -35,9 +34,6 @@ private struct AccountTasks {
             return false
         }
         if self.backgroundAudio {
-            return false
-        }
-        if self.backgroundNotifications {
             return false
         }
         if self.activeCalls {
@@ -85,7 +81,6 @@ public final class SharedWakeupManager {
     private var accountSettingsDisposable: Disposable?
     private var inForegroundDisposable: Disposable?
     private var hasActiveAudioSessionDisposable: Disposable?
-    private var mellowsgramBackgroundNotificationAccountsDisposable: Disposable?
     private var tasksDisposable: Disposable?
     private var pendingMediaUploadsDisposable: Disposable?
     private var pendingStoryUploadsDisposable: Disposable?
@@ -116,7 +111,7 @@ public final class SharedWakeupManager {
     private var backgroundStoryProcessingTaskCancellationRequestedByApp: Bool = false
     private var pendingBackgroundStoryProcessingTaskTimer: SwiftSignalKit.Timer?
 
-    public init(beginBackgroundTask: @escaping (String, @escaping () -> Void) -> UIBackgroundTaskIdentifier?, endBackgroundTask: @escaping (UIBackgroundTaskIdentifier) -> Void, backgroundTimeRemaining: @escaping () -> Double, acquireIdleExtension: @escaping () -> Disposable?, activeAccounts: Signal<(primary: Account?, accounts: [(AccountRecordId, Account)]), NoError>, liveLocationPolling: Signal<AccountRecordId?, NoError>, watchTasks: Signal<AccountRecordId?, NoError>, inForeground: Signal<Bool, NoError>, hasActiveAudioSession: Signal<Bool, NoError>, mellowsgramBackgroundNotificationAccountIds: Signal<Set<AccountRecordId>, NoError>, notificationManager: SharedNotificationManager?, mediaManager: MediaManager, callManager: PresentationCallManager?, accountUserInterfaceInUse: @escaping (AccountRecordId) -> Signal<Bool, NoError>, presentationData: @escaping () -> PresentationData?) {
+    public init(beginBackgroundTask: @escaping (String, @escaping () -> Void) -> UIBackgroundTaskIdentifier?, endBackgroundTask: @escaping (UIBackgroundTaskIdentifier) -> Void, backgroundTimeRemaining: @escaping () -> Double, acquireIdleExtension: @escaping () -> Disposable?, activeAccounts: Signal<(primary: Account?, accounts: [(AccountRecordId, Account)]), NoError>, liveLocationPolling: Signal<AccountRecordId?, NoError>, watchTasks: Signal<AccountRecordId?, NoError>, inForeground: Signal<Bool, NoError>, hasActiveAudioSession: Signal<Bool, NoError>, notificationManager: SharedNotificationManager?, mediaManager: MediaManager, callManager: PresentationCallManager?, accountUserInterfaceInUse: @escaping (AccountRecordId) -> Signal<Bool, NoError>, presentationData: @escaping () -> PresentationData?) {
         assert(Queue.mainQueue().isCurrent())
         
         self.beginBackgroundTask = beginBackgroundTask
@@ -182,12 +177,6 @@ public final class SharedWakeupManager {
             strongSelf.checkTasks()
         })
 
-        self.mellowsgramBackgroundNotificationAccountsDisposable = (mellowsgramBackgroundNotificationAccountIds
-        |> deliverOnMainQueue
-        |> distinctUntilChanged).startStrict(next: { [weak self] _ in
-            self?.checkTasks()
-        })
-        
         self.managedPausedInBackgroundPlayer = combineLatest(queue: .mainQueue(), mediaManager.activeGlobalMediaPlayerAccountId, inForeground).startStrict(next: { [weak mediaManager] accountAndActive, inForeground in
             guard let mediaManager = mediaManager else {
                 return
@@ -268,15 +257,9 @@ public final class SharedWakeupManager {
                 
                 let userInterfaceInUse = accountUserInterfaceInUse(account.id)
                 
-                let hasMellowsgramBackgroundNotifications = mellowsgramBackgroundNotificationAccountIds
-                |> map { accountIds in
-                    return accountIds.contains(account.id)
-                }
-                |> distinctUntilChanged
-
-                return combineLatest(queue: .mainQueue(), account.importantTasksRunning, notificationManager?.isPollingState(accountId: account.id) ?? .single(false), hasActiveAudio, keepUpdatesForCalls, hasActiveLiveLocationPolling, hasWatchTasks, userInterfaceInUse, hasMellowsgramBackgroundNotifications)
-                |> map { importantTasksRunning, isPollingState, hasActiveAudio, keepUpdatesForCalls, hasActiveLiveLocationPolling, hasWatchTasks, userInterfaceInUse, hasMellowsgramBackgroundNotifications -> (Account, Bool, AccountTasks) in
-                    return (account, primary?.id == account.id, AccountTasks(stateSynchronization: isPollingState, importantTasks: importantTasksRunning, backgroundLocation: hasActiveLiveLocationPolling, backgroundDownloads: false, backgroundAudio: hasActiveAudio, backgroundNotifications: hasMellowsgramBackgroundNotifications, activeCalls: keepUpdatesForCalls, watchTasks: hasWatchTasks, userInterfaceInUse: userInterfaceInUse))
+                return combineLatest(queue: .mainQueue(), account.importantTasksRunning, notificationManager?.isPollingState(accountId: account.id) ?? .single(false), hasActiveAudio, keepUpdatesForCalls, hasActiveLiveLocationPolling, hasWatchTasks, userInterfaceInUse)
+                |> map { importantTasksRunning, isPollingState, hasActiveAudio, keepUpdatesForCalls, hasActiveLiveLocationPolling, hasWatchTasks, userInterfaceInUse -> (Account, Bool, AccountTasks) in
+                    return (account, primary?.id == account.id, AccountTasks(stateSynchronization: isPollingState, importantTasks: importantTasksRunning, backgroundLocation: hasActiveLiveLocationPolling, backgroundDownloads: false, backgroundAudio: hasActiveAudio, activeCalls: keepUpdatesForCalls, watchTasks: hasWatchTasks, userInterfaceInUse: userInterfaceInUse))
                 }
             }
             return combineLatest(signals)
@@ -375,7 +358,6 @@ public final class SharedWakeupManager {
         self.accountSettingsDisposable?.dispose()
         self.inForegroundDisposable?.dispose()
         self.hasActiveAudioSessionDisposable?.dispose()
-        self.mellowsgramBackgroundNotificationAccountsDisposable?.dispose()
         self.tasksDisposable?.dispose()
         self.pendingMediaUploadsDisposable?.dispose()
         self.pendingStoryUploadsDisposable?.dispose()
@@ -1152,9 +1134,7 @@ public final class SharedWakeupManager {
     
     private func updateAccounts(hasTasks: Bool, endTaskAfterTransactionsComplete: UIBackgroundTaskIdentifier?) {
         let hasBackgroundLocationTask = self.accountsAndTasks.contains(where: { $0.2.backgroundLocation })
-        let hasBackgroundNotificationTask = self.accountsAndTasks.contains(where: { $0.2.backgroundNotifications })
-        
-        if self.inForeground || self.hasActiveAudioSession || self.isInBackgroundExtension || self.backgroundProcessingTaskId != nil || self.backgroundStoryProcessingTaskId != nil || hasBackgroundLocationTask || hasBackgroundNotificationTask || (hasTasks && self.currentExternalCompletion != nil) || self.activeExplicitExtensionTimer != nil || self.silenceAudioRenderer != nil {
+        if self.inForeground || self.hasActiveAudioSession || self.isInBackgroundExtension || self.backgroundProcessingTaskId != nil || self.backgroundStoryProcessingTaskId != nil || hasBackgroundLocationTask || (hasTasks && self.currentExternalCompletion != nil) || self.activeExplicitExtensionTimer != nil || self.silenceAudioRenderer != nil {
             Logger.shared.log("Wakeup", "enableBeginTransactions: true (active)")
             
             for (account, primary, tasks) in self.accountsAndTasks {
@@ -1165,7 +1145,7 @@ public final class SharedWakeupManager {
                 } else {
                     account.shouldBeServiceTaskMaster.set(.single(.never))
                 }
-                account.shouldExplicitelyKeepWorkerConnections.set(.single(tasks.backgroundAudio || tasks.backgroundNotifications || tasks.backgroundLocation || tasks.importantTasks.pendingStoryCount != 0 || tasks.importantTasks.pendingMessageCount != 0))
+                account.shouldExplicitelyKeepWorkerConnections.set(.single(tasks.backgroundAudio || tasks.backgroundLocation || tasks.importantTasks.pendingStoryCount != 0 || tasks.importantTasks.pendingMessageCount != 0))
                 account.shouldKeepOnlinePresence.set(.single(primary && self.inForeground))
                 account.shouldKeepBackgroundDownloadConnections.set(.single(tasks.backgroundDownloads))
             }

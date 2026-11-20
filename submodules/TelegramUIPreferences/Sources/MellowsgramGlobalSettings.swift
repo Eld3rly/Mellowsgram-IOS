@@ -20,6 +20,8 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     case channelBottomPanel
     case outgoingPhotoQuality
     case sendHDPhotos
+    case barkNotificationsEnabled
+    case barkAllAccounts
 
     case hideTabBar
     case showTabNames
@@ -122,6 +124,8 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
              .contextSaveToFiles, .pullToNextUnreadChannel, .pullToNextTopic,
              .secondsInMessages, .doubleTapToEdit, .hideReactions, .sendWithReturnKey,
              .emojiTabFirst, .standardEmojisFirst, .foldersAtBottom:
+            return "false"
+        case .barkNotificationsEnabled, .barkAllAccounts:
             return "false"
         case .uploadBoost:
             return "true"
