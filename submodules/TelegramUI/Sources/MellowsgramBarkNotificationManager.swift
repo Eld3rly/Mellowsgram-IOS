@@ -465,9 +465,9 @@ public final class MellowsgramBarkNotificationManager {
                         self.pendingAvatarPeerIds.insert(peerId)
                         self.remainingAvatarPeerBudget -= 1
 
-                        let dataSignal = context.account.postbox.mediaBox.resourceData(
-                            representation.resource,
-                            option: .complete(waitUntilFetchStatus: false),
+                        let dataSignal = context.engine.resources.data(
+                            resource: EngineMediaResource(representation.resource),
+                            waitUntilFetchStatus: false,
                             attemptSynchronously: false
                         )
                         scanDisposables.add((dataSignal
@@ -476,7 +476,7 @@ public final class MellowsgramBarkNotificationManager {
                             guard let self,
                                   self.isAppForeground,
                                   self.avatarSubscriptionRoute == route,
-                                  resourceData.complete
+                                  resourceData.isComplete
                             else {
                                 self?.clearPendingAvatar(peerId, route: route)
                                 return
