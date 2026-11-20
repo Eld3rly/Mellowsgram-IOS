@@ -17,9 +17,13 @@ concurrency:
 
 jobs:
   build:
-    name: build-simulator-and-device
+    name: build-${{ matrix.target }}
     runs-on: xcode-27
-    timeout-minutes: 360
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [simulator, device]
 
     steps:
       - name: Checkout source and submodules
@@ -109,6 +113,7 @@ jobs:
         run: echo "BUILD_NUMBER=$((10000 + $(git rev-list --count HEAD)))" >> "$GITHUB_ENV"
 
       - name: Build simulator IPA
+        if: matrix.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -125,6 +130,7 @@ jobs:
             --outputBuildArtifactsPath build/mellowsgram-simulator-artifacts
 
       - name: Build device IPA
+        if: matrix.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
@@ -141,12 +147,14 @@ jobs:
             --outputBuildArtifactsPath build/mellowsgram-device-artifacts
 
       - name: Prepare device IPA for AltStore and SideStore
+        if: matrix.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
           python3 ci/mellowsgram_sideload.py --ipa build/mellowsgram-device-artifacts/Telegram.ipa
 
       - name: Verify simulator IPA
+        if: matrix.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -155,6 +163,7 @@ jobs:
           shasum -a 256 build/mellowsgram-simulator-artifacts/Telegram.ipa
 
       - name: Verify device IPA
+        if: matrix.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
@@ -173,17 +182,19 @@ jobs:
           shasum -a 256 "$ipa"
 
       - name: Upload simulator IPA artifact
+        if: matrix.target == 'simulator'
         uses: actions/upload-artifact@v4
         with:
-          name: Mellowsgram-iOS-simulator-IPA-${{ env.BUILD_NUMBER }}
+          name: Mellowsgram-iOS-${{ matrix.target }}-IPA-${{ env.BUILD_NUMBER }}
           path: build/mellowsgram-simulator-artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 7
 
       - name: Upload device IPA artifact
+        if: matrix.target == 'device'
         uses: actions/upload-artifact@v4
         with:
-          name: Mellowsgram-iOS-device-IPA-${{ env.BUILD_NUMBER }}
+          name: Mellowsgram-iOS-${{ matrix.target }}-IPA-${{ env.BUILD_NUMBER }}
           path: build/mellowsgram-device-artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 7
