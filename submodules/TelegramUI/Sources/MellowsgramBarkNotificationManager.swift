@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Security
+import UIKit
 import UserNotifications
 import SwiftSignalKit
 import TelegramCore
@@ -14,9 +15,11 @@ public final class MellowsgramBarkNotificationManager {
     private static let registrationDebounce: Double = 0.8
     private static let registrationRetryDelay: Double = 30.0
     private static let registrationRefreshInterval: Double = 23.0 * 60.0 * 60.0
+    private static let foregroundPresenceInterval: Double = 30.0
+    private static let foregroundPresenceHeader = "mellowsgram-ios-foreground-v1"
 
-    private struct WebPushToken: Encodable {
-        struct Keys: Encodable {
+    private struct WebPushToken: Codable {
+        struct Keys: Codable {
             let p256dh: String
             let auth: String
         }
@@ -38,6 +41,10 @@ public final class MellowsgramBarkNotificationManager {
     private var registeredTokens: [AccountRecordId: Data] = [:]
     private var reconcileTimer: SwiftSignalKit.Timer?
     private var registrationRefreshTimer: SwiftSignalKit.Timer?
+    private var foregroundPresenceTimer: SwiftSignalKit.Timer?
+    private var foregroundPresenceURL: URL?
+    private var isAppForeground = UIApplication.shared.applicationState == .active
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     public init(
         accountManager: AccountManager<TelegramAccountManagerTypes>,
@@ -64,6 +71,16 @@ public final class MellowsgramBarkNotificationManager {
         |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
             self?.scheduleReconcile()
         }))
+
+        let notificationCenter = NotificationCenter.default
+        self.lifecycleObservers = [
+            notificationCenter.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main, using: { [weak self] _ in
+                self?.updateAppForeground(true)
+            }),
+            notificationCenter.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main, using: { [weak self] _ in
+                self?.updateAppForeground(false)
+            })
+        ]
     }
 
     deinit {
@@ -73,6 +90,10 @@ public final class MellowsgramBarkNotificationManager {
         self.reconcileDisposable.dispose()
         self.reconcileTimer?.invalidate()
         self.registrationRefreshTimer?.invalidate()
+        self.foregroundPresenceTimer?.invalidate()
+        for observer in self.lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     private func updateAccounts(_ activeAccounts: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)) {
@@ -136,6 +157,7 @@ public final class MellowsgramBarkNotificationManager {
             self.scheduleReconcile(after: Self.registrationRetryDelay)
             return
         }
+        self.updateForegroundPresenceToken(token)
 
         var contexts = self.accounts
         contexts.merge(self.removedAccounts) { current, _ in current }
@@ -250,6 +272,75 @@ public final class MellowsgramBarkNotificationManager {
         }, queue: .mainQueue())
         self.registrationRefreshTimer = timer
         timer.start()
+    }
+
+    private func updateForegroundPresenceToken(_ token: Data?) {
+        let updatedURL = token.flatMap { Self.makeForegroundPresenceURL(token: $0) }
+        guard self.foregroundPresenceURL?.absoluteString != updatedURL?.absoluteString else {
+            return
+        }
+        if let currentURL = self.foregroundPresenceURL {
+            self.sendForegroundPresence(active: false, to: currentURL)
+        }
+        self.foregroundPresenceURL = updatedURL
+        if self.isAppForeground {
+            self.sendForegroundPresence(active: true)
+            self.startForegroundPresenceTimer()
+        } else {
+            self.foregroundPresenceTimer?.invalidate()
+            self.foregroundPresenceTimer = nil
+        }
+    }
+
+    private func updateAppForeground(_ value: Bool) {
+        self.isAppForeground = value
+        self.foregroundPresenceTimer?.invalidate()
+        self.foregroundPresenceTimer = nil
+        self.sendForegroundPresence(active: value)
+        if value {
+            self.startForegroundPresenceTimer()
+        }
+    }
+
+    private func startForegroundPresenceTimer() {
+        guard self.isAppForeground, self.foregroundPresenceURL != nil, self.foregroundPresenceTimer == nil else {
+            return
+        }
+        let timer = SwiftSignalKit.Timer(timeout: Self.foregroundPresenceInterval, repeat: true, completion: { [weak self] in
+            self?.sendForegroundPresence(active: true)
+        }, queue: .mainQueue())
+        self.foregroundPresenceTimer = timer
+        timer.start()
+    }
+
+    private func sendForegroundPresence(active: Bool, to url: URL? = nil) {
+        guard let url = url ?? self.foregroundPresenceURL else {
+            return
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.foregroundPresenceHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["active": active])
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    private static func makeForegroundPresenceURL(token: Data) -> URL? {
+        guard let webPushToken = try? JSONDecoder().decode(WebPushToken.self, from: token),
+              let endpointURL = URL(string: webPushToken.endpoint),
+              endpointURL.host == "push.mellowsgram.cc"
+        else {
+            return nil
+        }
+        let pathComponents = endpointURL.path.split(separator: "/")
+        guard pathComponents.count == 2, pathComponents[0] == "p" else {
+            return nil
+        }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = endpointURL.host
+        components.path = "/presence/\(pathComponents[1])"
+        return components.url
     }
 
     private static func makeWebPushToken(barkKey: String) -> Data? {
