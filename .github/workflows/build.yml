@@ -6,31 +6,20 @@ name: Mellowsgram iOS IPA
 on:
   push:
     branches: [indev]
-    paths-ignore:
-      - '.github/workflows/build.yml'
   workflow_dispatch:
-    inputs:
-      target:
-        description: Build target
-        required: true
-        type: choice
-        options:
-          - simulator
-          - device
-        default: simulator
 
 permissions:
   contents: read
 
 concurrency:
-  group: mellowsgram-${{ github.event_name == 'push' && 'simulator' || inputs.target }}-${{ github.ref }}
+  group: mellowsgram-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: build-${{ github.event_name == 'push' && 'simulator' || inputs.target }}
+    name: build-simulator-and-device
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 360
 
     steps:
       - name: Checkout source and submodules
@@ -48,6 +37,7 @@ jobs:
           fi
           xcodebuild -version
           xcrun --sdk iphonesimulator --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Generate Mellowsgram configuration
         env:
@@ -114,53 +104,49 @@ jobs:
             "$swiftc_path" -frontend -parse -parse-as-library "$source"
           done
 
+      - name: Set build number
+        shell: bash
+        run: echo "BUILD_NUMBER=$((10000 + $(git rev-list --count HEAD)))" >> "$GITHUB_ENV"
+
       - name: Build simulator IPA
-        if: github.event_name == 'push' || inputs.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
-          build_number=$((10000 + $(git rev-list --count HEAD)))
-          echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
             --cacheDir build-input/bazel-disk-cache \
             build \
             --configurationPath build-input/mellowsgram-configuration.json \
             --xcodeManagedCodesigning \
-            --buildNumber "$build_number" \
+            --buildNumber "$BUILD_NUMBER" \
             --configuration debug_sim_arm64 \
             --continueOnError \
             --disableProvisioningProfiles \
             --outputBuildArtifactsPath build/mellowsgram-simulator-artifacts
 
       - name: Build device IPA
-        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
-          build_number=$((10000 + $(git rev-list --count HEAD)))
-          echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
             --cacheDir build-input/bazel-disk-cache \
             build \
             --configurationPath build-input/mellowsgram-configuration.json \
             --xcodeManagedCodesigning \
-            --buildNumber "$build_number" \
+            --buildNumber "$BUILD_NUMBER" \
             --configuration debug_arm64 \
             --continueOnError \
             --disableProvisioningProfiles \
             --outputBuildArtifactsPath build/mellowsgram-device-artifacts
 
       - name: Prepare device IPA for AltStore and SideStore
-        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
           python3 ci/mellowsgram_sideload.py --ipa build/mellowsgram-device-artifacts/Telegram.ipa
 
       - name: Verify simulator IPA
-        if: github.event_name == 'push' || inputs.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -169,7 +155,6 @@ jobs:
           shasum -a 256 build/mellowsgram-simulator-artifacts/Telegram.ipa
 
       - name: Verify device IPA
-        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
         shell: bash
         run: |
           set -euo pipefail
@@ -188,7 +173,6 @@ jobs:
           shasum -a 256 "$ipa"
 
       - name: Upload simulator IPA artifact
-        if: github.event_name == 'push' || inputs.target == 'simulator'
         uses: actions/upload-artifact@v4
         with:
           name: Mellowsgram-iOS-simulator-IPA-${{ env.BUILD_NUMBER }}
@@ -197,7 +181,6 @@ jobs:
           retention-days: 7
 
       - name: Upload device IPA artifact
-        if: github.event_name == 'workflow_dispatch' && inputs.target == 'device'
         uses: actions/upload-artifact@v4
         with:
           name: Mellowsgram-iOS-device-IPA-${{ env.BUILD_NUMBER }}

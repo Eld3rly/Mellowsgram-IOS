@@ -219,6 +219,16 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
+			<string>mellowsgram.notification</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>mellowsgram</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).ton</string>
 			<key>CFBundleURLSchemes</key>
 			<array>

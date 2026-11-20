@@ -274,6 +274,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private let openNotificationSettingsWhenReadyDisposable = MetaDisposable()
     private let openChatWhenReadyDisposable = MetaDisposable()
     private let openUrlWhenReadyDisposable = MetaDisposable()
+    private let mellowsgramNotificationOpenDisposable = MetaDisposable()
     
     private let badgeDisposable = MetaDisposable()
     private let quickActionsDisposable = MetaDisposable()
@@ -1636,8 +1637,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         })
         
         if let url = launchOptions?[.url] {
-            if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+            if let url = url as? URL, url.scheme?.lowercased() == "mellowsgram" {
+                self.handleOpenURL(url)
+            } else if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
                 self.openUrlWhenReady(url: url, external: true)
+            } else if let urlString = url as? String, urlString.lowercased().hasPrefix("mellowsgram:"), let url = URL(string: urlString) {
+                self.handleOpenURL(url)
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("ton:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):") || WalletContext.isTonConnectUrl(urlString), let url = URL(string: urlString) {
                 self.openUrlWhenReady(url: url, external: true)
             }
@@ -1847,7 +1852,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         for context in connectionOptions.urlContexts {
             let url = context.url
-            if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+            if url.scheme?.lowercased() == "mellowsgram" {
+                self.handleOpenURL(url)
+            } else if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
                 self.openUrlWhenReady(url: url, external: true)
             } else {
                 self.handleOpenURL(url)
@@ -2650,7 +2657,92 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         guard self.openUrlInProgress != url else {
             return
         }
+        if self.openMellowsgramNotificationURL(url) {
+            return
+        }
         self.openUrl(url: url)
+    }
+
+    private func openMellowsgramNotificationURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "mellowsgram",
+              url.host?.lowercased() == "notification"
+        else {
+            return false
+        }
+
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func queryValue(_ name: String) -> String? {
+            return queryItems.first(where: { $0.name == name })?.value
+        }
+
+        let telegramUserId = queryValue("uid").flatMap { Int64($0) }.flatMap { $0 > 0 ? $0 : nil }
+        let peerId: PeerId?
+        if let peerType = queryValue("type"),
+           let value = queryValue("peer").flatMap({ Int64($0) }), value > 0 {
+            let namespace: Int32
+            switch peerType {
+            case "user":
+                namespace = Namespaces.Peer.CloudUser
+            case "group":
+                namespace = Namespaces.Peer.CloudGroup
+            case "channel":
+                namespace = Namespaces.Peer.CloudChannel
+            default:
+                return false
+            }
+            peerId = PeerId(namespace: namespace, id: PeerId.Id._internalFromInt64Value(value))
+        } else {
+            peerId = nil
+        }
+
+        let threadId = queryValue("thread").flatMap { Int64($0) }
+        let messageId: MessageId? = peerId.flatMap { peerId in
+            guard let value = queryValue("message").flatMap({ Int32($0) }), value > 0 else {
+                return nil
+            }
+            return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: value)
+        }
+        let storyId: StoryId? = peerId.flatMap { peerId in
+            guard let value = queryValue("story").flatMap({ Int32($0) }), value > 0 else {
+                return nil
+            }
+            return StoryId(peerId: peerId, id: value)
+        }
+
+        self.openUrlInProgress = url
+        let signal = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext -> Signal<(SharedAccountContextImpl, AccountRecordId?), NoError> in
+            return sharedApplicationContext.sharedContext.activeAccountContexts
+            |> take(1)
+            |> map { _, contexts, _ -> (SharedAccountContextImpl, AccountRecordId?) in
+                let accountId = telegramUserId.flatMap { userId in
+                    contexts.first(where: { _, context, _ in
+                        context.account.peerId.id._internalGetInt64Value() == userId
+                    })?.0
+                }
+                return (sharedApplicationContext.sharedContext, accountId)
+            }
+        }
+        |> deliverOnMainQueue
+        self.mellowsgramNotificationOpenDisposable.set(signal.start(next: { [weak self] sharedContext, accountId in
+            guard let self else {
+                return
+            }
+            if telegramUserId == nil || accountId != nil {
+                if let peerId {
+                    self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                } else if let accountId {
+                    sharedContext.switchToAccount(id: accountId)
+                }
+            }
+            Queue.mainQueue().after(1.0, {
+                if self.openUrlInProgress == url {
+                    self.openUrlInProgress = nil
+                }
+            })
+        }))
+        return true
     }
 
     private func presentWalletUnavailable(in context: AuthorizedApplicationContext) {

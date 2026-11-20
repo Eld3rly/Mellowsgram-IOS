@@ -22,15 +22,23 @@ private func mellowsgramThenAfterCompletion<T>(_ signal: Signal<Never, NoError>,
     }
 }
 
-/// Registers Telegram Web Push tokens for the Bark relay. It never keeps an
-/// account connection alive and does not create local message notifications.
+/// Registers Telegram Web Push tokens for the Bark relay. While foregrounded,
+/// it uploads small avatar thumbnails already present in MediaBox; it never
+/// fetches avatars just for this feature or keeps an account connection alive.
+/// It does not create local message notifications.
 public final class MellowsgramBarkNotificationManager {
     private static let relayBaseURL = "https://push.mellowsgram.cc"
     private static let registrationDebounce: Double = 0.8
     private static let registrationRetryDelay: Double = 30.0
     private static let registrationRefreshInterval: Double = 23.0 * 60.0 * 60.0
     private static let foregroundPresenceInterval: Double = 30.0
+    private static let avatarRefreshInterval: Double = 10.0 * 60.0
+    private static let avatarUploadRefreshInterval: TimeInterval = 25.0 * 24.0 * 60.0 * 60.0
+    private static let maxAvatarPeersPerSync = 300
+    private static let avatarThumbnailSide: CGFloat = 96.0
     private static let foregroundPresenceHeader = "mellowsgram-ios-foreground-v1"
+    private static let avatarSubscriptionHeader = "X-Mellowsgram-Subscription"
+    private static let avatarPeerIdHeader = "X-Mellowsgram-Peer"
 
     private struct WebPushToken: Codable {
         struct Keys: Codable {
@@ -42,10 +50,23 @@ public final class MellowsgramBarkNotificationManager {
         let keys: Keys
     }
 
+    private struct UploadedAvatarState: Codable {
+        let digest: String
+        let timestamp: TimeInterval
+    }
+
     private let activeAccountsDisposable = MetaDisposable()
     private let settingsDisposable = MetaDisposable()
     private let deviceKeyDisposable = MetaDisposable()
     private let reconcileDisposable = MetaDisposable()
+    private let avatarScanDisposable = MetaDisposable()
+    private let avatarImageProcessingQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "MellowsgramAvatarThumbnailProcessing"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 2
+        return queue
+    }()
 
     private var accounts: [AccountRecordId: AccountContext] = [:]
     private var removedAccounts: [AccountRecordId: AccountContext] = [:]
@@ -56,7 +77,17 @@ public final class MellowsgramBarkNotificationManager {
     private var reconcileTimer: SwiftSignalKit.Timer?
     private var registrationRefreshTimer: SwiftSignalKit.Timer?
     private var foregroundPresenceTimer: SwiftSignalKit.Timer?
+    private var avatarRefreshTimer: SwiftSignalKit.Timer?
     private var foregroundPresenceURL: URL?
+    private var avatarSubscriptionRoute: String?
+    private var avatarAuthSecret: Data?
+    private var avatarUploadTasks: [UUID: URLSessionUploadTask] = [:]
+    private var avatarUploadStateStorageKey: String?
+    private var avatarUploadStatePersistenceWorkItem: DispatchWorkItem?
+    private var uploadedAvatarStates: [String: UploadedAvatarState] = [:]
+    private var pendingAvatarPeerIds = Set<Int64>()
+    private var lastAvatarScanTimestamp: TimeInterval = 0.0
+    private var remainingAvatarPeerBudget = 0
     private var isAppForeground = UIApplication.shared.applicationState == .active
     private var lifecycleObservers: [NSObjectProtocol] = []
 
@@ -78,6 +109,7 @@ public final class MellowsgramBarkNotificationManager {
             }
             self.globalSettings = settings
             self.hasLoadedSettings = true
+            self.lastAvatarScanTimestamp = 0.0
             self.scheduleReconcile()
         }))
 
@@ -102,9 +134,16 @@ public final class MellowsgramBarkNotificationManager {
         self.settingsDisposable.dispose()
         self.deviceKeyDisposable.dispose()
         self.reconcileDisposable.dispose()
+        self.avatarScanDisposable.dispose()
+        self.avatarImageProcessingQueue.cancelAllOperations()
+        self.avatarUploadStatePersistenceWorkItem?.cancel()
         self.reconcileTimer?.invalidate()
         self.registrationRefreshTimer?.invalidate()
         self.foregroundPresenceTimer?.invalidate()
+        self.avatarRefreshTimer?.invalidate()
+        for task in self.avatarUploadTasks.values {
+            task.cancel()
+        }
         for observer in self.lifecycleObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -120,6 +159,7 @@ public final class MellowsgramBarkNotificationManager {
         }
         self.accounts = updatedAccounts
         self.primaryAccountId = activeAccounts.primary?.account.id
+        self.lastAvatarScanTimestamp = 0.0
         self.scheduleReconcile()
     }
 
@@ -233,6 +273,7 @@ public final class MellowsgramBarkNotificationManager {
             }
 
             guard let token else {
+                self.stopAvatarSync()
                 if let storedRegistration {
                     let remainingIds = self.registeredTokens
                         .compactMap { entry -> Int64? in
@@ -263,6 +304,12 @@ public final class MellowsgramBarkNotificationManager {
             } else if !registeredIds.isEmpty {
                 self.scheduleRegistrationRefresh()
             }
+            if self.isAppForeground {
+                self.syncAvatarCache()
+                self.startAvatarRefreshTimer()
+            } else {
+                self.stopAvatarSync()
+            }
         }))
     }
 
@@ -283,7 +330,22 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func updateForegroundPresenceToken(_ token: Data?) {
+        let relayCredentials = token.flatMap { Self.makeRelayCredentials(token: $0) }
         let updatedURL = token.flatMap { Self.makeForegroundPresenceURL(token: $0) }
+        if self.avatarSubscriptionRoute != relayCredentials?.route {
+            self.stopAvatarSync()
+            self.avatarUploadStatePersistenceWorkItem?.cancel()
+            self.avatarUploadStatePersistenceWorkItem = nil
+            self.uploadedAvatarStates.removeAll()
+            self.avatarUploadStateStorageKey = relayCredentials.map { Self.avatarUploadStateStorageKey(for: $0.route) }
+            if let storageKey = self.avatarUploadStateStorageKey,
+               let data = UserDefaults.standard.data(forKey: storageKey),
+               let states = try? JSONDecoder().decode([String: UploadedAvatarState].self, from: data) {
+                self.uploadedAvatarStates = states
+            }
+        }
+        self.avatarSubscriptionRoute = relayCredentials?.route
+        self.avatarAuthSecret = relayCredentials?.authSecret
         guard self.foregroundPresenceURL?.absoluteString != updatedURL?.absoluteString else {
             return
         }
@@ -294,9 +356,12 @@ public final class MellowsgramBarkNotificationManager {
         if self.isAppForeground {
             self.sendForegroundPresence(active: true)
             self.startForegroundPresenceTimer()
+            self.syncAvatarCache()
+            self.startAvatarRefreshTimer()
         } else {
             self.foregroundPresenceTimer?.invalidate()
             self.foregroundPresenceTimer = nil
+            self.stopAvatarSync()
         }
     }
 
@@ -307,7 +372,342 @@ public final class MellowsgramBarkNotificationManager {
         self.sendForegroundPresence(active: value)
         if value {
             self.startForegroundPresenceTimer()
+            self.syncAvatarCache()
+            self.startAvatarRefreshTimer()
+        } else {
+            self.stopAvatarSync()
         }
+    }
+
+    private func startAvatarRefreshTimer() {
+        guard self.isAppForeground, self.avatarSubscriptionRoute != nil, self.avatarRefreshTimer == nil else {
+            return
+        }
+        let timer = SwiftSignalKit.Timer(timeout: Self.avatarRefreshInterval, repeat: true, completion: { [weak self] in
+            self?.syncAvatarCache()
+        }, queue: .mainQueue())
+        self.avatarRefreshTimer = timer
+        timer.start()
+    }
+
+    private func stopAvatarSync() {
+        self.avatarRefreshTimer?.invalidate()
+        self.avatarRefreshTimer = nil
+        self.lastAvatarScanTimestamp = 0.0
+        self.avatarScanDisposable.set(nil)
+        self.avatarImageProcessingQueue.cancelAllOperations()
+        for task in self.avatarUploadTasks.values {
+            task.cancel()
+        }
+        self.avatarUploadTasks.removeAll()
+        self.pendingAvatarPeerIds.removeAll()
+    }
+
+    private func syncAvatarCache() {
+        guard self.isAppForeground,
+              self.globalSettings.bool(for: .barkNotificationsEnabled),
+              let route = self.avatarSubscriptionRoute,
+              let authSecret = self.avatarAuthSecret,
+              !MellowsgramBarkCredentialStore.deviceKey.isEmpty
+        else {
+            self.stopAvatarSync()
+            return
+        }
+
+        let selectedContexts: [AccountContext]
+        if self.globalSettings.bool(for: .barkAllAccounts) {
+            selectedContexts = self.accounts.keys.sorted { $0.int64 < $1.int64 }.compactMap { self.accounts[$0] }
+        } else if let primaryAccountId = self.primaryAccountId, let context = self.accounts[primaryAccountId] {
+            selectedContexts = [context]
+        } else {
+            selectedContexts = []
+        }
+        guard !selectedContexts.isEmpty else {
+            self.stopAvatarSync()
+            return
+        }
+        let now = Date.timeIntervalSinceReferenceDate
+        guard now - self.lastAvatarScanTimestamp >= 60.0 else {
+            return
+        }
+        self.lastAvatarScanTimestamp = now
+
+        let scanDisposables = DisposableSet()
+        self.avatarScanDisposable.set(scanDisposables)
+        self.remainingAvatarPeerBudget = Self.maxAvatarPeersPerSync
+
+        for context in selectedContexts {
+            for group in [EngineChatList.Group.root, .archive] {
+                let listSignal = context.engine.messages.chatList(group: group, count: 100)
+                scanDisposables.add((listSignal
+                |> take(1)
+                |> deliverOnMainQueue).startStrict(next: { [weak self] chatList in
+                    guard let self,
+                          self.isAppForeground,
+                          self.avatarSubscriptionRoute == route
+                    else {
+                        return
+                    }
+                    let peers = Self.avatarCandidates(from: chatList)
+                    let ownPeerId = context.account.peerId
+                    for peer in peers {
+                        guard self.remainingAvatarPeerBudget > 0 else {
+                            break
+                        }
+                        guard case .user = peer,
+                              let peerId = Self.userPeerIdValue(peer),
+                              peer.id != ownPeerId,
+                              !self.pendingAvatarPeerIds.contains(peerId),
+                              let representation = peer.smallProfileImage
+                        else {
+                            continue
+                        }
+                        self.pendingAvatarPeerIds.insert(peerId)
+                        self.remainingAvatarPeerBudget -= 1
+
+                        let dataSignal = context.account.postbox.mediaBox.resourceData(
+                            representation.resource,
+                            option: .complete(waitUntilFetchStatus: false),
+                            attemptSynchronously: false
+                        )
+                        scanDisposables.add((dataSignal
+                        |> take(1)
+                        |> deliverOnMainQueue).startStrict(next: { [weak self] resourceData in
+                            guard let self,
+                                  self.isAppForeground,
+                                  self.avatarSubscriptionRoute == route,
+                                  resourceData.complete
+                            else {
+                                self?.clearPendingAvatar(peerId, route: route)
+                                return
+                            }
+                            self.avatarImageProcessingQueue.addOperation { [weak self] in
+                                guard let imageData = Self.makeAvatarThumbnail(path: resourceData.path) else {
+                                    DispatchQueue.main.async {
+                                        self?.clearPendingAvatar(peerId, route: route)
+                                    }
+                                    return
+                                }
+                                let digest = Self.sha256(imageData)
+                                DispatchQueue.main.async {
+                                    guard let self,
+                                          self.isAppForeground,
+                                          self.avatarSubscriptionRoute == route
+                                    else {
+                                        self?.clearPendingAvatar(peerId, route: route)
+                                        return
+                                    }
+                                    let now = Date.timeIntervalSinceReferenceDate
+                                    let peerStateKey = Self.avatarStatePeerKey(peerId)
+                                    if let previous = self.uploadedAvatarStates[peerStateKey],
+                                       previous.digest == digest,
+                                       now - previous.timestamp < Self.avatarUploadRefreshInterval {
+                                        self.pendingAvatarPeerIds.remove(peerId)
+                                        return
+                                    }
+                                    self.uploadAvatar(imageData, digest: digest, peerId: peerId, route: route, authSecret: authSecret)
+                                }
+                            }
+                        }))
+                    }
+                }))
+            }
+        }
+    }
+
+    private func uploadAvatar(_ imageData: Data, digest: String, peerId: Int64, route: String, authSecret: Data) {
+        guard self.isAppForeground,
+              self.avatarSubscriptionRoute == route,
+              let url = Self.makeAvatarUploadURL()
+        else {
+            self.clearPendingAvatar(peerId, route: route)
+            return
+        }
+
+        let signedValue = "mellowsgram-avatar-v1\n\(peerId)\n\(digest)"
+        let signature = HMAC<SHA256>.authenticationCode(
+            for: Data(signedValue.utf8),
+            using: SymmetricKey(data: authSecret)
+        )
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10.0)
+        request.httpMethod = "PUT"
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue(Self.foregroundPresenceHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
+        request.setValue(route, forHTTPHeaderField: Self.avatarSubscriptionHeader)
+        request.setValue(String(peerId), forHTTPHeaderField: Self.avatarPeerIdHeader)
+        request.setValue(Data(signature).map { String(format: "%02x", $0) }.joined(), forHTTPHeaderField: "X-Mellowsgram-Signature")
+
+        let uploadId = UUID()
+        let task = URLSession.shared.uploadTask(with: request, from: imageData) { [weak self] _, response, _ in
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                self.avatarUploadTasks.removeValue(forKey: uploadId)
+                guard self.avatarSubscriptionRoute == route else {
+                    return
+                }
+                self.pendingAvatarPeerIds.remove(peerId)
+                guard self.isAppForeground,
+                      let response = response as? HTTPURLResponse,
+                      response.statusCode == 204
+                else {
+                    return
+                }
+                self.uploadedAvatarStates[Self.avatarStatePeerKey(peerId)] = UploadedAvatarState(digest: digest, timestamp: Date.timeIntervalSinceReferenceDate)
+                if self.uploadedAvatarStates.count > Self.maxAvatarPeersPerSync {
+                    let excess = self.uploadedAvatarStates.count - Self.maxAvatarPeersPerSync
+                    let oldestKeys = self.uploadedAvatarStates
+                        .sorted { $0.value.timestamp < $1.value.timestamp }
+                        .prefix(excess)
+                        .map(\.key)
+                    for key in oldestKeys {
+                        self.uploadedAvatarStates.removeValue(forKey: key)
+                    }
+                }
+                self.schedulePersistAvatarUploadStates()
+            }
+        }
+        self.avatarUploadTasks[uploadId] = task
+        task.resume()
+    }
+
+    private func clearPendingAvatar(_ peerId: Int64, route: String) {
+        guard self.avatarSubscriptionRoute == route else {
+            return
+        }
+        self.pendingAvatarPeerIds.remove(peerId)
+    }
+
+    private func schedulePersistAvatarUploadStates() {
+        guard let storageKey = self.avatarUploadStateStorageKey else {
+            return
+        }
+        self.avatarUploadStatePersistenceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.avatarUploadStateStorageKey == storageKey,
+                  let data = try? JSONEncoder().encode(self.uploadedAvatarStates)
+            else {
+                return
+            }
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+        self.avatarUploadStatePersistenceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: workItem)
+    }
+
+    private static func avatarCandidates(from chatList: EngineChatList) -> [EnginePeer] {
+        var result: [EnginePeer] = []
+        var seen = Set<Int64>()
+
+        func append(_ peer: EnginePeer?) {
+            guard let peer,
+                  case .user = peer,
+                  let peerId = Self.userPeerIdValue(peer),
+                  seen.insert(peerId).inserted
+            else {
+                return
+            }
+            result.append(peer)
+        }
+
+        for item in chatList.items {
+            for message in item.messages {
+                append(message.author)
+            }
+            append(item.renderedPeer.peer)
+            for peerId in item.renderedPeer.peers.keys.sorted() {
+                append(item.renderedPeer.peers[peerId])
+            }
+        }
+        for groupItem in chatList.groupItems {
+            append(groupItem.topMessage?.author)
+            for item in groupItem.items {
+                append(item.peer.peer)
+            }
+        }
+        return result
+    }
+
+    private static func userPeerIdValue(_ peer: EnginePeer) -> Int64? {
+        guard case .user = peer else {
+            return nil
+        }
+        let value = peer.id.id._internalGetInt64Value()
+        return value > 0 ? value : nil
+    }
+
+    private static func makeAvatarThumbnail(path: String) -> Data? {
+        guard let source = UIImage(contentsOfFile: path), source.size.width > 0.0, source.size.height > 0.0 else {
+            return nil
+        }
+        let size = CGSize(width: Self.avatarThumbnailSide, height: Self.avatarThumbnailSide)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let thumbnail = renderer.image { context in
+            UIColor.white.setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            let scale = max(size.width / source.size.width, size.height / source.size.height)
+            let drawSize = CGSize(width: source.size.width * scale, height: source.size.height * scale)
+            let drawRect = CGRect(x: (size.width - drawSize.width) * 0.5, y: (size.height - drawSize.height) * 0.5, width: drawSize.width, height: drawSize.height)
+            source.draw(in: drawRect)
+        }
+        for quality: CGFloat in [0.72, 0.58, 0.42] {
+            if let data = thumbnail.jpegData(compressionQuality: quality), data.count <= 12 * 1024 {
+                return data
+            }
+        }
+        return nil
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func avatarStatePeerKey(_ peerId: Int64) -> String {
+        return Self.sha256(Data(String(peerId).utf8))
+    }
+
+    private static func avatarUploadStateStorageKey(for route: String) -> String {
+        return "mellowsgram.avatar-upload-state.\(Self.sha256(Data(route.utf8)))"
+    }
+
+    private static func makeRelayCredentials(token: Data) -> (route: String, authSecret: Data)? {
+        guard let webPushToken = try? JSONDecoder().decode(WebPushToken.self, from: token),
+              let endpointURL = URL(string: webPushToken.endpoint),
+              endpointURL.host == "push.mellowsgram.cc"
+        else {
+            return nil
+        }
+        let pathComponents = endpointURL.path.split(separator: "/")
+        guard pathComponents.count == 2,
+              pathComponents[0] == "p",
+              let authSecret = Self.decodeBase64URL(webPushToken.keys.auth),
+              authSecret.count == 16
+        else {
+            return nil
+        }
+        return (String(pathComponents[1]), authSecret)
+    }
+
+    private static func makeAvatarUploadURL() -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "push.mellowsgram.cc"
+        components.path = "/avatar"
+        return components.url
+    }
+
+    private static func decodeBase64URL(_ value: String) -> Data? {
+        var normalized = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        let remainder = normalized.count % 4
+        if remainder != 0 {
+            normalized.append(String(repeating: "=", count: 4 - remainder))
+        }
+        return Data(base64Encoded: normalized)
     }
 
     private func startForegroundPresenceTimer() {
@@ -334,20 +734,13 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private static func makeForegroundPresenceURL(token: Data) -> URL? {
-        guard let webPushToken = try? JSONDecoder().decode(WebPushToken.self, from: token),
-              let endpointURL = URL(string: webPushToken.endpoint),
-              endpointURL.host == "push.mellowsgram.cc"
-        else {
-            return nil
-        }
-        let pathComponents = endpointURL.path.split(separator: "/")
-        guard pathComponents.count == 2, pathComponents[0] == "p" else {
+        guard let credentials = Self.makeRelayCredentials(token: token) else {
             return nil
         }
         var components = URLComponents()
         components.scheme = "https"
-        components.host = endpointURL.host
-        components.path = "/presence/\(pathComponents[1])"
+        components.host = "push.mellowsgram.cc"
+        components.path = "/presence/\(credentials.route)"
         return components.url
     }
 
