@@ -386,7 +386,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         requestUpdateLayoutImpl = { [weak self] in
             self?.requestUpdateLayout?(false)
         }
-        
+
         self.view.addSubview(self.backgroundBannerView)
         self.titleNodeContainer.addSubnode(self.titleNode)
         self.subtitleNodeContainer.addSubnode(self.subtitleNode)
@@ -1277,6 +1277,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var displayStandardTitle = false
         
         if let peer = peer {
+            let hidePhoneInSettings = self.isSettings && MellowsgramGlobalSettingsRuntime.shared.bool(for: .hidePhoneInSettings)
             var title: String
             if peer.id == self.context.account.peerId && !self.isSettings && !self.isMyProfile {
                 if case .replyThread = self.chatLocation {
@@ -1297,7 +1298,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 title = "" //"\u{00A0}"
             }
             if title.isEmpty {
-                if case let .user(user) = peer, let phone = user.phone {
+                if !hidePhoneInSettings, case let .user(user) = peer, let phone = user.phone {
                     title = formatPhoneNumber(context: self.context, number: phone)
                 } else if let addressName = peer.addressName {
                     title = "@\(addressName)"
@@ -1306,17 +1307,26 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 }
             }
 
+            let badgeText = MellowsgramBadgeRuntime.shared.badgeText(
+                peerNamespace: peer.id.namespace,
+                peerId: peer.id.id._internalGetInt64Value()
+            )
+            if !badgeText.isEmpty {
+                title += "  \(badgeText)"
+            }
             titleStringText = title
             titleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white)
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)
             
             if self.isSettings, case let .user(user) = peer {
-                var subtitle = formatPhoneNumber(context: self.context, number: user.phone ?? "")
-                
-                if let mainUsername = user.addressName, !mainUsername.isEmpty {
-                    subtitle = "\(subtitle) • @\(mainUsername)"
+                var subtitleComponents: [String] = []
+                if !hidePhoneInSettings, let phone = user.phone, !phone.isEmpty {
+                    subtitleComponents.append(formatPhoneNumber(context: self.context, number: phone))
                 }
-                subtitleStringText = subtitle
+                if let mainUsername = user.addressName, !mainUsername.isEmpty {
+                    subtitleComponents.append("@\(mainUsername)")
+                }
+                subtitleStringText = subtitleComponents.joined(separator: " • ")
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: .white)
                 smallSubtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white, shadowColor: titleShadowColor)
                 
@@ -1325,7 +1335,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 let subtitleColor: UIColor
                 subtitleColor = .white
                 
-                subtitleStringText = presentationData.strings.Presence_online
+                // Use the server-provided User.status. Local online-presence
+                // policy (including Ghost Mode) describes what we send, not
+                // what Telegram currently reports for this account.
+                subtitleStringText = statusData?.text ?? ""
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: subtitleColor)
                 smallSubtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white, shadowColor: titleShadowColor)
                 

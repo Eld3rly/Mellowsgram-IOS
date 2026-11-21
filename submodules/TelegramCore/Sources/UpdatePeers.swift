@@ -477,8 +477,6 @@ func updatePeerPresences(transaction: Transaction, accountPeerId: PeerId, peerPr
         }
     }
         
-    parsedPresences.removeValue(forKey: accountPeerId)
-        
     transaction.updatePeerPresencesInternal(presences: parsedPresences, merge: { previous, updated in
         if let previous = previous as? TelegramUserPresence, let updated = updated as? TelegramUserPresence, previous.lastActivity != updated.lastActivity {
             return TelegramUserPresence(status: updated.status, lastActivity: max(previous.lastActivity, updated.lastActivity))
@@ -500,10 +498,6 @@ func updatePeerPresencesClean(transaction: Transaction, accountPeerId: PeerId, p
                 parsedPresences[peerId] = presence
             }
         }
-    }
-    
-    if parsedPresences[accountPeerId] != nil {
-        parsedPresences.removeValue(forKey: accountPeerId)
     }
     
     transaction.updatePeerPresencesInternal(presences: parsedPresences, merge: { previous, updated in

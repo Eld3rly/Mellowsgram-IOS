@@ -2494,7 +2494,11 @@ final class PostboxImpl {
         }
         let timestamp = Int32(Date().timeIntervalSince1970)
         for index in indices {
-            guard index.id.namespace == 0 || index.id.namespace == 1 else {
+            // Local pending messages are removed when Telegram confirms the
+            // send and replaces their temporary id with a cloud message id.
+            // That lifecycle cleanup is not a user deletion and must not
+            // create a Mellowsgram tombstone beside the confirmed message.
+            guard index.id.namespace == 0 else {
                 continue
             }
             if let message = self.messageHistoryTable.getMessage(index) {
@@ -3307,7 +3311,7 @@ final class PostboxImpl {
         if let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) {
             let message = self.renderIntermediateMessage(intermediateMessage)
             if case let .update(updatedMessage) = update(message) {
-                if self.mellowsgramSaveEditedMessagesEnabled && (id.namespace == 0 || id.namespace == 1) {
+                if self.mellowsgramSaveEditedMessagesEnabled && id.namespace == 0 {
                     self.mellowsgramMessageArchiveTable.archiveRevision(previousMessage: intermediateMessage, updatedMessage: updatedMessage, timestamp: Int32(Date().timeIntervalSince1970))
                     self.addAfterCommitAction { [weak self] in
                         self?.mellowsgramArchiveEventsPipe.putNext(id.peerId)

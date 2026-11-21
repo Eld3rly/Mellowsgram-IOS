@@ -615,6 +615,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
             && self.availableFilters.first?.id == self.selectedId
             && !recognizer.currentAllowedDirections.intersection(.right).isEmpty
             && self.controller?.isStoryPostingAvailable == true
+            && !MellowsgramGlobalSettingsRuntime.shared.bool(for: .disableSwipeToRecordStory)
             && !(self.context.sharedContext.callManager?.hasActiveCall ?? false)
         let hasLiveStream = canOpenStoryCamera && self.controller?.chatListHeaderView()?.storyPeerListView()?.isLiveStreaming == true
         
@@ -1570,6 +1571,13 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         if self.controller?.tabContainerData != nil || !panels.isEmpty {
             var tabs: AnyComponent<Empty>?
             if let tabContainerData = self.controller?.tabContainerData, tabContainerData.0.count > 1 {
+                let hideAllChats = MellowsgramGlobalSettingsRuntime.shared.bool(for: .hideAllChats)
+                let visibleTabEntries = tabContainerData.0.filter { entry in
+                    if hideAllChats, case .all = entry {
+                        return false
+                    }
+                    return true
+                }
                 let folderFilterIndex: (ChatListFilterTabEntryId, [ChatListFilterTabEntry]) -> Int? = { id, entries in
                     var index = 0
                     for entry in entries {
@@ -1602,7 +1610,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 tabs = AnyComponent(HorizontalTabsComponent(
                     context: self.context,
                     theme: self.presentationData.theme,
-                    tabs: tabContainerData.0.map { entry -> HorizontalTabsComponent.Tab in
+                    tabs: visibleTabEntries.map { entry -> HorizontalTabsComponent.Tab in
                         let id: HorizontalTabsComponent.Tab.Id
                         let title: HorizontalTabsComponent.Tab.Title
                         var badge: HorizontalTabsComponent.Tab.Badge?
@@ -1611,7 +1619,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         switch entry {
                         case .all:
                             id = Int32.min
-                            title = HorizontalTabsComponent.Tab.Title(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
+                            let allChatsTitle = MellowsgramGlobalSettingsRuntime.shared.value(for: .allChatsTitle)
+                            let titleText = allChatsTitle == "long" ? self.presentationData.strings.ChatList_Tabs_AllChats : self.presentationData.strings.ChatList_Tabs_All
+                            title = HorizontalTabsComponent.Tab.Title(text: titleText, entities: [], enableAnimations: false)
                             isMainTab = true
                         case let .filter(idValue, text, unread):
                             id = AnyHashable(idValue)
@@ -2569,6 +2579,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 }
 
 func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
+    if MellowsgramGlobalSettingsRuntime.shared.bool(for: .hideStories) {
+        return false
+    }
     if !storySubscriptions.items.isEmpty {
         return true
     }

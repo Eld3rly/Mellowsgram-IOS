@@ -37,7 +37,9 @@ private func mellowsgramArchiveRecordsForView(
             holeLater: view.holeLater,
             isLoading: view.isLoading,
             historyAppearsCleared: historyAppearsCleared
-        )
+        ),
+        excludedPeerNamespaces: Set([Namespaces.Peer.SecretChat]),
+        excludedMessageNamespaces: Namespaces.Message.allEphemeral
     )
 }
 
@@ -62,6 +64,38 @@ private func mellowsgramPendingMessageIsVisibleInHistory(_ message: EngineRawMes
     } else {
         return true
     }
+}
+
+/// Returns a detached Mellowsgram row with a stable identity that is unique in
+/// the current history projection. Archived rows normally retain the original
+/// Postbox stable id so a deletion can update the live row in place. Once that
+/// live row is gone, an old archive record can collide with a live or
+/// synthetic row from a newer history snapshot. MergeLists asserts on such a
+/// duplicate stable id in DEBUG builds.
+///
+/// Live rows never use this helper: they keep their original identity for the
+/// in-place tombstone transition. Only detached archive projections are
+/// remapped when a collision is actually present.
+private func mellowsgramMessageEntryWithUniqueStableId(
+    _ message: EngineRawMessage,
+    presentationData: ChatPresentationData,
+    occupiedStableIds: inout Set<UInt64>
+) -> ChatHistoryEntry {
+    let messageEntryType: UInt64 = UInt64(2) << 40
+    var projectedMessage = message
+    var entryStableId = UInt64(projectedMessage.stableId) | messageEntryType
+
+    if occupiedStableIds.contains(entryStableId) {
+        var candidateStableId = projectedMessage.stableId &+ 1
+        while occupiedStableIds.contains(UInt64(candidateStableId) | messageEntryType) {
+            candidateStableId = candidateStableId &+ 1
+        }
+        projectedMessage = projectedMessage.withUpdatedStableId(stableId: candidateStableId)
+        entryStableId = UInt64(candidateStableId) | messageEntryType
+    }
+
+    occupiedStableIds.insert(entryStableId)
+    return .MessageEntry(projectedMessage, presentationData, true, nil, .none, ChatMessageEntryAttributes())
 }
 
 struct ChatHistoryEntriesForViewState {
@@ -917,7 +951,15 @@ func chatHistoryEntriesForView(
     }
 
     if mellowsgramShowDeletedMessages {
-        for (messageId, snapshot) in mellowsgramPendingDeletedMessageSnapshots {
+        var occupiedMellowsgramEntryStableIds = Set(entries.map { $0.stableId })
+
+        for (messageId, snapshot) in mellowsgramPendingDeletedMessageSnapshots.sorted(by: { lhs, rhs in
+            if lhs.value.index == rhs.value.index {
+                return lhs.key < rhs.key
+            } else {
+                return lhs.value.index < rhs.value.index
+            }
+        }) {
             guard let peerId = location.peerId,
                   snapshot.id.peerId == peerId,
                   snapshot.threadId == location.threadId,
@@ -927,7 +969,11 @@ func chatHistoryEntriesForView(
                 continue
             }
             let message = engineMellowsgramDeletedMessage(message: snapshot, translucent: mellowsgramTranslucentDeletedMessages)
-            entries.append(.MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes()))
+            entries.append(mellowsgramMessageEntryWithUniqueStableId(
+                message,
+                presentationData: presentationData,
+                occupiedStableIds: &occupiedMellowsgramEntryStableIds
+            ))
             projectedMellowsgramMessageIds.insert(messageId)
         }
 
@@ -938,7 +984,12 @@ func chatHistoryEntriesForView(
             } else {
                 message = mellowsgramArchivedMessage(record: record)
             }
-            entries.append(.MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes()))
+            entries.append(mellowsgramMessageEntryWithUniqueStableId(
+                message,
+                presentationData: presentationData,
+                occupiedStableIds: &occupiedMellowsgramEntryStableIds
+            ))
+            projectedMellowsgramMessageIds.insert(record.messageId)
         }
         entries.sort()
     }

@@ -896,13 +896,13 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
             let _ = peerType
             let message = engineMessage._asMessage()
             let media = engineMedia._asMedia()
-            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(EngineRawMessage(message))
+            let isMellowsgramDeletedMessage = engineMellowsgramMessageIsDeleted(message)
 
             // Deleted rows keep their original media descriptors but no longer
             // have a live Postbox message to use as a media reference. Standalone
             // references still use the same MediaBox resources and let the
             // regular Telegram renderer/gallery operate normally.
-            func mellowsgramAnyMediaReference(_ media: Media) -> AnyMediaReference {
+            func mellowsgramAnyMediaReference(_ media: EngineRawMedia) -> AnyMediaReference {
                 if isMellowsgramDeletedMessage {
                     return .standalone(media: media)
                 } else {

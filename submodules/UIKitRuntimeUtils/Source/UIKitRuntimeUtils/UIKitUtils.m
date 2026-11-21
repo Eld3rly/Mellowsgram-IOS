@@ -296,7 +296,22 @@ NSObject * _Nullable makeColorMatrixFilter() {
 
 static const void *layerDisableScreenshotsKey = &layerDisableScreenshotsKey;
 
-void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots) {
+// The default is deliberately off. The setting is app-wide because the secure
+// text-field canvas is a process/UI concern, not an account-scoped preference.
+static bool mellowsgramScreenshotProtectionEnabled = false;
+static NSHashTable<CALayer *> *mellowsgramScreenshotLayers;
+static NSObject *mellowsgramScreenshotLayersLock;
+static NSString * const mellowsgramScreenshotProtectionDidChangeNotification = @"MellowsgramScreenshotProtectionDidChange";
+
+static void initializeMellowsgramScreenshotLayers(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        mellowsgramScreenshotLayers = [NSHashTable weakObjectsHashTable];
+        mellowsgramScreenshotLayersLock = [[NSObject alloc] init];
+    });
+}
+
+static bool applyLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots) {
     static UITextField *textField = nil;
     static UIView *secureView = nil;
     static dispatch_once_t onceToken;
@@ -310,9 +325,9 @@ void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshot
         }
     });
     if (secureView == nil) {
-        return;
+        return false;
     }
-    
+
     CALayer *previousLayer = secureView.layer;
     [secureView setValue:layer forKey:@"layer"];
     if (disableScreenshots) {
@@ -323,8 +338,63 @@ void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshot
         textField.secureTextEntry = false;
     }
     [secureView setValue:previousLayer forKey:@"layer"];
-    
-    [layer setAssociatedObject:@(disableScreenshots) forKey:layerDisableScreenshotsKey associationPolicy:NSObjectAssociationPolicyRetain];
+    return true;
+}
+
+static void updateMellowsgramScreenshotProtection(bool enabled) {
+    mellowsgramScreenshotProtectionEnabled = enabled;
+
+    initializeMellowsgramScreenshotLayers();
+    NSArray<CALayer *> *layers;
+    @synchronized (mellowsgramScreenshotLayersLock) {
+        layers = mellowsgramScreenshotLayers.allObjects;
+    }
+    for (CALayer *layer in layers) {
+        bool applied = enabled && applyLayerDisableScreenshots(layer, true);
+        [layer setAssociatedObject:@(applied) forKey:layerDisableScreenshotsKey associationPolicy:NSObjectAssociationPolicyRetain];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:mellowsgramScreenshotProtectionDidChangeNotification object:nil];
+}
+
+void setMellowsgramScreenshotProtectionEnabled(bool enabled) {
+    if ([NSThread isMainThread]) {
+        updateMellowsgramScreenshotProtection(enabled);
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            updateMellowsgramScreenshotProtection(enabled);
+        });
+    }
+}
+
+bool getMellowsgramScreenshotProtectionEnabled(void) {
+    return mellowsgramScreenshotProtectionEnabled;
+}
+
+void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots) {
+    initializeMellowsgramScreenshotLayers();
+    bool wasDisabled = getLayerDisableScreenshots(layer);
+
+    @synchronized (mellowsgramScreenshotLayersLock) {
+        if (disableScreenshots) {
+            [mellowsgramScreenshotLayers addObject:layer];
+        } else {
+            [mellowsgramScreenshotLayers removeObject:layer];
+        }
+    }
+
+    if (!disableScreenshots || !mellowsgramScreenshotProtectionEnabled) {
+        // If the setting was switched off after a protected layer was created,
+        // remove the old secure-canvas state the next time that layer is laid
+        // out again.
+        if (wasDisabled) {
+            (void)applyLayerDisableScreenshots(layer, false);
+        }
+        [layer setAssociatedObject:@(false) forKey:layerDisableScreenshotsKey associationPolicy:NSObjectAssociationPolicyRetain];
+        return;
+    }
+
+    bool applied = applyLayerDisableScreenshots(layer, true);
+    [layer setAssociatedObject:@(applied) forKey:layerDisableScreenshotsKey associationPolicy:NSObjectAssociationPolicyRetain];
 }
 
 bool getLayerDisableScreenshots(CALayer * _Nonnull layer) {

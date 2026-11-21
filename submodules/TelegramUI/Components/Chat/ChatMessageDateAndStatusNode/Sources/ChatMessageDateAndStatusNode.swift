@@ -5,6 +5,7 @@ import TelegramCore
 import Display
 import SwiftSignalKit
 import TelegramPresentationData
+import TelegramUIPreferences
 import AccountContext
 import AppBundle
 import ReactionButtonListComponent
@@ -611,7 +612,8 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             
             var updatedDateText = arguments.dateText
             if arguments.deleted {
-                updatedDateText = "🗑 Удалённое сообщение \(updatedDateText)"
+                let deletedLabel = mellowsgramLocalizedString(english: "🗑 Deleted message", russian: "🗑 Удалённое сообщение", languageCode: arguments.presentationData.strings.primaryComponent.languageCode)
+                updatedDateText = "\(deletedLabel) \(updatedDateText)"
             } else if arguments.edited {
                 if let useEditedTimestamp = arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool, useEditedTimestamp {
                 } else {

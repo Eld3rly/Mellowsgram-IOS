@@ -45,7 +45,11 @@ extension ChatControllerImpl {
     }
 
     func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
-        if messages.contains(where: { engineMellowsgramMessageIsDeleted($0) }) {
+        let hasProtectedChannelOrGroupMessage = messages.contains { message in
+            return (message.isCopyProtected() || self.presentationInterfaceState.copyProtectionEnabled || self.presentationInterfaceState.myCopyProtectionEnabled)
+                && mellowsgramCanBypassCopyProtection(message: message)
+        }
+        if messages.contains(where: { engineMellowsgramMessageIsDeleted($0) }) || hasProtectedChannelOrGroupMessage {
             self.forwardMellowsgramMessages(messages: messages)
             return
         }
@@ -543,9 +547,9 @@ extension ChatControllerImpl {
     }
 
     /// For a Mellowsgram tombstone the original Telegram row is intentionally
-    /// gone from Postbox, so a normal `.forward(source:)` enqueue would only
-    /// carry a dead MessageId and produce nothing. Rebuild the outgoing item
-    /// from the in-memory projection and use standalone media references.
+    /// gone from Postbox. Protected channel/group posts have a similar issue:
+    /// Telegram rejects a native `.forward(source:)` request. Rebuild both
+    /// cases as normal outgoing messages and use standalone media references.
     private func forwardMellowsgramMessages(messages: [EngineRawMessage]) {
         let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
             guard let self else {
@@ -575,77 +579,93 @@ extension ChatControllerImpl {
                     return
                 }
 
-                var outgoing: [EnqueueMessage] = []
+                let mediaSignals: [Signal<[EngineMedia], NoError>] = messages.map { message in
+                    return mellowsgramLocallyAvailableSavedMedia(context: context, media: message.effectiveMedia.map(EngineMedia.init))
+                }
 
-                if !messageText.string.isEmpty {
-                    let inputText = convertMarkdownToAttributes(messageText)
-                    for text in breakChatInputText(trimChatInputText(inputText)) where text.length != 0 {
-                        var attributes: [EngineMessage.Attribute] = []
-                        let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
-                        if !entities.isEmpty {
-                            attributes.append(TextEntitiesMessageAttribute(entities: entities))
+                let _ = (combineLatest(mediaSignals)
+                |> deliverOnMainQueue).startStandalone(next: { availableMediaByMessage in
+                    var outgoing: [EnqueueMessage] = []
+
+                    if !messageText.string.isEmpty {
+                        let inputText = convertMarkdownToAttributes(messageText)
+                        for text in breakChatInputText(trimChatInputText(inputText)) where text.length != 0 {
+                            var attributes: [EngineMessage.Attribute] = []
+                            let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                            if !entities.isEmpty {
+                                attributes.append(TextEntitiesMessageAttribute(entities: entities))
+                            }
+                            outgoing.append(.message(
+                                text: text.string,
+                                attributes: attributes,
+                                inlineStickers: [:],
+                                mediaReference: nil,
+                                threadId: nil,
+                                replyToMessageId: nil,
+                                replyToStoryId: nil,
+                                localGroupingKey: nil,
+                                correlationId: nil,
+                                bubbleUpEmojiOrStickersets: []
+                            ))
                         }
-                        outgoing.append(.message(
-                            text: text.string,
-                            attributes: attributes,
-                            inlineStickers: [:],
-                            mediaReference: nil,
-                            threadId: nil,
-                            replyToMessageId: nil,
-                            replyToStoryId: nil,
-                            localGroupingKey: nil,
-                            correlationId: nil,
-                            bubbleUpEmojiOrStickersets: []
-                        ))
-                    }
-                }
-
-                for message in messages {
-                    let media: Media? = message.effectiveMedia.first(where: { media in
-                        // Keep every forwardable media descriptor from the
-                        // archived projection: photos, videos, circles,
-                        // voice/audio, files, GIFs, stickers, polls, maps,
-                        // contacts and webpages all use Telegram's normal
-                        // enqueue path. Service/expired/story wrappers are
-                        // not standalone outgoing message content.
-                        return !(media is TelegramMediaAction) &&
-                            !(media is TelegramMediaExpiredContent) &&
-                            !(media is TelegramMediaStory)
-                    })
-                    let text = forwardOptions?.hideCaptions == true ? "" : message.text
-                    var attributes: [EngineMessage.Attribute] = []
-                    if !text.isEmpty, let textEntities = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) as? TextEntitiesMessageAttribute {
-                        attributes.append(textEntities)
                     }
 
-                    guard !text.isEmpty || media != nil else {
-                        continue
+                    for (message, availableMedia) in zip(messages, availableMediaByMessage) {
+                        let text = forwardOptions?.hideCaptions == true ? "" : message.text
+                        var textAttributes: [EngineMessage.Attribute] = []
+                        if !text.isEmpty, let textEntities = message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) as? TextEntitiesMessageAttribute {
+                            textAttributes.append(textEntities)
+                        }
+
+                        if availableMedia.isEmpty {
+                            if !text.isEmpty {
+                                outgoing.append(.message(
+                                    text: text,
+                                    attributes: textAttributes,
+                                    inlineStickers: [:],
+                                    mediaReference: nil,
+                                    threadId: nil,
+                                    replyToMessageId: nil,
+                                    replyToStoryId: nil,
+                                    localGroupingKey: nil,
+                                    correlationId: nil,
+                                    bubbleUpEmojiOrStickersets: []
+                                ))
+                            }
+                        } else {
+                            var groupingKey: Int64? = availableMedia.count > 1 ? Int64.random(in: .min ..< .max) : nil
+                            for (index, media) in availableMedia.enumerated() {
+                                if index > 0 && index % 10 == 0 {
+                                    groupingKey = Int64.random(in: .min ..< .max)
+                                }
+                                let isLast = index == availableMedia.count - 1
+                                outgoing.append(.message(
+                                    text: isLast ? text : "",
+                                    attributes: isLast ? textAttributes : [],
+                                    inlineStickers: [:],
+                                    mediaReference: .standalone(media: media._asMedia()),
+                                    threadId: nil,
+                                    replyToMessageId: nil,
+                                    replyToStoryId: nil,
+                                    localGroupingKey: groupingKey,
+                                    correlationId: nil,
+                                    bubbleUpEmojiOrStickersets: []
+                                ))
+                            }
+                        }
                     }
 
-                    outgoing.append(.message(
-                        text: text,
-                        attributes: attributes,
-                        inlineStickers: [:],
-                        mediaReference: media.flatMap { AnyMediaReference.standalone(media: $0) },
-                        threadId: nil,
-                        replyToMessageId: nil,
-                        replyToStoryId: nil,
-                        localGroupingKey: nil,
-                        correlationId: nil,
-                        bubbleUpEmojiOrStickersets: []
-                    ))
-                }
+                    guard !outgoing.isEmpty else {
+                        controller.dismiss()
+                        return
+                    }
 
-                guard !outgoing.isEmpty else {
                     controller.dismiss()
-                    return
-                }
-
-                controller.dismiss()
-                self.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
-                for peer in peers {
-                    let _ = enqueueMessages(account: context.account, peerId: peer.id, messages: outgoing).startStandalone()
-                }
+                    self.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
+                    for peer in peers {
+                        let _ = enqueueMessages(account: context.account, peerId: peer.id, messages: outgoing).startStandalone()
+                    }
+                })
             }
 
             self.effectiveNavigationController?.pushViewController(controller)

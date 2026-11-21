@@ -26,15 +26,8 @@ func _internal_setSecretChatMessageAutoremoveTimeoutInteractively(transaction: T
 }
 
 func _internal_addSecretChatMessageScreenshot(account: Account, peerId: PeerId) -> Signal<Void, NoError> {
-    return account.postbox.transaction { transaction -> Void in
-        if let _ = transaction.getPeer(peerId) as? TelegramSecretChat, let state = transaction.getPeerChatState(peerId) as? SecretChatState {
-            switch state.embeddedState {
-            case .handshake, .terminated:
-                return
-            default:
-                break
-            }
-            let _ = enqueueMessages(transaction: transaction, account: account, peerId: peerId, messages: [(true, .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))])
-        }
-    }
+    // Screenshot notifications are intentionally disabled in Mellowsgram.
+    // Keep the API for source compatibility with TelegramCore callers, but do
+    // not enqueue a historyScreenshot message.
+    return .single(())
 }

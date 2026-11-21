@@ -298,6 +298,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     var resolvePeerByNameDisposable: MetaDisposable?
     let navigationActionDisposable = MetaDisposable()
     let enqueueMediaMessageDisposable = MetaDisposable()
+    private let mellowsgramGlobalSettingsDisposable = MetaDisposable()
     private let openSavedMusicDisposable = MetaDisposable()
     
     private(set) var validLayout: (ContainerViewLayout, CGFloat)?
@@ -1714,6 +1715,17 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             if let (layout, navigationHeight) = strongSelf.validLayout {
                 strongSelf.containerLayoutUpdated(layout: layout, navigationHeight: navigationHeight, transition: animated ? .animated(duration: 0.35, curve: .slide) : .immediate, additive: false)
             }
+        }
+
+        if isSettings {
+            self.mellowsgramGlobalSettingsDisposable.set(
+                (MellowsgramGlobalSettingsRuntime.shared.signal
+                |> map { $0.bool(for: .hidePhoneInSettings) }
+                |> distinctUntilChanged
+                |> deliverOnMainQueue).start(next: { [weak self] _ in
+                    self?.headerNode.requestUpdateLayout?(false)
+                })
+            )
         }
         
         self.performNavigationButtonAction = { [weak self] key, source, gesture in

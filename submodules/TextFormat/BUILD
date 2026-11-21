@@ -16,6 +16,7 @@ swift_library(
     	"//submodules/TelegramCore:TelegramCore",
         "//submodules/Display:Display",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
+        "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/Markdown:Markdown",
         "//submodules/Emoji:Emoji",
         "//third-party/libprisma",

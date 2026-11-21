@@ -49,6 +49,13 @@ final class ChatMessageContextExtractedContentSource: ContextExtractedContentSou
         if let chatController = self.chatController, case .customChatContents = chatController.subject {
             return .single(false)
         }
+        // Mellowsgram deleted messages are deliberate in-memory projections:
+        // their original Postbox row is gone, while the local archive remains
+        // available for rendering and context-menu actions. Do not treat the
+        // missing Postbox row as a request to dismiss the extracted source.
+        if engineMellowsgramMessageIsDeleted(self.message._asMessage()) {
+            return .single(false)
+        }
     
         return self.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.Message(id: self.message.id))
         |> map { message -> Bool in

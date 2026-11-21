@@ -4,6 +4,7 @@ import Display
 import AccountContext
 import TelegramPresentationData
 import TelegramCore
+import TelegramUIPreferences
 import PhoneNumberFormat
 import ItemListUI
 import SwiftSignalKit
@@ -28,6 +29,26 @@ enum SettingsSection: Int, CaseIterable {
     case payment
     case extra
     case support
+}
+
+private func mellowsgramSettingsIcon() -> UIImage? {
+    let image = UIImage(bundleImageName: "MellowsgramIcon")
+        ?? UIImage(bundleImageName: "Mellowsgram/MellowsgramIcon")
+        ?? UIImage(named: "MellowsgramIcon")
+        ?? UIImage(named: "Mellowsgram/MellowsgramIcon")
+        ?? PresentationResourcesSettings.effects
+
+    // PeerInfoScreenDisclosureItem uses the UIImage's point size as its
+    // layout size. The source artwork is 800x800, so expose it as the same
+    // 30pt icon slot used by the built-in Settings icons.
+    guard let image, let cgImage = image.cgImage, cgImage.width > 0 else {
+        return image
+    }
+    return UIImage(
+        cgImage: cgImage,
+        scale: CGFloat(cgImage.width) / 30.0,
+        orientation: image.imageOrientation
+    )
 }
 
 func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isExpanded: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
@@ -150,7 +171,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             }))
         }
         
-        items[.mellowsgram]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "Mellowsgram", icon: PresentationResourcesSettings.effects, action: {
+        items[.mellowsgram]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "Mellowsgram", icon: mellowsgramSettingsIcon(), action: {
             interaction.openSettings(.mellowsgram)
         }))
 
@@ -478,7 +499,7 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
         }))
     }
     
-    if case let .user(user) = data.peer {
+    if case let .user(user) = data.peer, !MellowsgramGlobalSettingsRuntime.shared.bool(for: .hidePhoneInSettings) {
         items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
             interaction.openSettings(.phoneNumber)
         }))

@@ -97,7 +97,6 @@ submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift
 submodules/SettingsUI/Sources/Text Size/TextSizeSelectionController.swift
 submodules/SettingsUI/Sources/ThemePickerGridItem.swift
 submodules/SettingsUI/Sources/Themes/ThemePreviewControllerNode.swift
-submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift
 submodules/ShareController/Sources/ShareController.swift
 submodules/ShareController/Sources/ShareControllerNode.swift
 submodules/ShareController/Sources/SharePeersContainerNode.swift

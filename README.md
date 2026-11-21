@@ -73,13 +73,20 @@ The project is designed around three principles:
 
 ### Settings
 
-The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings and contains separate native screens for:
+The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings. Its root screen has category buttons and links; each category opens a separate native settings screen:
 
-- Spy&Ghost;
-- Appearance;
-- Links.
+- **Spy&Ghost** — Ghost Mode, deleted-message and edit-history archives, and story behavior;
+- **Background Notifications** — Telegram Web Push registration routed to Bark;
+- **Appearance** — deleted-message opacity, account-color saturation, sticker size and timestamps, channel layout, tabs, folders, and chat-list layout;
+- **Profiles & Calls** — profile and chat details, call confirmation, and phone visibility;
+- **Media & Voice** — outgoing photo quality and HD photos, camera and PiP behavior, transfer boosts, translation, and voice transcription;
+- **Messages & Context** — context-menu actions, message behavior, and input controls.
 
-Settings are stored per account through the MellowsgramSettings model.
+Channel and GitHub links remain on the Mellowsgram root screen. Appearance sliders show their current value and what their minimum and maximum mean. The outgoing photo-quality slider and **Send HD Photos** are grouped with media settings, not appearance settings.
+
+Ghost Mode, deleted-message archive and edit history remain account-scoped. Client customization is stored app-wide, while settings already owned by Telegram continue using Telegram's shared preferences. The screen includes controls for tabs and folders, story behavior, profile details, translation and transcription services, media quality, context-menu actions, and message input.
+
+The app includes Mellowsgram alternate icons, including icons normally gated by Telegram Premium. Bark notifications use Telegram Web Push through a compatible relay and the Bark app; Mellowsgram does not keep Telegram sessions alive in the background for notifications. The relay must be deployed and the Bark device key configured before this feature can deliver alerts. The relay decrypts Telegram's Web Push payload before forwarding it to Bark, so its operator can read notification text.
 
 Mellowsgram allows up to **32 connected accounts** without making the account count depend on Telegram Premium. Each account keeps its own Telegram session and local data.
 

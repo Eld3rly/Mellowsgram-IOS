@@ -42,7 +42,11 @@ func fetchAndUpdateSupplementalCachedPeerData(peerId rawPeerId: PeerId, accountP
             let cachedData = transaction.getPeerCachedData(peerId: peer.id)
             
             if let cachedData = cachedData as? CachedUserData {
-                if cachedData.peerStatusSettings != nil {
+                // A full-user response can populate peer status flags without
+                // including the approximate registration month. Keep asking
+                // the supplemental peer-settings endpoint until that value is
+                // present, otherwise the profile never gets the date.
+                if cachedData.peerStatusSettings?.registrationDate != nil {
                     return .single(true)
                 }
             } else if let cachedData = cachedData as? CachedGroupData {
@@ -82,7 +86,7 @@ func fetchAndUpdateSupplementalCachedPeerData(peerId rawPeerId: PeerId, accountP
                     
                     return true
                 }
-            } else if let inputPeer = apiInputPeer(peer) {
+            } else if let inputPeer = apiInputPeerOrSelf(peer, accountPeerId: accountPeerId) {
                 return network.request(Api.functions.messages.getPeerSettings(peer: inputPeer))
                 |> retryRequestIfNotFrozen
                 |> mapToSignal { peerSettings -> Signal<Bool, NoError> in
@@ -374,7 +378,10 @@ func _internal_fetchAndUpdateCachedPeerData(accountPeerId: PeerId, peerId rawPee
                                         let canPinMessages = (userFullFlags & (1 << 7)) != 0
                                         let pinnedMessageId = userFullPinnedMsgId.flatMap({ MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: $0) })
                                     
-                                        let peerStatusSettings = PeerStatusSettings(apiSettings: userFullSettings)
+                                        var peerStatusSettings = PeerStatusSettings(apiSettings: userFullSettings)
+                                        if peerStatusSettings.registrationDate == nil {
+                                            peerStatusSettings.registrationDate = previous.peerStatusSettings?.registrationDate
+                                        }
                                         
                                         let hasScheduledMessages = (userFullFlags & 1 << 12) != 0
                                         

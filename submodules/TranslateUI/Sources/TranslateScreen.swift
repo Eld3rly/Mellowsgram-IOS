@@ -16,6 +16,7 @@ public func presentTranslateScreen(
     fromLanguage: String?,
     toLanguage: String? = nil,
     isExpanded: Bool = false,
+    forceSystemTranslation: Bool = false,
     ignoredLanguages: [String]? = nil,
     replaceText: ((String, [MessageTextEntity]) -> Void)? = nil,
     translateChat: ((String, String) -> Void)? = nil,
@@ -25,14 +26,16 @@ public func presentTranslateScreen(
     display: (ViewController) -> Void
 ) {
     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
-    var useSystemTranslation = false
-    switch translationConfiguration.manual {
-    case .system:
-        if #available(iOS 18.0, *) {
-            useSystemTranslation = true
+    var useSystemTranslation = forceSystemTranslation
+    if !forceSystemTranslation {
+        switch translationConfiguration.manual {
+        case .system:
+            if #available(iOS 18.0, *) {
+                useSystemTranslation = true
+            }
+        default:
+            break
         }
-    default:
-        break
     }
     
     if useSystemTranslation {

@@ -546,6 +546,32 @@ public extension Message {
             return false
         }
     }
+
+    /// Returns whether Mellowsgram may use a local copy/re-upload path for a
+    /// protected message. Telegram's restriction remains intact for private,
+    /// secret, ephemeral, view-once, paid, story and service messages.
+    func mellowsgramCanBypassCopyProtection(peer: Peer? = nil) -> Bool {
+        guard self.id.peerId.namespace != Namespaces.Peer.SecretChat,
+              !Namespaces.Message.allEphemeral.contains(self.id.namespace),
+              !self.containsSecretMedia else {
+            return false
+        }
+
+        let sourcePeer = peer ?? self.peers[self.id.peerId]
+        guard sourcePeer is TelegramGroup || sourcePeer is TelegramChannel else {
+            return false
+        }
+
+        for media in self.effectiveMedia {
+            if media is TelegramMediaAction ||
+                media is TelegramMediaExpiredContent ||
+                media is TelegramMediaStory ||
+                media is TelegramMediaPaidContent {
+                return false
+            }
+        }
+        return true
+    }
     
     func isSensitiveContent(platform: String, contentSettings: ContentSettings) -> Bool {
         if let rules = self.restrictedContentAttribute?.rules, rules.containsSensitiveRule(platform: platform, contentSettings: contentSettings) {

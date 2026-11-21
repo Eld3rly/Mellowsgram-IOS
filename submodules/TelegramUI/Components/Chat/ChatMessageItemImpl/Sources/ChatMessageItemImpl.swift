@@ -392,6 +392,13 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
         
         let configure = {
             let node = (viewClassName as! ChatMessageItemView.Type).init(rotated: self.controllerInteraction.chatIsRotated)
+            if let stickerNode = node as? ChatMessageStickerItemNode {
+                stickerNode.sizeCoefficient = Float(MellowsgramGlobalSettingsRuntime.shared.integer(for: .stickerSize)) / 100.0
+                stickerNode.hideTimestamp = !MellowsgramGlobalSettingsRuntime.shared.bool(for: .showStickerTimestamp)
+            } else if let animatedStickerNode = node as? ChatMessageAnimatedStickerItemNode {
+                animatedStickerNode.sizeCoefficient = Float(MellowsgramGlobalSettingsRuntime.shared.integer(for: .stickerSize)) / 100.0
+                animatedStickerNode.hideTimestamp = !MellowsgramGlobalSettingsRuntime.shared.bool(for: .showStickerTimestamp)
+            }
             node.setupItem(self, synchronousLoad: synchronousLoads)
             if let deletedAttribute = self.message.attributes.compactMap({ $0 as? MellowsgramDeletedMessageAttribute }).first {
                 node.alpha = deletedAttribute.translucent ? 0.58 : 1.0

@@ -241,6 +241,25 @@ public extension TelegramEngine {
             |> ignoreValues
         }
 
+        public func messageIdsByAuthor(peerId: PeerId, authorId: PeerId, threadId: Int64?, limit: Int = 500) -> Signal<[EngineMessage.Id], NoError> {
+            return self.account.postbox.transaction { transaction -> [EngineMessage.Id] in
+                var ids: [EngineMessage.Id] = []
+                transaction.withAllMessages(peerId: peerId) { candidate in
+                    guard ids.count < limit else {
+                        return false
+                    }
+                    guard candidate.author?.id == authorId,
+                          threadId == nil || candidate.threadId == threadId,
+                          !candidate.media.contains(where: { $0 is TelegramMediaAction }) else {
+                        return true
+                    }
+                    ids.append(candidate.id)
+                    return true
+                }
+                return ids
+            }
+        }
+
         public func deleteAllMessagesWithForwardAuthor(peerId: EnginePeer.Id, forwardAuthorId: EnginePeer.Id, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
                 _internal_deleteAllMessagesWithForwardAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace)

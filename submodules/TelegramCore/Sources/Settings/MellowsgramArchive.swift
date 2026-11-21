@@ -270,58 +270,68 @@ public func engineMellowsgramMessageMedia(_ mediaData: Data) -> [EngineRawMedia]
 }
 
 struct MellowsgramDeletedReplyFormatting {
-    let prefix: String
-    let quoteLength: Int
+    /// Text that represents the archived message inside the reply quote.
+    ///
+    /// The author line is deliberately not built here: whether it belongs in
+    /// the quote depends on the destination peer (groups/channels use it,
+    /// private chats do not), and the peer lookup is only available to the
+    /// enqueue transaction.
+    let preview: String
 }
 
-private func mellowsgramDeletedReplyMediaDescription(_ media: [EngineRawMedia]) -> String? {
+private func mellowsgramUsesRussian(languageCode: String) -> Bool {
+    return languageCode.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first == "ru"
+}
+
+private func mellowsgramDeletedReplyMediaDescription(_ media: [EngineRawMedia], languageCode: String) -> String? {
+    let isRussian = mellowsgramUsesRussian(languageCode: languageCode)
     for item in media {
         if item is TelegramMediaImage {
-            return "Фото"
+            return isRussian ? "Фото" : "Photo"
         } else if let file = item as? TelegramMediaFile {
             if file.isInstantVideo {
-                return "Видеосообщение"
+                return isRussian ? "Видеосообщение" : "Video message"
             } else if file.isVoice {
-                return "Голосовое сообщение"
+                return isRussian ? "Голосовое сообщение" : "Voice message"
             } else if file.isVideo {
-                return "Видео"
+                return isRussian ? "Видео" : "Video"
             } else if file.isSticker || file.isAnimatedSticker || file.isVideoSticker {
-                return "Стикер"
+                return isRussian ? "Стикер" : "Sticker"
             } else if file.isMusic {
-                return "Аудио"
+                return isRussian ? "Аудио" : "Audio"
             } else {
-                return "Файл"
+                return isRussian ? "Файл" : "File"
             }
         } else if item is TelegramMediaPoll {
-            return "Опрос"
+            return isRussian ? "Опрос" : "Poll"
         } else if item is TelegramMediaContact {
-            return "Контакт"
+            return isRussian ? "Контакт" : "Contact"
         } else if item is TelegramMediaMap {
-            return "Геопозиция"
+            return isRussian ? "Геопозиция" : "Location"
         } else if item is TelegramMediaWebpage {
-            return "Ссылка"
+            return isRussian ? "Ссылка" : "Link"
         }
     }
     return nil
 }
 
-func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRecord) -> MellowsgramDeletedReplyFormatting? {
+func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRecord, languageCode: String) -> MellowsgramDeletedReplyFormatting? {
     guard record.deletedAt != nil else {
         return nil
     }
 
-    let normalizedText = record.text
-        .replacingOccurrences(of: "\n", with: " ")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+    // Keep the original line breaks. AyuGram's deleted-message reply is a
+    // real block quote, not a service-message label flattened into one line.
+    let normalizedText = record.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let preview: String
     if normalizedText.isEmpty {
-        preview = mellowsgramDeletedReplyMediaDescription(engineMellowsgramMessageMedia(record.mediaData)) ?? "Вложение"
+        let isRussian = mellowsgramUsesRussian(languageCode: languageCode)
+        preview = mellowsgramDeletedReplyMediaDescription(engineMellowsgramMessageMedia(record.mediaData), languageCode: languageCode) ?? (isRussian ? "Вложение" : "Attachment")
     } else {
         preview = String(normalizedText.prefix(256))
     }
 
-    let quote = "Удалённое сообщение\n\(preview)"
-    return MellowsgramDeletedReplyFormatting(prefix: quote + "\n\n", quoteLength: quote.utf16.count)
+    return MellowsgramDeletedReplyFormatting(preview: preview)
 }
 
 /// Creates a regular Telegram `Message` projection for a deleted archive row.

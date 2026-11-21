@@ -744,7 +744,8 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             let mainSessionDelegate = NetworkMainSessionDelegate(connectionStatus: connectionStatus)
             let mainSession = engine.makeSession(datacenterId: datacenterId, role: .main, usageCalculationInfo: usageCalculationInfo(basePath: basePath, category: nil), delegate: mainSessionDelegate)
             
-            var useExperimentalFeatures = networkSettings?.useExperimentalDownload ?? true
+            let mellowsgramDownloadBoost = UserDefaults.standard.string(forKey: "mellowsgram.global.downloadBoost") ?? "default"
+            var useExperimentalFeatures = (networkSettings?.useExperimentalDownload ?? true) || mellowsgramDownloadBoost != "default"
             if let data = appConfiguration.data, let _ = data["ios_killswitch_disable_downloadv2"] {
                 useExperimentalFeatures = false
             }

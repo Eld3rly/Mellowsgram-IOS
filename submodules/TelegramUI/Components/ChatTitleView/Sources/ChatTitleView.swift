@@ -192,6 +192,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
     /// An agent bot's chat shows its model under the title, and follows the composer's model chip.
     private var agentSelectionPeerId: EnginePeer.Id?
     private let agentSelectionDisposable = MetaDisposable()
+    private let mellowsgramBadgeDisposable = MetaDisposable()
     
     private var theme: PresentationTheme
     private var strings: PresentationStrings
@@ -346,6 +347,29 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                 isEnabled = false
                             } else {
                                 isEnabled = isEnabledValue
+                            }
+                            if peerView.peerId != self.context.account.peerId, let peer = peerView.peer,
+                               let first = segments.first, case let .text(id, attributedString) = first {
+                                let badges = MellowsgramBadgeRuntime.shared.badges(
+                                    peerNamespace: peer.id.namespace,
+                                    peerId: peer.id.id._internalGetInt64Value()
+                                )
+                                if !badges.isEmpty {
+                                    let updated = NSMutableAttributedString(attributedString: attributedString)
+                                    for badge in badges {
+                                        let text = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
+                                        let foregroundHex = String(badge.foreground.dropFirst())
+                                        let backgroundHex = String(badge.background.dropFirst())
+                                        let foreground = UInt32(foregroundHex, radix: 16).map { UIColor(rgb: $0) } ?? titleTheme.rootController.navigationBar.primaryTextColor
+                                        let background = UInt32(backgroundHex, radix: 16).map { UIColor(rgb: $0) } ?? .clear
+                                        updated.append(NSAttributedString(string: text, attributes: [
+                                            .font: titleFont,
+                                            .foregroundColor: foreground,
+                                            .backgroundColor: background
+                                        ]))
+                                    }
+                                    segments[0] = .text(id, updated)
+                                }
                             }
                         }
                     case let .replyThread(type, count):
@@ -770,6 +794,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
     
     deinit {
         self.agentSelectionDisposable.dispose()
+        self.mellowsgramBadgeDisposable.dispose()
     }
     
     private func observeAgentSelection(peerId: EnginePeer.Id) {
@@ -868,6 +893,14 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
             }
         }
         self.button.view.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(self.longPressGesture(_:))))
+
+        self.mellowsgramBadgeDisposable.set((MellowsgramBadgeRuntime.shared.signal
+        |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            guard let self, let titleContent = self.titleContent else {
+                return
+            }
+            self.titleContent = titleContent
+        }))
     }
     
     required public init?(coder aDecoder: NSCoder) {

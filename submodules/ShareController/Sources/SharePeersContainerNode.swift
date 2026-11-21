@@ -164,6 +164,7 @@ final class SharePeersContainerNode: ASDisplayNode, ShareContentContainerNode {
         self.peersValue.set(.single(peers))
         
         let canShareStory = controllerInteraction.shareStory != nil
+            && MellowsgramGlobalSettingsRuntime.shared.bool(for: .repostToStory)
         
         let items: Signal<[SharePeerEntry], NoError> = combineLatest(self.peersValue.get(), self.foundPeers.get(), self.tick.get(), self.themePromise.get())
         |> map { [weak controllerInteraction] initialPeers, foundPeers, _, theme -> [SharePeerEntry] in

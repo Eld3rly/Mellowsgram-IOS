@@ -4,6 +4,7 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 import AVFoundation
+import UIKitRuntimeUtils
 
 private final class MediaPlayerNodeLayerNullAction: NSObject, CAAction {
     @objc func run(forKey event: String, object anObject: Any, arguments dict: [AnyHashable : Any]?) {
@@ -83,7 +84,9 @@ public final class MediaPlayerNode: ASDisplayNode {
     
     public private(set) var videoLayer: AVSampleBufferDisplayLayer?
     private var videoLayerReadyForDisplayObserver: NSObjectProtocol?
+    private var mellowsgramScreenshotProtectionObserver: NSObjectProtocol?
     private var didNotifyVideoLayerReadyForDisplay: Bool = false
+    private let captureProtected: Bool
     
     private let videoQueue: Queue
     
@@ -346,6 +349,7 @@ public final class MediaPlayerNode: ASDisplayNode {
     
     public init(backgroundThread: Bool = false, captureProtected: Bool = false) {
         self.videoNode = MediaPlayerNodeDisplayNode()
+        self.captureProtected = captureProtected
         
         if false && backgroundThread {
             self.videoQueue = Queue()
@@ -354,6 +358,15 @@ public final class MediaPlayerNode: ASDisplayNode {
         }
         
         super.init()
+
+        if #available(iOS 13.0, *) {
+            self.mellowsgramScreenshotProtectionObserver = NotificationCenter.default.addObserver(forName: Notification.Name("MellowsgramScreenshotProtectionDidChange"), object: nil, queue: .main, using: { [weak self] _ in
+                guard let self, let videoLayer = self.videoLayer else {
+                    return
+                }
+                videoLayer.preventsCapture = self.captureProtected && getMellowsgramScreenshotProtectionEnabled()
+            })
+        }
         
         self.videoNode.updateInHierarchy = { [weak self] value in
             if let strongSelf = self {
@@ -375,7 +388,7 @@ public final class MediaPlayerNode: ASDisplayNode {
                 if let strongSelf = self {
                     strongSelf.videoLayer = videoLayer
                     if #available(iOS 13.0, *) {
-                        videoLayer.preventsCapture = captureProtected
+                        videoLayer.preventsCapture = strongSelf.captureProtected && getMellowsgramScreenshotProtectionEnabled()
                     }
                     strongSelf.updateLayout()
                     
@@ -401,6 +414,9 @@ public final class MediaPlayerNode: ASDisplayNode {
     
     deinit {
         assert(Queue.mainQueue().isCurrent())
+        if let observer = self.mellowsgramScreenshotProtectionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         self.videoLayer?.removeFromSuperlayer()
         
         if let _ = self.takeFrameAndQueue {

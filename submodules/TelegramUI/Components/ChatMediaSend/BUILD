@@ -16,6 +16,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Resources/FetchVideoMediaResource",
         "//submodules/LocalMediaResources",
         "//submodules/TelegramCore",
+        "//submodules/TelegramUIPreferences",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/AccountContext",
         "//submodules/Display",

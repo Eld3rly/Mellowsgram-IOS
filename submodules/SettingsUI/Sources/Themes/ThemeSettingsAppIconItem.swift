@@ -8,6 +8,40 @@ import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
 import AppBundle
+import TelegramUIPreferences
+
+private func mellowsgramAppIconDisplayName(_ iconName: String, languageCode: String) -> String {
+    let variant = String(iconName.dropFirst("Mellowsgram".count))
+    let russianName: String
+    switch variant {
+    case "Mint": russianName = "Мята"
+    case "Sage": russianName = "Шалфей"
+    case "Lavender": russianName = "Лаванда"
+    case "Rose": russianName = "Роза"
+    case "Coral": russianName = "Коралл"
+    case "Apricot": russianName = "Абрикос"
+    case "Graphite": russianName = "Графит"
+    case "Sand": russianName = "Песок"
+    case "Midnight": russianName = "Полночь"
+    case "Forest": russianName = "Лес"
+    case "Bordeaux": russianName = "Бордо"
+    case "Plum": russianName = "Слива"
+    case "LimeNoir": russianName = "Лайм нуар"
+    case "LilacNoir": russianName = "Сиреневый нуар"
+    case "PeachNoir": russianName = "Персиковый нуар"
+    case "Berry": russianName = "Ягода"
+    case "Lemon": russianName = "Лимон"
+    case "Pistachio": russianName = "Фисташка"
+    case "Lilac": russianName = "Сиреневый"
+    case "Peach": russianName = "Персиковый"
+    case "Raspberry": russianName = "Малиновый"
+    case "Electric": russianName = "Электрик"
+    case "Sunset": russianName = "Закат"
+    case "Aurora": russianName = "Аврора"
+    default: return iconName
+    }
+    return mellowsgramLocalizedString(english: "Mellowsgram \(variant)", russian: "Mellowsgram \(russianName)", languageCode: languageCode)
+}
 
 private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selected: Bool) -> UIImage? {
     return generateImage(CGSize(width: 30.0, height: 30.0), rotatedContext: { size, context in
@@ -41,17 +75,15 @@ class ThemeSettingsAppIconItem: ListViewItem, ItemListItem {
     let strings: PresentationStrings
     let systemStyle: ItemListSystemStyle
     let icons: [PresentationAppIcon]
-    let isPremium: Bool
     let currentIconName: String?
     let updated: (PresentationAppIcon) -> Void
     let tag: ItemListItemTag?
     
-    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle, sectionId: ItemListSectionId, icons: [PresentationAppIcon], isPremium: Bool, currentIconName: String?, updated: @escaping (PresentationAppIcon) -> Void, tag: ItemListItemTag? = nil) {
+    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle, sectionId: ItemListSectionId, icons: [PresentationAppIcon], currentIconName: String?, updated: @escaping (PresentationAppIcon) -> Void, tag: ItemListItemTag? = nil) {
         self.theme = theme
         self.strings = strings
         self.systemStyle = systemStyle
         self.icons = icons
-        self.isPremium = isPremium
         self.currentIconName = currentIconName
         self.updated = updated
         self.tag = tag
@@ -407,6 +439,8 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = item.strings.Appearance_AppIconNew1
                                 case "New2":
                                     name = item.strings.Appearance_AppIconNew2
+                                case let mellowsgramIconName where mellowsgramIconName.hasPrefix("Mellowsgram"):
+                                    name = mellowsgramAppIconDisplayName(mellowsgramIconName, languageCode: item.strings.primaryComponent.languageCode)
                                 case "Premium":
                                     name = item.strings.Appearance_AppIconPremium
                                 case "PremiumBlack":
@@ -417,7 +451,7 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                                     name = icon.name
                             }
                         
-                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: !item.isPremium && icon.isPremium, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
+                            imageNode.setup(theme: item.theme, icon: image, title: NSAttributedString(string: name, font: selected ? selectedTextFont : textFont, textColor: selected  ? item.theme.list.itemAccentColor : item.theme.list.itemPrimaryTextColor, paragraphAlignment: .center), locked: false, color: item.theme.list.itemPrimaryTextColor, bordered: bordered, selected: selected, action: {
                                 item.updated(icon)
                             })
                         }

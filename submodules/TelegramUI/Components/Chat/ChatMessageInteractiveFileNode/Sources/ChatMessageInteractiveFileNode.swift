@@ -4,6 +4,7 @@ import AsyncDisplayKit
 import SwiftSignalKit
 import Display
 import TelegramCore
+import TelegramUIPreferences
 import UniversalMediaPlayer
 import TelegramPresentationData
 import AccountContext
@@ -373,11 +374,14 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
             return
         }
         
+        // Free accounts use on-device Speech instead of Telegram's Premium-gated endpoint.
+        let useLocalTranscription = MellowsgramGlobalSettingsRuntime.shared.value(for: .transcriptionService) == "apple" || !arguments.associatedData.isPremium
+
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
         
         let transcriptionText = self.forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(message))
-        if transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+        if !useLocalTranscription && transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
             if premiumConfiguration.audioTransciptionTrialCount > 0 {
                 if !arguments.associatedData.isPremium {
                     if self.presentAudioTranscriptionTooltip(finished: false) {
@@ -436,26 +440,20 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 self.audioTranscriptionState = .inProgress
                 self.requestUpdateLayout(true)
                 
-                if context.sharedContext.immediateExperimentalUISettings.localTranscription {
+                if useLocalTranscription {
                     let appLocale = presentationData.strings.baseLanguageCode
                     
-                    let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: message.id))
-                    |> mapToSignal { message -> Signal<String?, NoError> in
-                        guard let message = message else {
-                            return .single(nil)
-                        }
-                        guard let file = message.media.first(where: { $0 is TelegramMediaFile }) as? TelegramMediaFile else {
-                            return .single(nil)
-                        }
-                        return context.engine.resources.data(id: EngineMediaResource.Id(file.resource.id))
+                    let mediaPath: Signal<String?, NoError>
+                    if let file = message.media.first(where: { $0 is TelegramMediaFile }) as? TelegramMediaFile {
+                        mediaPath = context.engine.resources.data(id: EngineMediaResource.Id(file.resource.id))
                         |> take(1)
-                        |> mapToSignal { data -> Signal<String?, NoError> in
-                            if !data.isComplete {
-                                return .single(nil)
-                            }
-                            return .single(data.path)
+                        |> map { data -> String? in
+                            return data.isComplete ? data.path : nil
                         }
+                    } else {
+                        mediaPath = .single(nil)
                     }
+                    let signal: Signal<LocallyTranscribedAudio?, NoError> = mediaPath
                     |> mapToSignal { result -> Signal<String?, NoError> in
                         guard let result = result else {
                             return .single(nil)
@@ -610,7 +608,9 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 }
                 
                 var statusUpdated = mediaUpdated
-                if currentMessage?.id != arguments.message.id || currentMessage?.flags != arguments.message.flags {
+                let currentMessageIsDeleted = currentMessage.map(engineMellowsgramMessageIsDeleted) ?? false
+                let updatedMessageIsDeleted = engineMellowsgramMessageIsDeleted(arguments.message)
+                if currentMessage?.id != arguments.message.id || currentMessage?.flags != arguments.message.flags || currentMessageIsDeleted != updatedMessageIsDeleted {
                     statusUpdated = true
                 }
                 
@@ -797,7 +797,8 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                     displayTranscribe = false
                 } else if arguments.message.id.peerId.namespace != Namespaces.Peer.SecretChat && !isViewOnceMessage && !arguments.presentationData.isPreview {
                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
-                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                    let useLocalTranscription = MellowsgramGlobalSettingsRuntime.shared.value(for: .transcriptionService) == "apple" || !arguments.associatedData.isPremium
+                    if useLocalTranscription || arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
                         displayTranscribe = true
                     } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
                         if arguments.incoming {
@@ -826,7 +827,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 }
                 
                 let currentTime = Int32(Date().timeIntervalSince1970)
-                if transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+                if arguments.associatedData.isPremium, transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
                     updatedAudioTranscriptionState = .locked
                 }
                 
@@ -2191,7 +2192,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
     
     public func updateIsExtractedToContextPreview(_ value: Bool) {
         if value {
-            if self.textSelectionNode == nil, self.textClippingNode.supernode != nil, let item = self.arguments, !item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected(), let rootNode = item.controllerInteraction.chatControllerNode() {
+            if self.textSelectionNode == nil, self.textClippingNode.supernode != nil, let item = self.arguments, ((!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message._asMessage().mellowsgramCanBypassCopyProtection()), let rootNode = item.controllerInteraction.chatControllerNode() {
                 let selectionColor: UIColor
                 let knobColor: UIColor
                 if item.message.effectivelyIncoming(item.context.account.peerId) {

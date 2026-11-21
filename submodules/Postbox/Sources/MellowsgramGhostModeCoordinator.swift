@@ -29,8 +29,9 @@ public struct MellowsgramGhostModeOptions: OptionSet, Equatable {
 /// Account-local, process-wide gate for client-side network side effects.
 ///
 /// It deliberately does not block message sends or media uploads. Callers use
-/// the coordinator at the point where read/presence/story/upload-progress work
-/// would otherwise be queued, so disabling the mode only affects new actions.
+/// the coordinator at the point where read/media-consumption/presence/story/
+/// upload-progress work would otherwise be queued, so disabling the mode only
+/// affects new actions.
 public final class MellowsgramGhostModeCoordinator {
     private let enabledValue = Atomic<Bool>(value: false)
     private let enabledPromise = ValuePromise<Bool>(false, ignoreRepeated: true)
@@ -73,6 +74,14 @@ public final class MellowsgramGhostModeCoordinator {
 
     public func shouldSendReadReceipts() -> Bool {
         return !self.isEnabled || !self.options.contains(.dontReadMessages)
+    }
+
+    /// Voice messages and video notes use Telegram's readMessageContents RPC
+    /// when playback starts. Treat that acknowledgement as a read receipt for
+    /// Ghost Mode purposes: playback remains local, but the server is not told
+    /// that the media was listened to or watched.
+    public func shouldSendMediaConsumption() -> Bool {
+        return self.shouldSendReadReceipts()
     }
 
     public func shouldSendStoryReads() -> Bool {

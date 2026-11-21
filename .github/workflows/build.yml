@@ -1,6 +1,7 @@
-name: Mellowsgram iOS simulator IPA
+name: Mellowsgram iOS IPA
 
-# The artifact is unsigned for the simulator and is intended for local testing.
+# Simulator artifacts run directly in Simulator. Device artifacts are prepared
+# for a final AltStore/SideStore re-sign and are not App Store signed.
 
 on:
   push:
@@ -11,19 +12,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: mellowsgram-simulator-${{ github.ref }}
+  group: mellowsgram-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-simulator:
-    runs-on: macos-26
-    timeout-minutes: 120
+  build:
+    name: build-${{ matrix.target }}
+    runs-on: xcode-27
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [simulator, device]
 
     steps:
       - name: Checkout source and submodules
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 2
           submodules: recursive
 
       - name: Select Xcode and inspect SDK
@@ -35,6 +41,7 @@ jobs:
           fi
           xcodebuild -version
           xcrun --sdk iphonesimulator --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Generate Mellowsgram configuration
         env:
@@ -60,28 +67,94 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-input/bazel-disk-cache
-          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'submodules/TelegramApi/swift_scheme.tl') }}
+          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'Telegram/BUILD', 'submodules/TelegramApi/swift_scheme.tl') }}
           restore-keys: |
             bazel-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Build simulator IPA
+      - name: Fast preflight (no build)
         shell: bash
         run: |
           set -euo pipefail
-          build_number=$((10000 + $(git rev-list --count HEAD)))
-          echo "BUILD_NUMBER=$build_number" >> "$GITHUB_ENV"
+          git show --check --format= HEAD
+          python3 -m py_compile ci/mellowsgram_configuration.py
+          python3 -m py_compile ci/mellowsgram_sideload.py
+          python3 build-system/Make/PostboxImportCheck.py
+          swiftc_path="$(xcrun --find swiftc)"
+          for source in \
+            submodules/AccountContext/Sources/FetchMediaUtils.swift \
+            submodules/Postbox/Sources/MellowsgramMessageArchiveVisibility.swift \
+            submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift \
+            submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift \
+            submodules/TelegramUI/Components/Chat/ReplyAccessoryPanelNode/Sources/ReplyAccessoryPanelNode.swift \
+            submodules/TelegramUI/Sources/ChatControllerForwardMessages.swift \
+            submodules/TelegramUI/Sources/MellowsgramBarkNotificationManager.swift \
+            submodules/TelegramUIPreferences/Sources/MellowsgramBarkCredentialStore.swift \
+            submodules/TelegramUI/Sources/SharedWakeupManager.swift \
+            submodules/TelegramUI/Sources/AppDelegate.swift \
+            submodules/TelegramUI/Sources/ChatController.swift \
+            submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift \
+            submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift \
+            submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenOpenStories.swift \
+            submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/OpenStories.swift \
+            submodules/TranslateUI/Sources/Translate.swift \
+            submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift \
+            submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift \
+            submodules/SettingsUI/Sources/MellowsgramSettingsController.swift \
+            submodules/TelegramCore/Sources/Settings/MellowsgramSettings.swift \
+            submodules/TelegramUIPreferences/Sources/MellowsgramGlobalSettings.swift; do
+            echo "Parsing $source"
+            "$swiftc_path" -frontend -parse -parse-as-library "$source"
+          done
+
+      - name: Set build number
+        shell: bash
+        run: echo "BUILD_NUMBER=$((10000 + $(git rev-list --count HEAD)))" >> "$GITHUB_ENV"
+
+      - name: Build simulator IPA
+        if: matrix.target == 'simulator'
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
             --cacheDir build-input/bazel-disk-cache \
             build \
             --configurationPath build-input/mellowsgram-configuration.json \
             --xcodeManagedCodesigning \
-            --buildNumber "$build_number" \
+            --buildNumber "$BUILD_NUMBER" \
             --configuration debug_sim_arm64 \
+            --continueOnError \
             --disableProvisioningProfiles \
             --outputBuildArtifactsPath build/mellowsgram-simulator-artifacts
 
+      - name: Build device IPA
+        if: matrix.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir build-input/bazel-disk-cache \
+            build \
+            --configurationPath build-input/mellowsgram-configuration.json \
+            --xcodeManagedCodesigning \
+            --buildNumber "$BUILD_NUMBER" \
+            --configuration debug_arm64 \
+            --continueOnError \
+            --disableProvisioningProfiles \
+            --outputBuildArtifactsPath build/mellowsgram-device-artifacts
+
+      - name: Prepare device IPA for AltStore and SideStore
+        if: matrix.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/mellowsgram_sideload.py --ipa build/mellowsgram-device-artifacts/Telegram.ipa
+
       - name: Verify simulator IPA
+        if: matrix.target == 'simulator'
         shell: bash
         run: |
           set -euo pipefail
@@ -89,10 +162,39 @@ jobs:
           unzip -l build/mellowsgram-simulator-artifacts/Telegram.ipa | head -40
           shasum -a 256 build/mellowsgram-simulator-artifacts/Telegram.ipa
 
+      - name: Verify device IPA
+        if: matrix.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipa=build/mellowsgram-device-artifacts/Telegram.ipa
+          test -s "$ipa"
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          unzip -q "$ipa" -d "$work"
+          app="$work/Payload/Telegram.app"
+          test -d "$app"
+          platform=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")
+          test "$platform" = 'iPhoneOS'
+          echo "Platform: $platform"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+          file "$app/Telegram"
+          shasum -a 256 "$ipa"
+
       - name: Upload simulator IPA artifact
+        if: matrix.target == 'simulator'
         uses: actions/upload-artifact@v4
         with:
-          name: Mellowsgram-iOS-simulator-IPA-${{ env.BUILD_NUMBER }}
+          name: Mellowsgram-iOS-${{ matrix.target }}-IPA-${{ env.BUILD_NUMBER }}
           path: build/mellowsgram-simulator-artifacts/Telegram.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload device IPA artifact
+        if: matrix.target == 'device'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mellowsgram-iOS-${{ matrix.target }}-IPA-${{ env.BUILD_NUMBER }}
+          path: build/mellowsgram-device-artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 7

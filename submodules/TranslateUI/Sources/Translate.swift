@@ -5,6 +5,7 @@ import SwiftSignalKit
 import AccountContext
 import NaturalLanguage
 import TelegramCore
+import TelegramUIPreferences
 import SwiftUI
 import Translation
 import Combine
@@ -173,6 +174,10 @@ public func normalizeTranslationLanguage(_ code: String) -> String {
 }
 
 public func canTranslateChats(context: AccountContext) -> Bool {
+    if MellowsgramGlobalSettingsRuntime.shared.bool(for: .translateEntireChats) {
+        return true
+    }
+
     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     var chatTranslationAvailable = true
     switch translationConfiguration.auto {
@@ -458,14 +463,17 @@ func alternativeTranslateText(text: String, fromLang: String?, toLang: String) -
                 }
             }
             
-            var uri = "https://translate.goo"
-            uri += "gleapis.com/transl"
-            uri += "ate_a"
-            uri += "/singl"
-            uri += "e?client=gtx&sl=\(effectiveFromLang.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            uri += "&tl=\(toLang.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            uri += "&dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q="
-            uri += text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let queryValueAllowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            guard let encodedFromLanguage = effectiveFromLang.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters),
+                  let encodedToLanguage = toLang.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters),
+                  let encodedText = text.addingPercentEncoding(withAllowedCharacters: queryValueAllowedCharacters) else {
+                subscriber.putError(.generic)
+                return
+            }
+
+            var uri = "https://translate.googleapis.com/translate_a/single?client=gtx"
+            uri += "&sl=\(encodedFromLanguage)&tl=\(encodedToLanguage)"
+            uri += "&dt=t&ie=UTF-8&oe=UTF-8&otf=1&ssel=0&tsel=0&kc=7&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca&dt=rw&dt=rm&dt=ss&q=\(encodedText)"
             
             guard let url = URL(string: uri) else {
                 subscriber.putError(.generic)
@@ -538,6 +546,25 @@ func alternativeTranslateText(text: String, fromLang: String?, toLang: String) -
         return ActionDisposable {
             task?.cancel()
         }
+    }
+}
+
+public func mellowsgramGoogleTranslateText(text: String, fromLang: String?, toLang: String) -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> {
+    return alternativeTranslateText(text: text, fromLang: fromLang, toLang: toLang)
+}
+
+public func mellowsgramSystemTranslateText(text: String, fromLang: String?, toLang: String) -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> {
+    guard #available(iOS 18.0, *), let fromLang, let service = engineExperimentalInternalTranslationService else {
+        return .fail(.generic)
+    }
+    let requestId = AnyHashable(UUID().uuidString)
+    return service.translate(texts: [requestId: text], fromLang: fromLang, toLang: toLang)
+    |> castError(TelegramCore.TranslationError.self)
+    |> mapToSignal { result -> Signal<(String, [MessageTextEntity])?, TelegramCore.TranslationError> in
+        guard let translatedText = result?[requestId], !translatedText.isEmpty else {
+            return .fail(.generic)
+        }
+        return .single((translatedText, []))
     }
 }
 

@@ -25,6 +25,7 @@ swift_library(
         "//submodules/TextFormat:TextFormat",
         "//submodules/ManagedFile",
         "//submodules/HLSPlayback:HLSPlayback",
+        "//submodules/UIKitRuntimeUtils:UIKitRuntimeUtils",
     ],
     visibility = [
         "//visibility:public",

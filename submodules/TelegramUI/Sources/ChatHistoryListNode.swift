@@ -1264,7 +1264,13 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             strongSelf.isDraggingForOverscrollAction = false
             let expandProgress = strongSelf.currentOverscrollExpandProgress
             strongSelf.currentOverscrollExpandProgress = 0.0
-            if strongSelf.offerNextChannelToRead, expandProgress >= 0.99 {
+            let pullToNextIsEnabled: Bool
+            if strongSelf.nextChannelToRead?.threadData != nil {
+                pullToNextIsEnabled = MellowsgramGlobalSettingsRuntime.shared.bool(for: .pullToNextTopic)
+            } else {
+                pullToNextIsEnabled = MellowsgramGlobalSettingsRuntime.shared.bool(for: .pullToNextUnreadChannel)
+            }
+            if strongSelf.offerNextChannelToRead, pullToNextIsEnabled, expandProgress >= 0.99 {
                 if let nextChannelToRead = strongSelf.nextChannelToRead {
                     // A landing may already be running from an earlier release — the control stays at
                     // full expansion for its whole duration, so a second qualifying release inside it
@@ -2330,7 +2336,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 )
                 
                 var translateToLanguage: (fromLang: String, toLang: String)?
-                if let translationState, (isPremium || autoTranslate)  && translationState.isEnabled {
+                if let translationState, (isPremium || autoTranslate || MellowsgramGlobalSettingsRuntime.shared.bool(for: .translateEntireChats)) && translationState.isEnabled {
                     var languageCode = translationState.toLang ?? chatPresentationData.strings.baseLanguageCode
                     let rawSuffix = "-raw"
                     if languageCode.hasSuffix(rawSuffix) {
@@ -4438,7 +4444,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         self.currentDeleteAnimationCorrelationIds.formUnion(expiredMessageStableIds)
         
         var appliedDeleteAnimationCorrelationIds = Set<UInt32>()
-        if !self.currentDeleteAnimationCorrelationIds.isEmpty && self.allowDustEffect {
+        if !self.currentDeleteAnimationCorrelationIds.isEmpty && self.allowDustEffect && MellowsgramGlobalSettingsRuntime.shared.bool(for: .messageDeletionEffects) {
             var foundItemNodes: [ChatMessageItemView] = []
             self.forEachItemNode { itemNode in
                 if let itemNode = itemNode as? ChatMessageItemView, let item = itemNode.item {

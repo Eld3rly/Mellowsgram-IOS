@@ -503,14 +503,38 @@ private final class FetchImpl {
             }
             
             self.fastDownloads = network.engineKind == .rust
-            if isStory {
-                self.defaultPartSize = 512 * 1024
+            let mellowsgramDownloadBoost = UserDefaults.standard.string(forKey: "mellowsgram.global.downloadBoost") ?? "default"
+            let isSmallResource = self.size.map { $0 <= 1024 * 1024 } ?? false
+            let boostedPartSize: Int64?
+            if isSmallResource {
+                boostedPartSize = nil
             } else {
-                self.defaultPartSize = 128 * 1024
+                switch mellowsgramDownloadBoost {
+                case "medium":
+                    boostedPartSize = 512 * 1024
+                case "maximum":
+                    boostedPartSize = 1024 * 1024
+                default:
+                    boostedPartSize = nil
+                }
+            }
+            if isStory {
+                self.defaultPartSize = boostedPartSize ?? 512 * 1024
+            } else {
+                self.defaultPartSize = boostedPartSize ?? 128 * 1024
             }
             self.cdnPartSize = 128 * 1024
-            self.masterPendingParts = self.fastDownloads ? fastDownloadMasterPendingParts : 6
-            self.cdnPendingParts = self.fastDownloads ? fastDownloadCdnPendingParts : 6
+            let pendingParts: Int
+            switch mellowsgramDownloadBoost {
+            case "medium":
+                pendingParts = 8
+            case "maximum":
+                pendingParts = 12
+            default:
+                pendingParts = 6
+            }
+            self.masterPendingParts = self.fastDownloads ? fastDownloadMasterPendingParts : pendingParts
+            self.cdnPendingParts = self.fastDownloads ? fastDownloadCdnPendingParts : pendingParts
             
             // The resource id tells concurrent downloads apart; an Api value prints only its constructor name.
             self.loggingIdentifier = resource.id.stringRepresentation

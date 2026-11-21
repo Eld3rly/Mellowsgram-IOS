@@ -1301,9 +1301,6 @@ func peerInfoScreenData(
                     guard let user = view.peers[userPeerId] as? TelegramUser else {
                         return .none
                     }
-                    if user.id == context.account.peerId {
-                        return .none
-                    }
                     if user.isDeleted {
                         return .none
                     }

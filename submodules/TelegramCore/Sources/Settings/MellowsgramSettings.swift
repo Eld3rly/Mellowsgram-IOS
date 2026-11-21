@@ -25,7 +25,6 @@ public struct MellowsgramSettings: Codable, Equatable {
     /// autoremove/autoclear deadline. Secret and ephemeral messages are still
     /// excluded by the archive/privacy guards.
     public let ignoreAutoremoveTimers: Bool
-
     public static var defaultSettings: MellowsgramSettings {
         return MellowsgramSettings(
             ghostMode: false,

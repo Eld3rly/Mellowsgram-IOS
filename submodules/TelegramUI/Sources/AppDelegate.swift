@@ -195,13 +195,15 @@ private enum QueuedWakeup: Int32 {
 final class SharedApplicationContext {
     let sharedContext: SharedAccountContextImpl
     let notificationManager: SharedNotificationManager
+    let mellowsgramBarkNotificationManager: MellowsgramBarkNotificationManager
     let wakeupManager: SharedWakeupManager
     let overlayMediaController: ViewController & OverlayMediaController
     var minimizedContainer: [AccountRecordId: MinimizedContainer] = [:]
     
-    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, wakeupManager: SharedWakeupManager) {
+    init(sharedContext: SharedAccountContextImpl, notificationManager: SharedNotificationManager, mellowsgramBarkNotificationManager: MellowsgramBarkNotificationManager, wakeupManager: SharedWakeupManager) {
         self.sharedContext = sharedContext
         self.notificationManager = notificationManager
+        self.mellowsgramBarkNotificationManager = mellowsgramBarkNotificationManager
         self.wakeupManager = wakeupManager
         self.overlayMediaController = OverlayMediaControllerImpl()
     }
@@ -272,6 +274,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private let openNotificationSettingsWhenReadyDisposable = MetaDisposable()
     private let openChatWhenReadyDisposable = MetaDisposable()
     private let openUrlWhenReadyDisposable = MetaDisposable()
+    private let mellowsgramNotificationOpenDisposable = MetaDisposable()
     
     private let badgeDisposable = MetaDisposable()
     private let quickActionsDisposable = MetaDisposable()
@@ -1009,6 +1012,33 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if buildConfig.isInternalBuild {
                     icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
                 }
+
+                icons.append(contentsOf: [
+                    PresentationAppIcon(name: "MellowsgramMint", imageName: "MellowsgramMint"),
+                    PresentationAppIcon(name: "MellowsgramSage", imageName: "MellowsgramSage"),
+                    PresentationAppIcon(name: "MellowsgramLavender", imageName: "MellowsgramLavender"),
+                    PresentationAppIcon(name: "MellowsgramRose", imageName: "MellowsgramRose"),
+                    PresentationAppIcon(name: "MellowsgramCoral", imageName: "MellowsgramCoral"),
+                    PresentationAppIcon(name: "MellowsgramApricot", imageName: "MellowsgramApricot"),
+                    PresentationAppIcon(name: "MellowsgramGraphite", imageName: "MellowsgramGraphite"),
+                    PresentationAppIcon(name: "MellowsgramSand", imageName: "MellowsgramSand"),
+                    PresentationAppIcon(name: "MellowsgramMidnight", imageName: "MellowsgramMidnight"),
+                    PresentationAppIcon(name: "MellowsgramForest", imageName: "MellowsgramForest"),
+                    PresentationAppIcon(name: "MellowsgramBordeaux", imageName: "MellowsgramBordeaux"),
+                    PresentationAppIcon(name: "MellowsgramPlum", imageName: "MellowsgramPlum"),
+                    PresentationAppIcon(name: "MellowsgramLimeNoir", imageName: "MellowsgramLimeNoir"),
+                    PresentationAppIcon(name: "MellowsgramLilacNoir", imageName: "MellowsgramLilacNoir"),
+                    PresentationAppIcon(name: "MellowsgramPeachNoir", imageName: "MellowsgramPeachNoir"),
+                    PresentationAppIcon(name: "MellowsgramBerry", imageName: "MellowsgramBerry"),
+                    PresentationAppIcon(name: "MellowsgramLemon", imageName: "MellowsgramLemon"),
+                    PresentationAppIcon(name: "MellowsgramPistachio", imageName: "MellowsgramPistachio"),
+                    PresentationAppIcon(name: "MellowsgramLilac", imageName: "MellowsgramLilac"),
+                    PresentationAppIcon(name: "MellowsgramPeach", imageName: "MellowsgramPeach"),
+                    PresentationAppIcon(name: "MellowsgramRaspberry", imageName: "MellowsgramRaspberry"),
+                    PresentationAppIcon(name: "MellowsgramElectric", imageName: "MellowsgramElectric"),
+                    PresentationAppIcon(name: "MellowsgramSunset", imageName: "MellowsgramSunset"),
+                    PresentationAppIcon(name: "MellowsgramAurora", imageName: "MellowsgramAurora")
+                ])
                 
                 icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
                 icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
@@ -1027,7 +1057,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, requestSetAlternateIconName: { name, completion in
             application.setAlternateIconName(name, completionHandler: { error in
                 if let error = error {
-                   Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon with error \(error.localizedDescription)")
+                   Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon \(name ?? "<default>"): \(error.localizedDescription)")
                 }
                 completion(error == nil)
             })
@@ -1224,6 +1254,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             setPresentationCall = { call in
                 notificationManager.setNotificationCall(call, strings: sharedContext.currentPresentationData.with({ $0 }).strings)
             }
+            let mellowsgramBarkNotificationManager = MellowsgramBarkNotificationManager(
+                accountManager: sharedContext.accountManager,
+                activeAccounts: sharedContext.activeAccountContexts
+            )
             let liveLocationPolling = self.context.get()
             |> mapToSignal { context -> Signal<AccountRecordId?, NoError> in
                 if let context = context, let liveLocationManager = context.context.liveLocationManager {
@@ -1264,7 +1298,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }, presentationData: {
                 return sharedContext.currentPresentationData.with({ $0 })
             })
-            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, wakeupManager: wakeupManager)
+            let sharedApplicationContext = SharedApplicationContext(sharedContext: sharedContext, notificationManager: notificationManager, mellowsgramBarkNotificationManager: mellowsgramBarkNotificationManager, wakeupManager: wakeupManager)
             sharedApplicationContext.sharedContext.mediaManager.overlayMediaManager.attachOverlayMediaController(sharedApplicationContext.overlayMediaController)
             
             return accountManager.transaction { transaction -> (SharedApplicationContext, LoggingSettings) in
@@ -1317,7 +1351,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> deliverOnMainQueue
             |> map { accountAndSettings -> AuthorizedApplicationContext? in
                 return accountAndSettings.flatMap { context, callListSettings in
-                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, reinitializedNotificationSettings: {
+                    return AuthorizedApplicationContext(sharedApplicationContext: sharedApplicationContext, mainWindow: self.mainWindow, context: context as! AccountContextImpl, accountManager: sharedApplicationContext.sharedContext.accountManager, showCallsTab: callListSettings.showTab, showContactsTab: callListSettings.showContactsTab, reinitializedNotificationSettings: {
                         let _ = (self.context.get()
                         |> take(1)
                         |> deliverOnMainQueue).start(next: { context in
@@ -1603,8 +1637,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         })
         
         if let url = launchOptions?[.url] {
-            if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+            if let url = url as? URL, url.scheme?.lowercased() == "mellowsgram" {
+                self.handleOpenURL(url)
+            } else if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
                 self.openUrlWhenReady(url: url, external: true)
+            } else if let urlString = url as? String, urlString.lowercased().hasPrefix("mellowsgram:"), let url = URL(string: urlString) {
+                self.handleOpenURL(url)
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("ton:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):") || WalletContext.isTonConnectUrl(urlString), let url = URL(string: urlString) {
                 self.openUrlWhenReady(url: url, external: true)
             }
@@ -1814,7 +1852,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         for context in connectionOptions.urlContexts {
             let url = context.url
-            if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+            if url.scheme?.lowercased() == "mellowsgram" {
+                self.handleOpenURL(url)
+            } else if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
                 self.openUrlWhenReady(url: url, external: true)
             } else {
                 self.handleOpenURL(url)
@@ -2617,7 +2657,92 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         guard self.openUrlInProgress != url else {
             return
         }
+        if self.openMellowsgramNotificationURL(url) {
+            return
+        }
         self.openUrl(url: url)
+    }
+
+    private func openMellowsgramNotificationURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "mellowsgram",
+              url.host?.lowercased() == "notification"
+        else {
+            return false
+        }
+
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func queryValue(_ name: String) -> String? {
+            return queryItems.first(where: { $0.name == name })?.value
+        }
+
+        let telegramUserId = queryValue("uid").flatMap { Int64($0) }.flatMap { $0 > 0 ? $0 : nil }
+        let peerId: PeerId?
+        if let peerType = queryValue("type"),
+           let value = queryValue("peer").flatMap({ Int64($0) }), value > 0 {
+            let namespace: PeerId.Namespace
+            switch peerType {
+            case "user":
+                namespace = Namespaces.Peer.CloudUser
+            case "group":
+                namespace = Namespaces.Peer.CloudGroup
+            case "channel":
+                namespace = Namespaces.Peer.CloudChannel
+            default:
+                return false
+            }
+            peerId = PeerId(namespace: namespace, id: PeerId.Id._internalFromInt64Value(value))
+        } else {
+            peerId = nil
+        }
+
+        let threadId = queryValue("thread").flatMap { Int64($0) }
+        let messageId: MessageId? = peerId.flatMap { peerId in
+            guard let value = queryValue("message").flatMap({ Int32($0) }), value > 0 else {
+                return nil
+            }
+            return MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: value)
+        }
+        let storyId: StoryId? = peerId.flatMap { peerId in
+            guard let value = queryValue("story").flatMap({ Int32($0) }), value > 0 else {
+                return nil
+            }
+            return StoryId(peerId: peerId, id: value)
+        }
+
+        self.openUrlInProgress = url
+        let signal = self.sharedContextPromise.get()
+        |> take(1)
+        |> mapToSignal { sharedApplicationContext -> Signal<(SharedAccountContextImpl, AccountRecordId?), NoError> in
+            return sharedApplicationContext.sharedContext.activeAccountContexts
+            |> take(1)
+            |> map { _, contexts, _ -> (SharedAccountContextImpl, AccountRecordId?) in
+                let accountId = telegramUserId.flatMap { userId in
+                    contexts.first(where: { _, context, _ in
+                        context.account.peerId.id._internalGetInt64Value() == userId
+                    })?.0
+                }
+                return (sharedApplicationContext.sharedContext, accountId)
+            }
+        }
+        |> deliverOnMainQueue
+        self.mellowsgramNotificationOpenDisposable.set(signal.start(next: { [weak self] sharedContext, accountId in
+            guard let self else {
+                return
+            }
+            if telegramUserId == nil || accountId != nil {
+                if let peerId {
+                    self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                } else if let accountId {
+                    sharedContext.switchToAccount(id: accountId)
+                }
+            }
+            Queue.mainQueue().after(1.0, {
+                if self.openUrlInProgress == url {
+                    self.openUrlInProgress = nil
+                }
+            })
+        }))
+        return true
     }
 
     private func presentWalletUnavailable(in context: AuthorizedApplicationContext) {
@@ -3093,7 +3218,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             completionHandler()
             return
         }
-        
+
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
@@ -3284,7 +3409,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             completionHandler([])
             return
         }
-        
+
         let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if let context = self.contextValue {

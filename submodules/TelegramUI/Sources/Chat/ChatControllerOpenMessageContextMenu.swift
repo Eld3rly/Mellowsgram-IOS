@@ -98,6 +98,7 @@ extension ChatControllerImpl {
                 
                 if tip == nil {
                     let isAd = message.adAttribute != nil
+                    let canBypassCopyProtection = mellowsgramCanBypassCopyProtection(message: message._asMessage())
                         
                     var isAction = false
                     for media in message.media {
@@ -106,9 +107,9 @@ extension ChatControllerImpl {
                             break
                         }
                     }
-                    if self.presentationInterfaceState.myCopyProtectionEnabled && !isAction && !isAd {
+                    if self.presentationInterfaceState.myCopyProtectionEnabled && !canBypassCopyProtection && !isAction && !isAd {
                         tip = .messageCopyProtection(text: self.presentationData.strings.Conversation_CopyProtectionInfoPrivateYou)
-                    } else if self.presentationInterfaceState.copyProtectionEnabled && !isAction && !isAd {
+                    } else if self.presentationInterfaceState.copyProtectionEnabled && !canBypassCopyProtection && !isAction && !isAd {
                         if case .scheduledMessages = self.subject {
                         } else {
                             if let peer = self.presentationInterfaceState.renderedPeer?.peer {

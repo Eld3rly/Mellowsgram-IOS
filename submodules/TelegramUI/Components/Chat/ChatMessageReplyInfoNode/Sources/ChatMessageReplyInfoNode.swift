@@ -207,7 +207,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             let titleFont = Font.semibold(fontSize)
             let textFont = Font.regular(fontSize)
 
-            func mellowsgramReplyMediaReference(_ media: Media, message: EngineRawMessage) -> AnyMediaReference {
+            func mellowsgramReplyMediaReference(_ media: EngineRawMedia, message: EngineRawMessage) -> AnyMediaReference {
                 if engineMellowsgramMessageIsDeleted(message) {
                     return .standalone(media: media)
                 } else {

@@ -1622,6 +1622,19 @@ public final class PendingMessageManager {
                 break
         }
         
+        // Discard screenshot actions that may have been queued by an older
+        // Mellowsgram build before they can become an encrypted secret-chat
+        // operation. This is a local cleanup; no network request is made.
+        if message.media.contains(where: { media in
+            if let media = media as? TelegramMediaAction, case .historyScreenshot = media.action {
+                return true
+            }
+            return false
+        }) {
+            transaction.deleteMessages([message.id], forEachMedia: nil)
+            return
+        }
+
         var layer: SecretChatLayer?
         let state = transaction.getPeerChatState(message.id.peerId) as? SecretChatState
         if let state = state {
@@ -2093,26 +2106,9 @@ public final class PendingMessageManager {
                         sendMessageRequest = network.request(Api.functions.messages.sendInlineBotResult(flags: flags, peer: inputPeer, replyTo: replyTo, randomId: uniqueId, queryId: chatContextResult.queryId, id: chatContextResult.id, scheduleDate: scheduleTime, sendAs: sendAsInputPeer, quickReplyShortcut: quickReplyShortcut, allowPaidStars: allowPaidStars))
                         |> map(NetworkRequestResult.result)
                     case .messageScreenshot:
-                        let replyTo: Api.InputReplyTo
-                    
-                        if let replyMessageId = replyMessageId {
-                            let replyFlags: Int32 = 0
-                            replyTo = .inputReplyToMessage(.init(flags: replyFlags, replyToMsgId: replyMessageId, topMsgId: nil, replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil, monoforumPeerId: nil, todoItemId: nil, pollOption: nil, quoteRich: nil))
-                        } else if let replyToStoryId = replyToStoryId {
-                            if let inputPeer = transaction.getPeer(replyToStoryId.peerId).flatMap(apiInputPeer) {
-                                flags |= 1 << 0
-                                replyTo = .inputReplyToStory(.init(peer: inputPeer, storyId: replyToStoryId.id))
-                            } else {
-                                let replyFlags: Int32 = 0
-                                replyTo = .inputReplyToMessage(.init(flags: replyFlags, replyToMsgId: 0, topMsgId: nil, replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil, monoforumPeerId: monoforumPeerId, todoItemId: nil, pollOption: nil, quoteRich: nil))
-                            }
-                        } else {
-                            let replyFlags: Int32 = 0
-                            replyTo = .inputReplyToMessage(.init(flags: replyFlags, replyToMsgId: 0, topMsgId: nil, replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil, monoforumPeerId: monoforumPeerId, todoItemId: nil, pollOption: nil, quoteRich: nil))
-                        }
-                    
-                        sendMessageRequest = network.request(Api.functions.messages.sendScreenshotNotification(peer: inputPeer, replyTo: replyTo, randomId: uniqueId))
-                        |> map(NetworkRequestResult.result)
+                        // Drop stale screenshot-notification work items without
+                        // touching the network.
+                        sendMessageRequest = .single(.acknowledged)
                     case .secretMedia:
                         assertionFailure()
                         sendMessageRequest = .fail(MTRpcError(errorCode: 400, errorDescription: "internal"))
