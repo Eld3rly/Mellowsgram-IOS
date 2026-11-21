@@ -175,7 +175,7 @@ public final class ChatMessageWidgetBubbleContentNode: ChatMessageBubbleContentN
                 // sdk-v1 §2.15: copy, and a toast that says what was copied, so a widget cannot show one text and copy
                 // another unnoticed. Where the chat forbids copying (the widget's text selection's rule), nothing is
                 // copied and the chat says why.
-                let copyAllowed = (!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message.id.peerId.isVerificationCodes
+                let copyAllowed = ((!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message._asMessage().mellowsgramCanBypassCopyProtection() || item.message.id.peerId.isVerificationCodes)
                 if copyAllowed {
                     UIPasteboard.general.string = text
                     item.controllerInteraction.displayUndo(.copy(text: text))
@@ -769,7 +769,7 @@ public final class ChatMessageWidgetBubbleContentNode: ChatMessageBubbleContentN
             return
         }
         // Copy is the only action, so where the chat forbids copying nothing selects.
-        let copyAllowed = (!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message.id.peerId.isVerificationCodes
+        let copyAllowed = ((!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message._asMessage().mellowsgramCanBypassCopyProtection() || item.message.id.peerId.isVerificationCodes)
         guard copyAllowed, let text = widgetView.selectableText, !text.isEmpty, let rootNode = item.controllerInteraction.chatControllerNode() else {
             self.tearDownTextSelection(animated: true)
             return

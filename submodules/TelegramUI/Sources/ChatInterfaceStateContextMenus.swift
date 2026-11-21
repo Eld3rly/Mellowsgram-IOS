@@ -53,12 +53,12 @@ private struct MessageContextMenuData {
     let messageActions: ChatAvailableMessageActions
 }
 
-private struct MellowsgramSavedMediaCandidate {
+struct MellowsgramSavedMediaCandidate {
     let resources: [TelegramMediaResource]
     let makeMedia: ([Bool]) -> EngineMedia?
 }
 
-private func mellowsgramSavedMediaCandidates(_ media: [EngineMedia]) -> [MellowsgramSavedMediaCandidate] {
+func mellowsgramSavedMediaCandidates(_ media: [EngineMedia]) -> [MellowsgramSavedMediaCandidate] {
     var candidates: [MellowsgramSavedMediaCandidate] = []
 
     for item in media {
@@ -143,14 +143,25 @@ private func mellowsgramSavedMediaCandidates(_ media: [EngineMedia]) -> [Mellows
                 return .file(file.withUpdatedPartialReference(nil))
             }))
         default:
-            continue
+            // Media without a MediaBox resource (polls, locations, contacts,
+            // webpages, etc.) can be copied as a standalone descriptor. The
+            // protected-chat fallback must not silently drop those messages.
+            switch item {
+            case .action(_), .expiredContent(_), .story(_), .paidContent(_):
+                continue
+            default:
+                break
+            }
+            candidates.append(MellowsgramSavedMediaCandidate(resources: [], makeMedia: { _ in
+                return item
+            }))
         }
     }
 
     return candidates
 }
 
-private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, media: [EngineMedia]) -> Signal<[EngineMedia], NoError> {
+func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, media: [EngineMedia]) -> Signal<[EngineMedia], NoError> {
     let candidates = mellowsgramSavedMediaCandidates(media)
     let candidateSignals: [Signal<EngineMedia?, NoError>] = candidates.map { candidate in
         let resourceSignals: [Signal<Bool, NoError>] = candidate.resources.map { resource in
@@ -163,8 +174,12 @@ private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, medi
                 return false
             }
         }
-        return combineLatest(resourceSignals)
-        |> map { candidate.makeMedia($0) }
+        if resourceSignals.isEmpty {
+            return .single(candidate.makeMedia([]))
+        } else {
+            return combineLatest(resourceSignals)
+            |> map { candidate.makeMedia($0) }
+        }
     }
 
     guard !candidateSignals.isEmpty else {
@@ -172,6 +187,15 @@ private func mellowsgramLocallyAvailableSavedMedia(context: AccountContext, medi
     }
     return combineLatest(candidateSignals)
     |> map { $0.compactMap { $0 } }
+}
+
+/// Telegram's copy-protection flag is a server-side restriction. Mellowsgram
+/// can offer a local copy/re-upload path for ordinary protected channel/group
+/// messages, but must keep Telegram's privacy-sensitive message classes intact.
+/// This is intentionally internal so the context-menu action resolver and the
+/// forwarding controller use exactly the same policy.
+func mellowsgramCanBypassCopyProtection(message: EngineRawMessage, peer: EngineRawPeer? = nil) -> Bool {
+    return message.mellowsgramCanBypassCopyProtection(peer: peer)
 }
 
 private func mellowsgramArchivedMediaHasExpired(message: EngineRawMessage, record: EngineMellowsgramMessageArchiveRecord?) -> Bool {
@@ -1202,10 +1226,10 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
 
         var actions: [ContextMenuItem] = []
 
+        let canBypassCopyProtection = mellowsgramCanBypassCopyProtection(message: message)
         if messages.count == 1,
            MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextJSON),
-           !chatPresentationInterfaceState.copyProtectionEnabled,
-           !message.isCopyProtected() {
+           ((!chatPresentationInterfaceState.copyProtectionEnabled && !message.isCopyProtected()) || canBypassCopyProtection) {
             var mediaTypes: [String] = []
             for media in message.media {
                 if media is TelegramMediaImage {
@@ -1654,7 +1678,11 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
+        // Keep the original Telegram flag for privacy-sensitive message
+        // classes, but allow ordinary channel/group content to use the
+        // Mellowsgram copy/re-upload path.
+        let isCopyProtectionBypassed = mellowsgramCanBypassCopyProtection(message: message)
+        let isCopyProtected = (chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()) && !isCopyProtectionBypassed
         if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
             if !isExpired {
                 if !isPoll {
@@ -1845,7 +1873,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveToFiles, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
-                        if isMellowsgramDeletedMessage {
+                        if isMellowsgramDeletedMessage || isCopyProtectionBypassed {
                             let _ = saveMediaToFiles(context: context, fileReference: .standalone(media: file), present: { controller, arguments in
                                 controllerInteraction.presentControllerInCurrent(controller, arguments)
                             })
@@ -2180,7 +2208,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                 }, action: { _, f in
                                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                                     let fileReference: FileMediaReference
-                                    if isMellowsgramDeletedMessage {
+                                    if isMellowsgramDeletedMessage || isCopyProtectionBypassed {
                                         fileReference = .standalone(media: file)
                                     } else {
                                         fileReference = .message(message: MessageReference(message), media: file)
@@ -2255,7 +2283,12 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     f(.dismissWithoutContent)
                 })))
 
-                if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToCloud), message.id.peerId != context.account.peerId, !isMellowsgramDeletedMessage {
+                if MellowsgramGlobalSettingsRuntime.shared.bool(for: .contextSaveToCloud),
+                   message.id.peerId != context.account.peerId,
+                   !isMellowsgramDeletedMessage,
+                   !message.isCopyProtected(),
+                   !chatPresentationInterfaceState.copyProtectionEnabled,
+                   !chatPresentationInterfaceState.myCopyProtectionEnabled {
                     let saveToSavedMessagesTitle = mellowsgramLocalizedString(english: "Save to Saved Messages", russian: "Сохранить в Избранное", languageCode: chatPresentationInterfaceState.strings.primaryComponent.languageCode)
                     actions.append(.action(ContextMenuActionItem(text: saveToSavedMessagesTitle, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
@@ -3253,7 +3286,9 @@ func chatAvailableMessageActionsImpl(engine: TelegramEngine, accountPeerId: Engi
                             }
                         }
                         if !message.containsSecretMedia && !isAction && !isShareProtected {
-                            if message.id.peerId.namespace != Namespaces.Peer.SecretChat && !message.isCopyProtected() {
+                            let canBypassCopyProtection = mellowsgramCanBypassCopyProtection(message: message, peer: peer)
+                            let isMessageCopyProtected = message.isCopyProtected() || isPeerCopyProtected(message.id.peerId) == true
+                            if message.id.peerId.namespace != Namespaces.Peer.SecretChat && (!isMessageCopyProtected || canBypassCopyProtection) {
                                 if !(message.flags.isSending || message.flags.contains(.Failed)) {
                                     optionsMap[id]!.insert(.forward)
                                 }
@@ -3269,7 +3304,9 @@ func chatAvailableMessageActionsImpl(engine: TelegramEngine, accountPeerId: Engi
                         }
                     } else if let group = peer as? TelegramGroup {
                         if message.id.peerId.namespace != Namespaces.Peer.SecretChat && !message.containsSecretMedia {
-                            if !isAction && !message.isCopyProtected() && !isShareProtected {
+                            let canBypassCopyProtection = mellowsgramCanBypassCopyProtection(message: message, peer: peer)
+                            let isMessageCopyProtected = message.isCopyProtected() || isPeerCopyProtected(message.id.peerId) == true
+                            if !isAction && (!isMessageCopyProtected || canBypassCopyProtection) && !isShareProtected {
                                 if !(message.flags.isSending || message.flags.contains(.Failed)) {
                                     optionsMap[id]!.insert(.forward)
                                 }

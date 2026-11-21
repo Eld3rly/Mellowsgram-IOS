@@ -437,7 +437,8 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
         
         let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
         var translateButtonAvailable = false
-        var chatTranslationAvailable = false
+        // Mellowsgram can translate full chats locally, independent of Telegram Premium.
+        let chatTranslationAvailable = true
         
         switch translationConfiguration.manual {
         case .enabled, .alternative:
@@ -450,35 +451,21 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
             break
         }
         
-        switch translationConfiguration.auto {
-        case .enabled:
-            chatTranslationAvailable = true
-        case .system:
-            if #available(iOS 18.0, *) {
-                chatTranslationAvailable = true
-            }
-        default:
-            break
-        }
-        
         let previousState = Atomic<LocalizationListState?>(value: nil)
         let previousEntriesHolder = Atomic<([LanguageListEntry], PresentationTheme, PresentationStrings)?>(value: nil)
         self.listDisposable = combineLatest(
             queue: .mainQueue(),
             context.engine.data.subscribe(TelegramEngine.EngineData.Item.Configuration.LocalizationList()),
-            context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)),
             context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.localizationSettings, ApplicationSpecificSharedDataKeys.translationSettings]),
             self.presentationDataValue.get(),
             self.applyingCode.get(),
             revealedCode.get(),
             self.isEditing.get()
-        ).start(next: { [weak self] localizationListState, peer, sharedData, presentationData, applyingCode, revealedCode, isEditing in
+        ).start(next: { [weak self] localizationListState, sharedData, presentationData, applyingCode, revealedCode, isEditing in
             guard let strongSelf = self else {
                 return
             }
             
-            let isPremium = peer?.isPremium ?? false
-                        
             var entries: [LanguageListEntry] = []
             var activeLanguageCode: String?
             if let localizationSettings = sharedData.entries[SharedDataKeys.localizationSettings]?.get(LocalizationSettings.self) {
@@ -491,7 +478,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
             var ignoredLanguages: [String] = []
             if let translationSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) {
                 showTranslate = translationSettings.showTranslate
-                translateChats = isPremium ? translationSettings.translateChats : false
+                translateChats = translationSettings.translateChats
                 if let languages = translationSettings.ignoredLanguages {
                     ignoredLanguages = languages
                 } else {
@@ -512,7 +499,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                     }
                 }
             } else {
-                translateChats = isPremium
+                translateChats = TranslationSettings.defaultSettings.translateChats
                 if let activeLanguage = activeLanguageCode, supportedTranslationLanguages.contains(activeLanguage) {
                     ignoredLanguages = [activeLanguage]
                 }
@@ -533,7 +520,7 @@ final class LocalizationListControllerNode: ViewControllerTracingNode {
                         entries.append(.translate(text: presentationData.strings.Localization_ShowTranslate, value: showTranslate))
                     }
                     if chatTranslationAvailable {
-                        entries.append(.translateEntire(text: presentationData.strings.Localization_TranslateEntireChat, value: translateChats, locked: !isPremium))
+                        entries.append(.translateEntire(text: presentationData.strings.Localization_TranslateEntireChat, value: translateChats, locked: false))
                     }
                     
                     var value = ""

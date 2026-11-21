@@ -177,6 +177,11 @@ final class MellowsgramMessageArchiveTable: Table {
     }
 
     func get(_ messageId: MessageId) -> MellowsgramMessageArchiveRecord? {
+        // Ignore local pending-id tombstones written by older builds. Their
+        // removal is part of send confirmation, not a deleted chat message.
+        guard messageId.namespace == 0 else {
+            return nil
+        }
         if let entry = self.cachedEntries[messageId] {
             return entry
         }
@@ -200,7 +205,7 @@ final class MellowsgramMessageArchiveTable: Table {
     func records(peerId: PeerId, threadId: Int64?) -> [MellowsgramMessageArchiveRecord] {
         var resultById: [MessageId: MellowsgramMessageArchiveRecord] = [:]
         self.valueBox.scan(self.table, values: { _, value in
-            if let entry = CodableEntry(data: value.makeData()).get(MellowsgramMessageArchiveRecord.self), entry.messageId.peerId == peerId, entry.threadId == threadId {
+            if let entry = CodableEntry(data: value.makeData()).get(MellowsgramMessageArchiveRecord.self), entry.messageId.namespace == 0, entry.messageId.peerId == peerId, entry.threadId == threadId {
                 resultById[entry.messageId] = entry
             }
             return true
@@ -210,7 +215,7 @@ final class MellowsgramMessageArchiveTable: Table {
         // from the in-memory write cache, which are not committed yet. Cached
         // values intentionally overwrite the persisted value: an edit and a
         // deletion can be read before the ValueBox commit.
-        for entry in self.cachedEntries.values where entry.messageId.peerId == peerId && entry.threadId == threadId {
+        for entry in self.cachedEntries.values where entry.messageId.namespace == 0 && entry.messageId.peerId == peerId && entry.threadId == threadId {
             resultById[entry.messageId] = entry
         }
         return resultById.values.sorted { lhs, rhs in
@@ -295,12 +300,13 @@ final class MellowsgramMessageArchiveTable: Table {
     }
 
     private static func isEligible(_ message: IntermediateMessage) -> Bool {
-        // Cloud and local messages only. Secret, scheduled, ephemeral and other
-        // namespaces intentionally keep Telegram's original privacy semantics.
+        // Only confirmed cloud messages are archive candidates. Local pending
+        // messages are removed during send confirmation and scheduled,
+        // ephemeral and other namespaces keep Telegram's original semantics.
         // Peer namespace 3 is the Postbox-level Secret Chat namespace. Keep the
         // check here (rather than in TelegramCore) so the archive cannot be
         // enabled for secret chats by an accidental caller.
-        guard (message.id.namespace == 0 || message.id.namespace == 1) && message.id.peerId.namespace._internalGetInt32Value() != 3 else {
+        guard message.id.namespace == 0 && message.id.peerId.namespace._internalGetInt32Value() != 3 else {
             return false
         }
 

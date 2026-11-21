@@ -29,6 +29,7 @@ swift_library(
         "//submodules/UndoUI",
         "//submodules/AttachmentUI",
         "//submodules/TelegramUIPreferences",
+        "//submodules/UIKitRuntimeUtils:UIKitRuntimeUtils",
         "//submodules/MediaPickerUI",
         "//submodules/LegacyMediaPickerUI",
         "//submodules/LocationUI",

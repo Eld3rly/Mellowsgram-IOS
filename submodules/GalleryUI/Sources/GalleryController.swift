@@ -13,7 +13,6 @@ import AccountContext
 import TelegramUniversalVideoContent
 import WebsiteType
 import OpenInExternalAppUI
-import ScreenCaptureDetection
 import UndoUI
 import TranslateUI
 import UrlWhitelist
@@ -784,8 +783,6 @@ public class GalleryController: ViewController, StandalonePresentableController,
     
     private let updateVisibleDisposable = MetaDisposable()
     
-    private var screenCaptureEventsDisposable: Disposable?
-    
     private let generateStoreAfterDownload: ((Message, TelegramMediaFile) -> (() -> Void)?)?
     
     public var centralItemUpdated: ((MessageId) -> Void)?
@@ -1455,19 +1452,6 @@ public class GalleryController: ViewController, StandalonePresentableController,
         self.acceptsFocusWhenInOverlay = true
         self.isOpaqueWhenInOverlay = true
         
-        switch source {
-        case let .peerMessagesAtId(id, _, _, _):
-            if id.peerId.namespace == Namespaces.Peer.SecretChat {
-                self.screenCaptureEventsDisposable = (screenCaptureEvents()
-                |> deliverOnMainQueue).start(next: { [weak self] _ in
-                    if let strongSelf = self, strongSelf.traceVisibility() {
-                        let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: id.peerId).start()
-                    }
-                }).strict()
-            }
-        default:
-            break
-        }
     }
     
     required init(coder aDecoder: NSCoder) {
@@ -1486,7 +1470,6 @@ public class GalleryController: ViewController, StandalonePresentableController,
             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
         }
         self.updateVisibleDisposable.dispose()
-        self.screenCaptureEventsDisposable?.dispose()
     }
     
     @objc private func donePressed() {

@@ -9,18 +9,16 @@ import ImageBlur
 import MediaResources
 import Display
 import TelegramPresentationData
-import BundleIconComponent
-import MultilineTextComponent
+import UIKitRuntimeUtils
 
 final class StoryItemImageView: UIView {
     private let contentView: UIImageView
-    private var captureProtectedView: UITextField?
-    
-    private var captureProtectedInfo: ComponentView<Empty>?
     
     private var currentMedia: EngineMedia?
     private var disposable: Disposable?
     private var fetchDisposable: Disposable?
+    private var mellowsgramScreenshotProtectionObserver: NSObjectProtocol?
+    private var isCaptureProtected = false
     
     private(set) var isContentLoaded: Bool = false
     var didLoadContents: (() -> Void)?
@@ -30,6 +28,14 @@ final class StoryItemImageView: UIView {
         self.contentView.contentMode = .scaleAspectFill
         
         super.init(frame: frame)
+
+        self.mellowsgramScreenshotProtectionObserver = NotificationCenter.default.addObserver(forName: Notification.Name("MellowsgramScreenshotProtectionDidChange"), object: nil, queue: .main, using: { [weak self] _ in
+            guard let self else {
+                return
+            }
+            setLayerDisableScreenshots(self.contentView.layer, self.isCaptureProtected)
+            self.backgroundColor = self.isCaptureProtected && getMellowsgramScreenshotProtectionEnabled() ? UIColor(rgb: 0x181818) : nil
+        })
     }
     
     required init?(coder: NSCoder) {
@@ -38,35 +44,27 @@ final class StoryItemImageView: UIView {
     
     deinit {
         self.disposable?.dispose()
+        if let observer = self.mellowsgramScreenshotProtectionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
-    private func updateImage(image: UIImage, isCaptureProtected: Bool) {
+    private func updateImage(image: UIImage, isCaptureProtected: Bool = false) {
         self.contentView.image = image
-        
-        if isCaptureProtected {
-            let captureProtectedView: UITextField
-            if let current = self.captureProtectedView {
-                captureProtectedView = current
-            } else {
-                captureProtectedView = UITextField(frame: self.contentView.frame)
-                captureProtectedView.isSecureTextEntry = true
-                self.captureProtectedView = captureProtectedView
-                self.layer.addSublayer(captureProtectedView.layer)
-                captureProtectedView.layer.sublayers?.first?.addSublayer(self.contentView.layer)
-            }
-        } else {
-            if self.contentView.layer.superlayer !== self.layer {
-                self.layer.addSublayer(self.contentView.layer)
-            }
-            if let captureProtectedView = self.captureProtectedView {
-                self.captureProtectedView = nil
-                captureProtectedView.layer.removeFromSuperlayer()
-            }
+        setLayerDisableScreenshots(self.contentView.layer, isCaptureProtected)
+
+        if self.contentView.layer.superlayer !== self.layer {
+            self.layer.addSublayer(self.contentView.layer)
         }
     }
     
     func update(context: AccountContext, strings: PresentationStrings, peer: EnginePeer, storyId: Int32, media: EngineMedia, size: CGSize, isCaptureProtected: Bool, attemptSynchronous: Bool, transition: ComponentTransition) {
-        self.backgroundColor = isCaptureProtected ? UIColor(rgb: 0x181818) : nil
+        // The global Mellowsgram setting decides whether the upstream capture
+        // protection request is honoured. Keep the parameter for the upstream
+        // story renderer, but do not add a separate overlay of our own.
+        _ = strings
+        self.isCaptureProtected = isCaptureProtected
+        self.backgroundColor = isCaptureProtected && getMellowsgramScreenshotProtectionEnabled() ? UIColor(rgb: 0x181818) : nil
         
         var dimensions: CGSize?
         
@@ -237,145 +235,7 @@ final class StoryItemImageView: UIView {
             let filledSize = dimensions.aspectFilled(size)
             let contentFrame = CGRect(origin: CGPoint(x: floor((size.width - filledSize.width) * 0.5), y: floor((size.height - filledSize.height) * 0.5)), size: filledSize)
             
-            if let captureProtectedView = self.captureProtectedView {
-                transition.setFrame(view: self.contentView, frame: CGRect(origin: CGPoint(), size: contentFrame.size))
-                transition.setFrame(view: captureProtectedView, frame: contentFrame)
-            } else {
-                transition.setFrame(view: self.contentView, frame: contentFrame)
-            }
+            transition.setFrame(view: self.contentView, frame: contentFrame)
         }
-        
-        if isCaptureProtected {
-            let captureProtectedInfo: ComponentView<Empty>
-            var captureProtectedInfoTransition = transition
-            if let current = self.captureProtectedInfo {
-                captureProtectedInfo = current
-            } else {
-                captureProtectedInfoTransition = transition.withAnimation(.none)
-                captureProtectedInfo = ComponentView()
-                self.captureProtectedInfo = captureProtectedInfo
-            }
-            let captureProtectedInfoSize = captureProtectedInfo.update(
-                transition: captureProtectedInfoTransition,
-                component: AnyComponent(CaptureProtectedInfoComponent(
-                    strings: strings
-                )),
-                environment: {},
-                containerSize: size
-            )
-            if let captureProtectedInfoView = captureProtectedInfo.view {
-                if captureProtectedInfoView.superview == nil {
-                    self.insertSubview(captureProtectedInfoView, at: 0)
-                }
-                captureProtectedInfoTransition.setFrame(view: captureProtectedInfoView, frame: CGRect(origin: CGPoint(x: floor((size.width - captureProtectedInfoSize.width) * 0.5), y: floor((size.height - captureProtectedInfoSize.height) * 0.5)), size: captureProtectedInfoSize))
-                captureProtectedInfoView.isHidden = false
-            }
-        } else if let captureProtectedInfo = self.captureProtectedInfo {
-            self.captureProtectedInfo = nil
-            captureProtectedInfo.view?.removeFromSuperview()
-        }
-    }
-}
-
-final class CaptureProtectedInfoComponent: Component {
-    let strings: PresentationStrings
-    
-    init(strings: PresentationStrings) {
-        self.strings = strings
-    }
-    
-    static func ==(lhs: CaptureProtectedInfoComponent, rhs: CaptureProtectedInfoComponent) -> Bool {
-        if lhs.strings !== rhs.strings {
-            return false
-        }
-        return true
-    }
-    
-    final class View: UIView {
-        let icon = ComponentView<Empty>()
-        let title = ComponentView<Empty>()
-        let text = ComponentView<Empty>()
-        
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-        }
-        
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-        
-        func update(component: CaptureProtectedInfoComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
-            let iconSize = self.icon.update(
-                transition: transition,
-                component: AnyComponent(BundleIconComponent(
-                    name: "Stories/ScreenshotsOffIcon",
-                    tintColor: .white,
-                    maxSize: nil
-                )),
-                environment: {},
-                containerSize: availableSize
-            )
-            let titleSize = self.title.update(
-                transition: transition,
-                component: AnyComponent(MultilineTextComponent(
-                    text: .plain(NSAttributedString(string: component.strings.Story_ScreenshotBlockedTitle, font: Font.semibold(20.0), textColor: .white)),
-                    horizontalAlignment: .center,
-                    maximumNumberOfLines: 0
-                )),
-                environment: {},
-                containerSize: availableSize
-            )
-            let textSize = self.text.update(
-                transition: transition,
-                component: AnyComponent(MultilineTextComponent(
-                    text: .plain(NSAttributedString(string: component.strings.Story_ScreenshotBlockedText, font: Font.regular(17.0), textColor: UIColor(white: 1.0, alpha: 0.6))),
-                    horizontalAlignment: .center,
-                    maximumNumberOfLines: 0
-                )),
-                environment: {},
-                containerSize: CGSize(width: min(320.0, availableSize.width - 16.0), height: availableSize.height)
-            )
-            
-            var contentWidth: CGFloat = 0.0
-            contentWidth = max(contentWidth, iconSize.width)
-            contentWidth = max(contentWidth, titleSize.width)
-            contentWidth = max(contentWidth, textSize.width)
-            
-            var contentHeight: CGFloat = 0.0
-            
-            if let iconView = self.icon.view {
-                if iconView.superview == nil {
-                    self.addSubview(iconView)
-                }
-                transition.setFrame(view: iconView, frame: CGRect(origin: CGPoint(x: floor((contentWidth - iconSize.width) * 0.5), y: contentHeight), size: iconSize))
-            }
-            contentHeight += iconSize.height + 11.0
-            
-            if let titleView = self.title.view {
-                if titleView.superview == nil {
-                    self.addSubview(titleView)
-                }
-                transition.setFrame(view: titleView, frame: CGRect(origin: CGPoint(x: floor((contentWidth - titleSize.width) * 0.5), y: contentHeight), size: titleSize))
-            }
-            contentHeight += titleSize.height + 16.0
-            
-            if let textView = self.text.view {
-                if textView.superview == nil {
-                    self.addSubview(textView)
-                }
-                transition.setFrame(view: textView, frame: CGRect(origin: CGPoint(x: floor((contentWidth - textSize.width) * 0.5), y: contentHeight), size: textSize))
-            }
-            contentHeight += textSize.height
-            
-            return CGSize(width: contentWidth, height: contentHeight)
-        }
-    }
-    
-    func makeView() -> View {
-        return View(frame: CGRect())
-    }
-    
-    func update(view: View, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
-        return view.update(component: self, availableSize: availableSize, state: state, environment: environment, transition: transition)
     }
 }

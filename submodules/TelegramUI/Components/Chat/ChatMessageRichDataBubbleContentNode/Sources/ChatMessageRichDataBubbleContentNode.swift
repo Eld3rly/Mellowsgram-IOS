@@ -2451,7 +2451,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
             self.textSelectionState?.set(.single(state))
         }
 
-        let enableCopy = (!messageItem.associatedData.isCopyProtectionEnabled && !messageItem.message.isCopyProtected()) || messageItem.message.id.peerId.isVerificationCodes
+        let enableCopy = ((!messageItem.associatedData.isCopyProtectionEnabled && !messageItem.message.isCopyProtected()) || messageItem.message._asMessage().mellowsgramCanBypassCopyProtection() || messageItem.message.id.peerId.isVerificationCodes)
         textSelectionNode.enableCopy = enableCopy
 
         var enableOtherActions = true

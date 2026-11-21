@@ -422,13 +422,26 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
 
         switch MellowsgramGlobalSettingsRuntime.shared.value(for: .translationService) {
         case "google":
-            return telegramTranslation(nonPlainTextIds)
-            |> then(googleTextTranslation)
+            if context.isPremium {
+                return telegramTranslation(nonPlainTextIds)
+                |> then(googleTextTranslation)
+            } else {
+                return googleTextTranslation
+            }
         case "system":
             let systemTranslation = mellowsgramSystemTranslateMessages(context: context, messageIds: plainTextIds, fromLang: fromLang, toLang: toLang) ?? googleTextTranslation
-            return systemTranslation
-            |> then(telegramTranslation(nonPlainTextIds))
+            if context.isPremium {
+                return systemTranslation
+                |> then(telegramTranslation(nonPlainTextIds))
+            } else {
+                return systemTranslation
+            }
         default:
+            // Telegram's translation API is Premium-gated. For free accounts,
+            // translate message text locally through Mellowsgram's Google path.
+            if !context.isPremium {
+                return googleTextTranslation
+            }
             return context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: false)
             |> `catch` { _ -> Signal<Never, NoError> in
                 return googleTextTranslation

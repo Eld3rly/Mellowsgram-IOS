@@ -1307,6 +1307,13 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 }
             }
 
+            let badgeText = MellowsgramBadgeRuntime.shared.badgeText(
+                peerNamespace: peer.id.namespace,
+                peerId: peer.id.id._internalGetInt64Value()
+            )
+            if !badgeText.isEmpty {
+                title += "  \(badgeText)"
+            }
             titleStringText = title
             titleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white)
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)

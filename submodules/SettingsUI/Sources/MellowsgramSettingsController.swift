@@ -83,7 +83,7 @@ private extension MellowsgramGlobalSettingKey {
         case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
              .hideTabBar, .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
              .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder,
-             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat,
+             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat, .protectScreenshots,
              .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
             return .appearance
         case .barkNotificationsEnabled, .barkAllAccounts:
@@ -109,6 +109,7 @@ private extension MellowsgramGlobalSettingKey {
         case .showStickerTimestamp: return mellowsgramText("Show Timestamp", "Показывать время", languageCode: languageCode)
         case .wideChannelPosts: return mellowsgramText("Wide posts in channels", "Широкие публикации в каналах", languageCode: languageCode)
         case .channelBottomPanel: return mellowsgramText("Channel Bottom Panel", "Нижняя панель канала", languageCode: languageCode)
+        case .protectScreenshots: return mellowsgramText("Protect Screenshots", "Скрывать контент на скриншотах", languageCode: languageCode)
         case .outgoingPhotoQuality: return mellowsgramText("Outgoing Photo Quality", "Качество отправляемых фото", languageCode: languageCode)
         case .barkNotificationsEnabled: return mellowsgramText("Bark Notifications", "Уведомления через Bark", languageCode: languageCode)
         case .barkAllAccounts: return mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
@@ -652,9 +653,11 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             if key.mellowsgramIsPercentageSlider {
                 return MellowsgramPercentageSliderItem(
                     theme: presentationData.theme,
+                    key: key,
                     title: key.mellowsgramTitle(languageCode: languageCode),
                     limits: key.mellowsgramSliderLimits(languageCode: languageCode),
                     value: Int32(value) ?? Int32(key.defaultValue) ?? 0,
+                    sampleText: mellowsgramText("First Name Last Name", "Имя Фамилия", languageCode: languageCode),
                     sectionId: self.section,
                     updated: { updatedValue in
                         arguments.updateGlobalSetting(key, "\(updatedValue)")
@@ -680,19 +683,40 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
 
 private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem {
     let theme: PresentationTheme
+    let key: MellowsgramGlobalSettingKey
     let title: String
     let limits: (minimum: String, maximum: String)
     let value: Int32
+    let sampleText: String
     let sectionId: ItemListSectionId
     let updated: (Int32) -> Void
 
-    init(theme: PresentationTheme, title: String, limits: (minimum: String, maximum: String), value: Int32, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
+    init(theme: PresentationTheme, key: MellowsgramGlobalSettingKey, title: String, limits: (minimum: String, maximum: String), value: Int32, sampleText: String, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
         self.theme = theme
+        self.key = key
         self.title = title
         self.limits = limits
         self.value = min(100, max(0, value))
+        self.sampleText = sampleText
         self.sectionId = sectionId
         self.updated = updated
+    }
+
+    var previewHeight: CGFloat {
+        switch self.key {
+        case .accountColorsSaturation:
+            return 150.0
+        case .stickerSize:
+            return 104.0
+        case .outgoingPhotoQuality:
+            return 152.0
+        default:
+            return 0.0
+        }
+    }
+
+    var totalHeight: CGFloat {
+        return 104.0 + self.previewHeight
     }
 
     func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, neighbors: ListViewItemNeighbors, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
@@ -726,6 +750,194 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
     }
 }
 
+private final class MellowsgramSliderPreviewView: UIView {
+    private var key: MellowsgramGlobalSettingKey = .accountColorsSaturation
+    private var value: Int32 = 100
+    private var sampleText = "First Name Last Name"
+    private var textColor: UIColor = .white
+    private var separatorColor: UIColor = .darkGray
+    private var photoImage: UIImage?
+    private var requestedPhotoQuality: Int32?
+    private var photoGeneration = 0
+    private var photoRenderWorkItem: DispatchWorkItem?
+
+    private static let samplePhoto: UIImage = {
+        let size = CGSize(width: 320.0, height: 180.0)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { rendererContext in
+            let context = rendererContext.cgContext
+            let colors = [UIColor(red: 0.30, green: 0.70, blue: 0.91, alpha: 1.0).cgColor, UIColor(red: 0.78, green: 0.88, blue: 0.91, alpha: 1.0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0.0, 1.0]) {
+                context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0.0, y: size.height), options: [])
+            }
+
+            UIColor(red: 1.0, green: 0.82, blue: 0.33, alpha: 1.0).setFill()
+            UIBezierPath(ovalIn: CGRect(x: 238.0, y: 22.0, width: 42.0, height: 42.0)).fill()
+
+            let distantHill = UIBezierPath()
+            distantHill.move(to: CGPoint(x: 0.0, y: 125.0))
+            distantHill.addLine(to: CGPoint(x: 70.0, y: 62.0))
+            distantHill.addLine(to: CGPoint(x: 124.0, y: 119.0))
+            distantHill.addLine(to: CGPoint(x: 185.0, y: 73.0))
+            distantHill.addLine(to: CGPoint(x: 260.0, y: 132.0))
+            distantHill.addLine(to: CGPoint(x: 320.0, y: 92.0))
+            distantHill.addLine(to: CGPoint(x: 320.0, y: 180.0))
+            distantHill.addLine(to: CGPoint(x: 0.0, y: 180.0))
+            distantHill.close()
+            UIColor(red: 0.32, green: 0.57, blue: 0.62, alpha: 1.0).setFill()
+            distantHill.fill()
+
+            let foregroundHill = UIBezierPath()
+            foregroundHill.move(to: CGPoint(x: 0.0, y: 145.0))
+            foregroundHill.addCurve(to: CGPoint(x: 320.0, y: 132.0), controlPoint1: CGPoint(x: 105.0, y: 103.0), controlPoint2: CGPoint(x: 225.0, y: 171.0))
+            foregroundHill.addLine(to: CGPoint(x: 320.0, y: 180.0))
+            foregroundHill.addLine(to: CGPoint(x: 0.0, y: 180.0))
+            foregroundHill.close()
+            UIColor(red: 0.24, green: 0.48, blue: 0.31, alpha: 1.0).setFill()
+            foregroundHill.fill()
+
+            for index in 0 ..< 420 {
+                let x = CGFloat((index * 53) % 318)
+                let y = CGFloat(143 + ((index * 29) % 35))
+                let variation = CGFloat(index % 5) * 0.018
+                UIColor(red: 0.20 + variation, green: 0.39 + variation, blue: 0.24 + variation, alpha: 1.0).setFill()
+                UIBezierPath(ovalIn: CGRect(x: x, y: y, width: 1.5, height: 1.5)).fill()
+            }
+
+            UIColor(red: 0.91, green: 0.86, blue: 0.71, alpha: 1.0).setFill()
+            UIBezierPath(rect: CGRect(x: 205.0, y: 104.0, width: 38.0, height: 37.0)).fill()
+            let roof = UIBezierPath()
+            roof.move(to: CGPoint(x: 198.0, y: 106.0))
+            roof.addLine(to: CGPoint(x: 224.0, y: 82.0))
+            roof.addLine(to: CGPoint(x: 250.0, y: 106.0))
+            roof.close()
+            UIColor(red: 0.56, green: 0.28, blue: 0.24, alpha: 1.0).setFill()
+            roof.fill()
+
+            UIColor(red: 0.30, green: 0.63, blue: 0.88, alpha: 1.0).setFill()
+            UIBezierPath(rect: CGRect(x: 212.0, y: 112.0, width: 9.0, height: 10.0)).fill()
+            UIBezierPath(rect: CGRect(x: 228.0, y: 112.0, width: 9.0, height: 10.0)).fill()
+            UIColor(red: 0.38, green: 0.27, blue: 0.20, alpha: 1.0).setFill()
+            UIBezierPath(rect: CGRect(x: 220.0, y: 125.0, width: 9.0, height: 16.0)).fill()
+        }
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.contentMode = .redraw
+    }
+
+    required init?(coder: NSCoder) {
+        preconditionFailure("init(coder:) is not supported")
+    }
+
+    func update(key: MellowsgramGlobalSettingKey, value: Int32, sampleText: String, textColor: UIColor, separatorColor: UIColor) {
+        self.key = key
+        self.value = min(100, max(0, value))
+        self.sampleText = sampleText
+        self.textColor = textColor
+        self.separatorColor = separatorColor
+        self.setNeedsDisplay()
+
+        guard key == .outgoingPhotoQuality, self.requestedPhotoQuality != self.value else {
+            return
+        }
+        self.requestedPhotoQuality = self.value
+        self.photoGeneration += 1
+        let generation = self.photoGeneration
+        let quality = CGFloat(self.value) / 100.0
+        let sourceImage = Self.samplePhoto
+        let workItem = DispatchWorkItem { [weak self] in
+            let image = sourceImage.jpegData(compressionQuality: quality).flatMap { UIImage(data: $0) }
+            DispatchQueue.main.async {
+                guard let self, self.photoGeneration == generation else {
+                    return
+                }
+                self.photoRenderWorkItem = nil
+                self.photoImage = image
+                self.setNeedsDisplay()
+            }
+        }
+        self.photoRenderWorkItem?.cancel()
+        self.photoRenderWorkItem = workItem
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.04, execute: workItem)
+    }
+
+    override func draw(_ rect: CGRect) {
+        super.draw(rect)
+        switch self.key {
+        case .accountColorsSaturation:
+            self.drawAccountColorPreview(in: rect)
+        case .stickerSize:
+            self.drawStickerSizePreview(in: rect)
+        case .outgoingPhotoQuality:
+            self.drawPhotoQualityPreview(in: rect)
+        default:
+            break
+        }
+    }
+
+    private func drawAccountColorPreview(in rect: CGRect) {
+        let saturation = CGFloat(self.value) / 100.0
+        let hues: [CGFloat] = [0.57, 0.31, 0.08]
+        let font = UIFont.systemFont(ofSize: 19.0, weight: .semibold)
+        let textSize = (self.sampleText as NSString).size(withAttributes: [.font: font])
+        let chipWidth = min(rect.width - 48.0, textSize.width + 28.0)
+        let rowHeight: CGFloat = 48.0
+        var primaryTextWhite: CGFloat = 0.0
+        self.textColor.getWhite(&primaryTextWhite, alpha: nil)
+        let isDarkTheme = primaryTextWhite > 0.5
+
+        for index in 0 ..< 3 {
+            let centerY = CGFloat(index) * rowHeight + 25.0
+            let chipRect = CGRect(x: floor((rect.width - chipWidth) * 0.5), y: centerY - 18.0, width: chipWidth, height: 36.0)
+            let background = UIColor(hue: hues[index], saturation: 0.42 * saturation, brightness: isDarkTheme ? 0.22 : 0.94, alpha: 1.0)
+            let foreground = UIColor(hue: hues[index], saturation: 0.92 * saturation, brightness: isDarkTheme ? 0.96 : 0.34, alpha: 1.0)
+            background.setFill()
+            UIBezierPath(roundedRect: chipRect, cornerRadius: 18.0).fill()
+            let textRect = CGRect(x: chipRect.minX + 14.0, y: centerY - textSize.height * 0.5, width: chipRect.width - 28.0, height: textSize.height)
+            (self.sampleText as NSString).draw(in: textRect, withAttributes: [.font: font, .foregroundColor: foreground])
+
+            if index < 2 {
+                self.separatorColor.setFill()
+                UIBezierPath(rect: CGRect(x: 16.0, y: CGFloat(index + 1) * rowHeight - UIScreenPixel, width: max(0.0, rect.width - 32.0), height: UIScreenPixel)).fill()
+            }
+        }
+    }
+
+    private func drawStickerSizePreview(in rect: CGRect) {
+        let emojis = ["😀", "🎉", "🐱"]
+        let fontSize = max(10.0, 48.0 * CGFloat(self.value) / 100.0)
+        let font = UIFont.systemFont(ofSize: fontSize)
+        for (index, emoji) in emojis.enumerated() {
+            let attributes: [NSAttributedString.Key: Any] = [.font: font]
+            let size = (emoji as NSString).size(withAttributes: attributes)
+            let columnWidth = rect.width / CGFloat(emojis.count)
+            let textRect = CGRect(x: CGFloat(index) * columnWidth + (columnWidth - size.width) * 0.5, y: (rect.height - size.height) * 0.5, width: size.width, height: size.height)
+            (emoji as NSString).draw(in: textRect, withAttributes: attributes)
+        }
+    }
+
+    private func drawPhotoQualityPreview(in rect: CGRect) {
+        let width = min(240.0, rect.width - 48.0)
+        let height = width * 9.0 / 16.0
+        let imageRect = CGRect(x: floor((rect.width - width) * 0.5), y: floor((rect.height - height) * 0.5), width: width, height: height)
+        let path = UIBezierPath(roundedRect: imageRect, cornerRadius: 10.0)
+        path.addClip()
+        (self.photoImage ?? Self.samplePhoto).draw(in: imageRect)
+
+        let badgeText = "JPEG · \(self.value)%"
+        let badgeFont = UIFont.systemFont(ofSize: 11.0, weight: .semibold)
+        let badgeSize = (badgeText as NSString).size(withAttributes: [.font: badgeFont])
+        let badgeRect = CGRect(x: imageRect.maxX - badgeSize.width - 20.0, y: imageRect.maxY - 26.0, width: badgeSize.width + 12.0, height: 19.0)
+        UIColor(white: 0.0, alpha: 0.58).setFill()
+        UIBezierPath(roundedRect: badgeRect, cornerRadius: 9.5).fill()
+        (badgeText as NSString).draw(at: CGPoint(x: badgeRect.minX + 6.0, y: badgeRect.minY + 3.0), withAttributes: [.font: badgeFont, .foregroundColor: UIColor.white])
+    }
+}
+
 private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     private let backgroundNode: ASDisplayNode
     private let topStripeNode: ASDisplayNode
@@ -736,9 +948,11 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     private let valueTextNode: ImmediateTextNode
     private let maximumTextNode: ImmediateTextNode
     private var sliderView: TGPhotoEditorSliderView?
+    private var previewView: MellowsgramSliderPreviewView?
     private var item: MellowsgramPercentageSliderItem?
     private var valueTextRightInset: CGFloat = 16.0
     private var sliderFrame: CGRect = .zero
+    private var previewFrame: CGRect = .zero
     private var sliderHitTestRightInset: CGFloat = -16.0
 
     init() {
@@ -781,10 +995,16 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         sliderView.interactionEnded = { [weak self] in
             self?.sliderEditingEnded()
         }
+        let previewView = MellowsgramSliderPreviewView()
+        previewView.isUserInteractionEnabled = false
+        previewView.frame = self.previewFrame
+        self.view.addSubview(previewView)
+        self.previewView = previewView
         self.view.addSubview(sliderView)
         self.sliderView = sliderView
         if let item = self.item {
             self.updateSliderView(sliderView, item: item, themeUpdated: true)
+            self.updatePreviewView(previewView, item: item, value: item.value)
         }
     }
 
@@ -792,7 +1012,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         let currentItem = self.item
         return { [weak self] item, params, neighbors in
             let themeUpdated = currentItem?.theme !== item.theme
-            let contentSize = CGSize(width: params.width, height: 104.0)
+            let contentSize = CGSize(width: params.width, height: item.totalHeight)
             let insets = itemListNeighborsGroupedInsets(neighbors, params)
             let layout = ListViewItemNodeLayout(contentSize: contentSize, insets: insets)
             return (layout, { [weak self] in
@@ -853,6 +1073,11 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
 
                 self.sliderFrame = CGRect(x: params.leftInset + 16.0, y: 34.0, width: params.width - params.leftInset - params.rightInset - 32.0, height: 40.0)
                 self.sliderHitTestRightInset = -(params.rightInset + 16.0)
+                self.previewFrame = CGRect(x: 0.0, y: 104.0, width: params.width, height: item.previewHeight)
+                if let previewView = self.previewView {
+                    previewView.frame = self.previewFrame
+                    self.updatePreviewView(previewView, item: item, value: item.value)
+                }
                 if let sliderView = self.sliderView {
                     self.updateSliderView(sliderView, item: item, themeUpdated: themeUpdated)
                 }
@@ -875,6 +1100,16 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         sliderView.hitTestEdgeInsets = UIEdgeInsets(top: -sliderView.frame.minY, left: 0.0, bottom: 0.0, right: self.sliderHitTestRightInset)
     }
 
+    private func updatePreviewView(_ previewView: MellowsgramSliderPreviewView, item: MellowsgramPercentageSliderItem, value: Int32) {
+        previewView.update(
+            key: item.key,
+            value: value,
+            sampleText: item.sampleText,
+            textColor: item.theme.list.itemPrimaryTextColor,
+            separatorColor: item.theme.list.itemBlocksSeparatorColor
+        )
+    }
+
     @objc private func sliderValueChanged() {
         guard let sliderView = self.sliderView, let item = self.item else {
             return
@@ -885,6 +1120,9 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         self.valueTextNode.frame = CGRect(x: self.bounds.width - self.valueTextRightInset - valueSize.width, y: 10.0, width: valueSize.width, height: valueSize.height)
         sliderView.accessibilityLabel = self.item?.title ?? "Slider"
         sliderView.accessibilityValue = "\(value)%"
+        if let item = self.item, let previewView = self.previewView {
+            self.updatePreviewView(previewView, item: item, value: value)
+        }
     }
 
     @objc private func sliderEditingEnded() {

@@ -38,6 +38,8 @@ NSObject * _Nullable makeColorMatrixFilter();
 
 void setLayerDisableScreenshots(CALayer * _Nonnull layer, bool disableScreenshots);
 bool getLayerDisableScreenshots(CALayer * _Nonnull layer);
+void setMellowsgramScreenshotProtectionEnabled(bool enabled);
+bool getMellowsgramScreenshotProtectionEnabled(void);
 
 void setLayerContentsMaskMode(CALayer * _Nonnull layer, bool maskMode);
 

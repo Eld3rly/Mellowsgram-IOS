@@ -1535,6 +1535,9 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     
     private var hierarchyTrackingLayer: HierarchyTrackingLayer?
     private var cachedDataDisposable = MetaDisposable()
+    private let mellowsgramBadgeDisposable = MetaDisposable()
+    private var observedMellowsgramBadgePeerId: EnginePeer.Id?
+    private var observedMellowsgramBadges: [MellowsgramBadge] = []
     
     private var currentTextLeftCutout: CGFloat = 0.0
     private var currentMediaPreviewSpecs: [ContentImageSpec] = []
@@ -1963,6 +1966,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
 
     deinit {
         self.cachedDataDisposable.dispose()
+        self.mellowsgramBadgeDisposable.dispose()
     }
     
     override public func secondaryAction(at point: CGPoint) {
@@ -1971,10 +1975,58 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         }
         item.interaction.activateChatPreview?(item, nil, self.contextContainer, nil, point)
     }
+
+    private func updateMellowsgramBadgeObservation(item: ChatListItem) {
+        var badgePeerId: EnginePeer.Id?
+        if case let .peer(peerData) = item.content,
+           peerData.threadInfo == nil,
+           !peerData.displayAsMessage,
+           let peer = peerData.peer.chatMainPeer,
+           peer.id != item.context.account.peerId {
+            badgePeerId = peer.id
+        }
+
+        guard let badgePeerId else {
+            self.observedMellowsgramBadgePeerId = nil
+            self.observedMellowsgramBadges = []
+            self.mellowsgramBadgeDisposable.set(nil)
+            return
+        }
+
+        let runtime = MellowsgramBadgeRuntime.shared
+        if self.observedMellowsgramBadgePeerId != badgePeerId {
+            self.observedMellowsgramBadgePeerId = badgePeerId
+            self.observedMellowsgramBadges = runtime.badges(
+                peerNamespace: badgePeerId.namespace,
+                peerId: badgePeerId.id._internalGetInt64Value()
+            )
+        }
+
+        self.mellowsgramBadgeDisposable.set((runtime.signal
+        |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            guard let self, self.observedMellowsgramBadgePeerId == badgePeerId else {
+                return
+            }
+            let badges = runtime.badges(
+                peerNamespace: badgePeerId.namespace,
+                peerId: badgePeerId.id._internalGetInt64Value()
+            )
+            guard badges != self.observedMellowsgramBadges else {
+                return
+            }
+            self.observedMellowsgramBadges = badges
+            guard let layoutParams = self.layoutParams else {
+                return
+            }
+            let (_, apply) = self.asyncLayout()(layoutParams.0, layoutParams.6, layoutParams.1, layoutParams.2, layoutParams.3, layoutParams.4, layoutParams.5)
+            let _ = apply(false, false)
+        }))
+    }
     
     func setupItem(item: ChatListItem, synchronousLoads: Bool) {
         let previousItem = self.item
         self.item = item
+        self.updateMellowsgramBadgeObservation(item: item)
         
         var storyState: ChatListItemContent.StoryState?
         if case let .peer(peerData) = item.content {
@@ -3552,6 +3604,31 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                             titleBadgeText = item.presentationData.strings.ChatList_MonoforumLabel
                         }
                         titleAttributedString = NSAttributedString(string: displayTitle, font: titleFont, textColor: textColor)
+                    }
+                    if threadInfo == nil, !displayAsMessage,
+                       let badgePeer = itemPeer.chatMainPeer,
+                       badgePeer.id != account.peerId,
+                       let currentTitle = titleAttributedString {
+                        let badges = MellowsgramBadgeRuntime.shared.badges(
+                            peerNamespace: badgePeer.id.namespace,
+                            peerId: badgePeer.id.id._internalGetInt64Value()
+                        )
+                        if !badges.isEmpty {
+                            let updatedTitle = NSMutableAttributedString(attributedString: currentTitle)
+                            for badge in badges {
+                                let text = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
+                                let foregroundHex = String(badge.foreground.dropFirst())
+                                let backgroundHex = String(badge.background.dropFirst())
+                                let foreground = UInt32(foregroundHex, radix: 16).map { UIColor(rgb: $0) } ?? theme.titleColor
+                                let background = UInt32(backgroundHex, radix: 16).map { UIColor(rgb: $0) } ?? .clear
+                                updatedTitle.append(NSAttributedString(string: text, attributes: [
+                                    .font: titleFont,
+                                    .foregroundColor: foreground,
+                                    .backgroundColor: background
+                                ]))
+                            }
+                            titleAttributedString = updatedTitle
+                        }
                     }
                 case .group:
                     titleAttributedString = NSAttributedString(string: item.presentationData.strings.ChatList_ArchivedChatsTitle, font: titleFont, textColor: theme.titleColor)

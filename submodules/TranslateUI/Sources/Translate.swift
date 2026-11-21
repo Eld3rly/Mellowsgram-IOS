@@ -5,6 +5,7 @@ import SwiftSignalKit
 import AccountContext
 import NaturalLanguage
 import TelegramCore
+import TelegramUIPreferences
 import SwiftUI
 import Translation
 import Combine
@@ -173,6 +174,10 @@ public func normalizeTranslationLanguage(_ code: String) -> String {
 }
 
 public func canTranslateChats(context: AccountContext) -> Bool {
+    if MellowsgramGlobalSettingsRuntime.shared.bool(for: .translateEntireChats) {
+        return true
+    }
+
     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     var chatTranslationAvailable = true
     switch translationConfiguration.auto {

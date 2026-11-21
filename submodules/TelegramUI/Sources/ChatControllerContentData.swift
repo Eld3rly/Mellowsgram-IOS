@@ -2221,6 +2221,13 @@ extension ChatControllerImpl {
                     
                     let hasAutoTranslate = context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.AutoTranslateEnabled(id: peerId))
                     |> distinctUntilChanged
+
+                    let mellowsgramTranslateChats = context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings])
+                    |> map { sharedData -> Bool in
+                        let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self) ?? TranslationSettings.defaultSettings
+                        return settings.translateChats
+                    }
+                    |> distinctUntilChanged
                     
                     self.translationStateDisposable?.dispose()
                     self.translationStateDisposable = (combineLatest(
@@ -2228,13 +2235,14 @@ extension ChatControllerImpl {
                         isPremium,
                         isHidden,
                         hasAutoTranslate,
+                        mellowsgramTranslateChats,
                         ApplicationSpecificNotice.translationSuggestion(accountManager: context.sharedContext.accountManager)
-                    ) |> mapToSignal { isPremium, isHidden, hasAutoTranslate, counterAndTimestamp -> Signal<ChatPresentationTranslationState?, NoError> in
+                    ) |> mapToSignal { isPremium, isHidden, hasAutoTranslate, mellowsgramTranslateChats, counterAndTimestamp -> Signal<ChatPresentationTranslationState?, NoError> in
                         var maybeSuggestPremium = false
                         if counterAndTimestamp.0 >= 3 {
                             maybeSuggestPremium = true
                         }
-                        if (isPremium || maybeSuggestPremium || hasAutoTranslate) && !isHidden {
+                        if (isPremium || maybeSuggestPremium || hasAutoTranslate || mellowsgramTranslateChats) && !isHidden {
                             return chatTranslationState(context: context, peerId: peerId, threadId: chatLocation.threadId)
                             |> map { translationState -> ChatPresentationTranslationState? in
                                 if let translationState, !translationState.fromLang.isEmpty && (translationState.fromLang != baseLanguageCode || translationState.isEnabled) {

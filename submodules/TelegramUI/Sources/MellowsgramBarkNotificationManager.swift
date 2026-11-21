@@ -37,6 +37,10 @@ public final class MellowsgramBarkNotificationManager {
     private static let maxAvatarPeersPerSync = 300
     private static let avatarThumbnailSide: CGFloat = 96.0
     private static let foregroundPresenceHeader = "mellowsgram-ios-foreground-v1"
+    private static let registrationClientHeader = "mellowsgram-ios-registration-v1"
+    private static let registrationSubscriptionHeader = "X-Mellowsgram-Subscription"
+    private static let registrationTimestampHeader = "X-Mellowsgram-Timestamp"
+    private static let registrationSignatureHeader = "X-Mellowsgram-Signature"
     private static let avatarSubscriptionHeader = "X-Mellowsgram-Subscription"
     private static let avatarPeerIdHeader = "X-Mellowsgram-Peer"
 
@@ -79,6 +83,7 @@ public final class MellowsgramBarkNotificationManager {
     private var foregroundPresenceTimer: SwiftSignalKit.Timer?
     private var avatarRefreshTimer: SwiftSignalKit.Timer?
     private var foregroundPresenceURL: URL?
+    private var foregroundPresenceAuthSecret: Data?
     private var avatarSubscriptionRoute: String?
     private var avatarAuthSecret: Data?
     private var avatarUploadTasks: [UUID: URLSessionUploadTask] = [:]
@@ -96,6 +101,7 @@ public final class MellowsgramBarkNotificationManager {
         activeAccounts: Signal<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?), NoError>
     ) {
         Self.removeLegacyLocalNotifications()
+        MellowsgramBadgeRuntime.shared.refresh()
 
         self.activeAccountsDisposable.set((activeAccounts
         |> deliverOnMainQueue).startStrict(next: { [weak self] activeAccounts in
@@ -207,6 +213,10 @@ public final class MellowsgramBarkNotificationManager {
             token = nil
         }
 
+        if let storedRegistration, let token, storedRegistration.token != token {
+            self.updateRelayClientRegistration(active: false, token: storedRegistration.token)
+        }
+
         if notificationsEnabled && token == nil {
             self.scheduleReconcile(after: Self.registrationRetryDelay)
             return
@@ -275,6 +285,7 @@ public final class MellowsgramBarkNotificationManager {
             guard let token else {
                 self.stopAvatarSync()
                 if let storedRegistration {
+                    self.updateRelayClientRegistration(active: false, token: storedRegistration.token)
                     let remainingIds = self.registeredTokens
                         .compactMap { entry -> Int64? in
                             entry.value == storedRegistration.token ? entry.key.int64 : nil
@@ -294,6 +305,7 @@ public final class MellowsgramBarkNotificationManager {
                     entry.value == token ? entry.key.int64 : nil
                 }
                 .sorted()
+            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token)
             _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                 barkDeviceKey: barkKey,
                 token: token,
@@ -332,6 +344,7 @@ public final class MellowsgramBarkNotificationManager {
     private func updateForegroundPresenceToken(_ token: Data?) {
         let relayCredentials = token.flatMap { Self.makeRelayCredentials(token: $0) }
         let updatedURL = token.flatMap { Self.makeForegroundPresenceURL(token: $0) }
+        let previousAuthSecret = self.foregroundPresenceAuthSecret
         if self.avatarSubscriptionRoute != relayCredentials?.route {
             self.stopAvatarSync()
             self.avatarUploadStatePersistenceWorkItem?.cancel()
@@ -347,12 +360,14 @@ public final class MellowsgramBarkNotificationManager {
         self.avatarSubscriptionRoute = relayCredentials?.route
         self.avatarAuthSecret = relayCredentials?.authSecret
         guard self.foregroundPresenceURL?.absoluteString != updatedURL?.absoluteString else {
+            self.foregroundPresenceAuthSecret = relayCredentials?.authSecret
             return
         }
         if let currentURL = self.foregroundPresenceURL {
-            self.sendForegroundPresence(active: false, to: currentURL)
+            self.sendForegroundPresence(active: false, to: currentURL, authSecret: previousAuthSecret)
         }
         self.foregroundPresenceURL = updatedURL
+        self.foregroundPresenceAuthSecret = relayCredentials?.authSecret
         if self.isAppForeground {
             self.sendForegroundPresence(active: true)
             self.startForegroundPresenceTimer()
@@ -371,6 +386,7 @@ public final class MellowsgramBarkNotificationManager {
         self.foregroundPresenceTimer = nil
         self.sendForegroundPresence(active: value)
         if value {
+            MellowsgramBadgeRuntime.shared.refresh()
             self.startForegroundPresenceTimer()
             self.syncAvatarCache()
             self.startAvatarRefreshTimer()
@@ -721,16 +737,55 @@ public final class MellowsgramBarkNotificationManager {
         timer.start()
     }
 
-    private func sendForegroundPresence(active: Bool, to url: URL? = nil) {
+    private func sendForegroundPresence(active: Bool, to url: URL? = nil, authSecret: Data? = nil) {
         guard let url = url ?? self.foregroundPresenceURL else {
             return
         }
+        let pathComponents = url.path.split(separator: "/")
+        guard pathComponents.count == 2, pathComponents[0] == "presence",
+              let route = String(pathComponents.last ?? ""),
+              let authSecret = authSecret ?? self.foregroundPresenceAuthSecret else {
+            return
+        }
+        let body = (try? JSONSerialization.data(withJSONObject: ["active": active])) ?? Data()
+        let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000.0))
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(Self.foregroundPresenceHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["active": active])
+        request.setValue(Self.registrationClientHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
+        request.setValue(timestamp, forHTTPHeaderField: Self.registrationTimestampHeader)
+        request.setValue(Self.requestSignature(method: "POST", path: "/presence/\(Self.sha256(Data(route.utf8)))", route: route, timestamp: timestamp, body: body, authSecret: authSecret), forHTTPHeaderField: Self.registrationSignatureHeader)
+        request.httpBody = body
         URLSession.shared.dataTask(with: request).resume()
+    }
+
+    private func updateRelayClientRegistration(active: Bool, token: Data) {
+        guard let credentials = Self.makeRelayCredentials(token: token),
+              var components = URLComponents(string: Self.relayBaseURL) else {
+            return
+        }
+        components.path = "/client/notification-registration"
+        guard let url = components.url else {
+            return
+        }
+        let method = active ? "PUT" : "DELETE"
+        let body = Data()
+        let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000.0))
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
+        request.httpMethod = method
+        request.setValue(Self.registrationClientHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
+        request.setValue(credentials.route, forHTTPHeaderField: Self.registrationSubscriptionHeader)
+        request.setValue(timestamp, forHTTPHeaderField: Self.registrationTimestampHeader)
+        request.setValue(Self.requestSignature(method: method, path: "/client/notification-registration", route: credentials.route, timestamp: timestamp, body: body, authSecret: credentials.authSecret), forHTTPHeaderField: Self.registrationSignatureHeader)
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    private static func requestSignature(method: String, path: String, route: String, timestamp: String, body: Data, authSecret: Data) -> String {
+        let routeHash = Self.sha256(Data(route.utf8))
+        let bodyHash = Self.sha256(body)
+        let message = "mellowsgram-client-request-v1\n\(method)\n\(path)\n\(routeHash)\n\(timestamp)\n\(bodyHash)"
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: authSecret))
+        return Data(signature).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func makeForegroundPresenceURL(token: Data) -> URL? {

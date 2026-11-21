@@ -8,7 +8,6 @@ import SwiftSignalKit
 import TelegramPresentationData
 import AccountContext
 import RadialStatusNode
-import ScreenCaptureDetection
 import AppBundle
 import LocalizedPeerData
 import TooltipUI
@@ -177,8 +176,6 @@ public final class SecretMediaPreviewController: ViewController {
     
     private let presentationData: PresentationData
     
-    private var screenCaptureEventsDisposable: Disposable?
-    
     private weak var tooltipController: TooltipScreen?
     
     public init(context: AccountContext, messageId: MessageId) {
@@ -231,7 +228,6 @@ public final class SecretMediaPreviewController: ViewController {
         if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
         }
-        self.screenCaptureEventsDisposable?.dispose()
         if let tempFile = self.tempFile {
             TempBox.shared.dispose(tempFile)
         }
@@ -417,19 +413,6 @@ public final class SecretMediaPreviewController: ViewController {
     
     override public func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        
-        if self.screenCaptureEventsDisposable == nil {
-            self.screenCaptureEventsDisposable = (screenCaptureEvents()
-            |> deliverOnMainQueue).start(next: { [weak self] _ in
-                if let strongSelf = self, strongSelf.traceVisibility() {
-                    if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
-                        let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
-                    } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
-                        let _ = strongSelf.context.engine.messages.addSecretChatMessageScreenshot(peerId: strongSelf.messageId.peerId).start()
-                    }
-                }
-            })
-        }
         
         var nodeAnimatesItself = false
         

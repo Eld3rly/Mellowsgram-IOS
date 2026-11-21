@@ -1,6 +1,7 @@
 import Foundation
 import TelegramCore
 import SwiftSignalKit
+import UIKitRuntimeUtils
 
 public func mellowsgramLocalizedString(english: String, russian: String, languageCode: String) -> String {
     let primaryLanguageCode = languageCode
@@ -18,6 +19,7 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     case showStickerTimestamp
     case wideChannelPosts
     case channelBottomPanel
+    case protectScreenshots
     case outgoingPhotoQuality
     case sendHDPhotos
     case barkNotificationsEnabled
@@ -116,6 +118,7 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
         case .downloadBoost:
             return "medium"
         case .hideTabBar, .wideTabBar, .wideChannelPosts, .sendHDPhotos,
+             .protectScreenshots,
              .hideAllChats, .smallerFolderSpacing, .openLastFolder,
              .compactChatList, .compactMessagePreview,
              .hideStories, .askBeforeViewingStories,
@@ -338,6 +341,7 @@ public final class MellowsgramGlobalSettingsRuntime {
         // AccountManager remains the persistence source of truth.
         UserDefaults.standard.set(settings.bool(for: .uploadBoost), forKey: "mellowsgram.global.uploadBoost")
         UserDefaults.standard.set(settings.value(for: .downloadBoost), forKey: "mellowsgram.global.downloadBoost")
+        setMellowsgramScreenshotProtectionEnabled(settings.bool(for: .protectScreenshots))
         self.settingsPromise.set(settings)
     }
 
