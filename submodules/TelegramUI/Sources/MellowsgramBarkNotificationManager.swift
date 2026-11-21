@@ -743,10 +743,11 @@ public final class MellowsgramBarkNotificationManager {
         }
         let pathComponents = url.path.split(separator: "/")
         guard pathComponents.count == 2, pathComponents[0] == "presence",
-              let route = String(pathComponents.last ?? ""),
+              let routeComponent = pathComponents.last,
               let authSecret = authSecret ?? self.foregroundPresenceAuthSecret else {
             return
         }
+        let route = String(routeComponent)
         let body = (try? JSONSerialization.data(withJSONObject: ["active": active])) ?? Data()
         let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000.0))
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
