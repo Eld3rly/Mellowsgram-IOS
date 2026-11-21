@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 
