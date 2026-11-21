@@ -1997,7 +1997,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         if self.observedMellowsgramBadgePeerId != badgePeerId {
             self.observedMellowsgramBadgePeerId = badgePeerId
             self.observedMellowsgramBadges = runtime.badges(
-                peerNamespace: badgePeerId.namespace,
+                peerNamespace: badgePeerId.namespace._internalGetInt32Value(),
                 peerId: badgePeerId.id._internalGetInt64Value()
             )
         }
@@ -2008,7 +2008,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 return
             }
             let badges = runtime.badges(
-                peerNamespace: badgePeerId.namespace,
+                peerNamespace: badgePeerId.namespace._internalGetInt32Value(),
                 peerId: badgePeerId.id._internalGetInt64Value()
             )
             guard badges != self.observedMellowsgramBadges else {
@@ -3610,7 +3610,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                        badgePeer.id != account.peerId,
                        let currentTitle = titleAttributedString {
                         let badges = MellowsgramBadgeRuntime.shared.badges(
-                            peerNamespace: badgePeer.id.namespace,
+                            peerNamespace: badgePeer.id.namespace._internalGetInt32Value(),
                             peerId: badgePeer.id.id._internalGetInt64Value()
                         )
                         if !badges.isEmpty {

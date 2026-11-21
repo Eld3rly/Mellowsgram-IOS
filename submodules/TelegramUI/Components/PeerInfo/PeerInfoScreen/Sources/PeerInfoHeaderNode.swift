@@ -1308,7 +1308,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
 
             let badgeText = MellowsgramBadgeRuntime.shared.badgeText(
-                peerNamespace: peer.id.namespace,
+                peerNamespace: peer.id.namespace._internalGetInt32Value(),
                 peerId: peer.id.id._internalGetInt64Value()
             )
             if !badgeText.isEmpty {

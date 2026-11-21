@@ -351,7 +351,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                             if peerView.peerId != self.context.account.peerId, let peer = peerView.peer,
                                let first = segments.first, case let .text(id, attributedString) = first {
                                 let badges = MellowsgramBadgeRuntime.shared.badges(
-                                    peerNamespace: peer.id.namespace,
+                                    peerNamespace: peer.id.namespace._internalGetInt32Value(),
                                     peerId: peer.id.id._internalGetInt64Value()
                                 )
                                 if !badges.isEmpty {

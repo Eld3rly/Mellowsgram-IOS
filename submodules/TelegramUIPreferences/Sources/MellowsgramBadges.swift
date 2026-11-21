@@ -1,6 +1,5 @@
 import Foundation
 import CryptoKit
-import Postbox
 import TelegramCore
 import SwiftSignalKit
 
@@ -96,14 +95,14 @@ public final class MellowsgramBadgeRuntime {
         }.resume()
     }
 
-    public func badges(peerNamespace: PeerId.Namespace, peerId: Int64) -> [MellowsgramBadge] {
+    public func badges(peerNamespace: Int32, peerId: Int64) -> [MellowsgramBadge] {
         let type: String
         switch peerNamespace {
-        case Namespaces.Peer.CloudUser:
+        case Namespaces.Peer.CloudUser._internalGetInt32Value():
             type = "user"
-        case Namespaces.Peer.CloudGroup:
+        case Namespaces.Peer.CloudGroup._internalGetInt32Value():
             type = "group"
-        case Namespaces.Peer.CloudChannel:
+        case Namespaces.Peer.CloudChannel._internalGetInt32Value():
             type = "channel"
         default:
             return []
@@ -118,7 +117,7 @@ public final class MellowsgramBadgeRuntime {
         return self.badgesByPeer.with { $0["\(peerType):\(peerId)"] ?? [] }
     }
 
-    public func badgeText(peerNamespace: PeerId.Namespace, peerId: Int64) -> String {
+    public func badgeText(peerNamespace: Int32, peerId: Int64) -> String {
         return self.badges(peerNamespace: peerNamespace, peerId: peerId)
             .map { badge in
                 let prefix = badge.emoji.isEmpty ? "" : "\(badge.emoji) "

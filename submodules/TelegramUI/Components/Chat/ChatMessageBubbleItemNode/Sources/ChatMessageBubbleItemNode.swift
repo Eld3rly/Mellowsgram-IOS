@@ -2799,7 +2799,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             if let peer = firstMessage.peers[firstMessage.id.peerId] as? TelegramChannel, case .broadcast = peer.info, item.content.firstMessage.adAttribute == nil, !overrideEffectiveAuthor {
                 authorNameString = EnginePeer(peer).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 let badges = MellowsgramBadgeRuntime.shared.badges(
-                    peerNamespace: peer.id.namespace,
+                    peerNamespace: peer.id.namespace._internalGetInt32Value(),
                     peerId: peer.id.id._internalGetInt64Value()
                 )
                 for badge in badges {
@@ -2826,7 +2826,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
             } else if let effectiveAuthor = effectiveAuthor {
                 authorNameString = EnginePeer(effectiveAuthor).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 let badges = MellowsgramBadgeRuntime.shared.badges(
-                    peerNamespace: effectiveAuthor.id.namespace,
+                    peerNamespace: effectiveAuthor.id.namespace._internalGetInt32Value(),
                     peerId: effectiveAuthor.id.id._internalGetInt64Value()
                 )
                 for badge in badges {
