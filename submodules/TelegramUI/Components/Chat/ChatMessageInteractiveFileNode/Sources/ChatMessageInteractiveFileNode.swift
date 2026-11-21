@@ -2192,7 +2192,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
     
     public func updateIsExtractedToContextPreview(_ value: Bool) {
         if value {
-            if self.textSelectionNode == nil, self.textClippingNode.supernode != nil, let item = self.arguments, ((!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message._asMessage().mellowsgramCanBypassCopyProtection()), let rootNode = item.controllerInteraction.chatControllerNode() {
+            if self.textSelectionNode == nil, self.textClippingNode.supernode != nil, let item = self.arguments, ((!item.associatedData.isCopyProtectionEnabled && !item.message.isCopyProtected()) || item.message.mellowsgramCanBypassCopyProtection()), let rootNode = item.controllerInteraction.chatControllerNode() {
                 let selectionColor: UIColor
                 let knobColor: UIColor
                 if item.message.effectivelyIncoming(item.context.account.peerId) {
