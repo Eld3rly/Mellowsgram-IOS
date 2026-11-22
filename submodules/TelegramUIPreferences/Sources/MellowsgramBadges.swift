@@ -103,7 +103,9 @@ private func mellowsgramDrawBadgeGlyph(_ badge: MellowsgramBadge, in rect: CGRec
     let iconId = mellowsgramBadgeIconId(badge)
     let foreground = mellowsgramBadgeColor(badge.foreground, fallback: .white)
     let background = mellowsgramBadgeColor(badge.background, fallback: .systemBlue)
-    let center = rect.center
+    // Avoid CGRect.center here: on newer SDKs it is a package-scoped SwiftUI
+    // property and is not available to this module's public compilation.
+    let center = CGPoint(x: rect.midX, y: rect.midY)
 
     switch iconId {
     case "verified", "official", "check":
