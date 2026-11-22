@@ -17,8 +17,7 @@ private func mellowsgramArchiveRecordsForView(
     records: [EngineMellowsgramMessageArchiveRecord],
     location: ChatLocation,
     view: MessageHistoryView,
-    historyAppearsCleared: Bool,
-    pendingRemovedMessages: Set<MessageId>
+    historyAppearsCleared: Bool
 ) -> [EngineMellowsgramMessageArchiveRecord] {
     guard let peerId = location.peerId else {
         return []
@@ -30,7 +29,10 @@ private func mellowsgramArchiveRecordsForView(
         threadId: location.threadId,
         state: MellowsgramArchiveHistoryState(
             loadedMessageIndices: view.entries.map { $0.message.index },
-            liveMessageIds: Set(view.entries.map { $0.message.id }).subtracting(pendingRemovedMessages),
+            // A pending deletion is still represented by the live row until
+            // the archive snapshot is ready. Do not remove that id here: doing
+            // so adds a detached archive row beside the still-visible message.
+            liveMessageIds: Set(view.entries.map { $0.message.id }),
             earlierId: view.earlierId,
             laterId: view.laterId,
             holeEarlier: view.holeEarlier,
@@ -66,36 +68,36 @@ private func mellowsgramPendingMessageIsVisibleInHistory(_ message: EngineRawMes
     }
 }
 
-/// Returns a detached Mellowsgram row with a stable identity that is unique in
-/// the current history projection. Archived rows normally retain the original
-/// Postbox stable id so a deletion can update the live row in place. Once that
-/// live row is gone, an old archive record can collide with a live or
-/// synthetic row from a newer history snapshot. MergeLists asserts on such a
-/// duplicate stable id in DEBUG builds.
+private func mellowsgramArchiveRecordStableId(_ record: EngineMellowsgramMessageArchiveRecord) -> UInt32 {
+    // Records written by older builds did not persist the stable id. Their
+    // message id is still the same identity used by ChatHistoryEntry.
+    return record.stableId == 0 ? UInt32(bitPattern: record.messageId.id) : record.stableId
+}
+
+/// Returns a detached Mellowsgram row only when its original stable identity is
+/// not already present in the current history projection. An archive record is
+/// a fallback for a message that has disappeared from Postbox; remapping a
+/// colliding identity would create a second visible row for the same message.
 ///
 /// Live rows never use this helper: they keep their original identity for the
-/// in-place tombstone transition. Only detached archive projections are
-/// remapped when a collision is actually present.
+/// in-place tombstone transition. Detached projections are therefore skipped
+/// when the live row is still present, including the brief deletion signal gap.
 private func mellowsgramMessageEntryWithUniqueStableId(
     _ message: EngineRawMessage,
     presentationData: ChatPresentationData,
     occupiedStableIds: inout Set<UInt64>
-) -> ChatHistoryEntry {
+) -> ChatHistoryEntry? {
     let messageEntryType: UInt64 = UInt64(2) << 40
-    var projectedMessage = message
-    var entryStableId = UInt64(projectedMessage.stableId) | messageEntryType
-
-    if occupiedStableIds.contains(entryStableId) {
-        var candidateStableId = projectedMessage.stableId &+ 1
-        while occupiedStableIds.contains(UInt64(candidateStableId) | messageEntryType) {
-            candidateStableId = candidateStableId &+ 1
-        }
-        projectedMessage = projectedMessage.withUpdatedStableId(stableId: candidateStableId)
-        entryStableId = UInt64(candidateStableId) | messageEntryType
+    let entryStableId = UInt64(message.stableId) | messageEntryType
+    let collidesWithMessage = [UInt64(2), UInt64(3), UInt64(4)].contains { type in
+        occupiedStableIds.contains(UInt64(message.stableId) | (type << 40))
+    }
+    if occupiedStableIds.contains(entryStableId) || collidesWithMessage {
+        return nil
     }
 
     occupiedStableIds.insert(entryStableId)
-    return .MessageEntry(projectedMessage, presentationData, true, nil, .none, ChatMessageEntryAttributes())
+    return .MessageEntry(message, presentationData, true, nil, .none, ChatMessageEntryAttributes())
 }
 
 struct ChatHistoryEntriesForViewState {
@@ -258,13 +260,18 @@ func chatHistoryEntriesForView(
     var count = 0
     let mellowsgramRecordsForView: [EngineMellowsgramMessageArchiveRecord]
     if mellowsgramShowDeletedMessages {
+        let liveMessageStableIds = Set(view.entries.map { $0.message.stableId })
         mellowsgramRecordsForView = mellowsgramArchiveRecordsForView(
             records: mellowsgramArchiveRecords,
             location: location,
             view: view,
-            historyAppearsCleared: historyAppearsCleared,
-            pendingRemovedMessages: pendingRemovedMessages
-        )
+            historyAppearsCleared: historyAppearsCleared
+        ).filter { record in
+            // A live row wins over a detached archive projection. This also
+            // covers the deletion window where the MessageId in the archive
+            // signal can arrive one transition after the live history update.
+            !liveMessageStableIds.contains(mellowsgramArchiveRecordStableId(record))
+        }
     } else {
         mellowsgramRecordsForView = []
     }
@@ -282,6 +289,10 @@ func chatHistoryEntriesForView(
         }
         return (record.messageId, record)
     })
+    var mellowsgramRecordsByStableId: [UInt32: EngineMellowsgramMessageArchiveRecord] = [:]
+    for record in mellowsgramRecordsById.values {
+        mellowsgramRecordsByStableId[mellowsgramArchiveRecordStableId(record)] = record
+    }
     var mellowsgramProjectionPeers = cachedPeerDataPeers
     if let chatPeer {
         mellowsgramProjectionPeers[chatPeer.id] = chatPeer
@@ -309,7 +320,10 @@ func chatHistoryEntriesForView(
             pinToTop = true
         }
         
-        if mellowsgramShowDeletedMessages, let record = mellowsgramRecordsById[message.id], record.deletedAt != nil {
+        let deletedRecord = mellowsgramShowDeletedMessages
+            ? (mellowsgramRecordsById[message.id] ?? mellowsgramRecordsByStableId[message.stableId])
+            : nil
+        if let record = deletedRecord, record.deletedAt != nil {
             // The archive can be committed before the live history view catches
             // up. Keep the live row's full media/peer context and only add the
             // in-memory deleted marker, so the list performs an item update.
@@ -321,8 +335,11 @@ func chatHistoryEntriesForView(
             // deletion. The normal Telegram item is updated in place with the
             // deleted marker, so media, captions, direction and bubble geometry
             // remain exactly those of the live message.
-            if let record = mellowsgramRecordsById[message.id], record.deletedAt != nil {
-                message = engineMellowsgramDeletedMessage(message: message, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+            if mellowsgramShowDeletedMessages, mellowsgramPendingDeletedMessageSnapshots[message.id] != nil {
+                // Keep the same live row while Postbox and the archive table
+                // publish their deletion transactions. The marker is enough
+                // for the regular renderer; no detached replacement is needed.
+                message = engineMellowsgramDeletedMessage(message: message, translucent: mellowsgramTranslucentDeletedMessages)
                 isRead = true
                 projectedMellowsgramMessageIds.insert(message.id)
             } else {
@@ -969,11 +986,13 @@ func chatHistoryEntriesForView(
                 continue
             }
             let message = engineMellowsgramDeletedMessage(message: snapshot, translucent: mellowsgramTranslucentDeletedMessages)
-            entries.append(mellowsgramMessageEntryWithUniqueStableId(
+            if let entry = mellowsgramMessageEntryWithUniqueStableId(
                 message,
                 presentationData: presentationData,
                 occupiedStableIds: &occupiedMellowsgramEntryStableIds
-            ))
+            ) {
+                entries.append(entry)
+            }
             projectedMellowsgramMessageIds.insert(messageId)
         }
 
@@ -984,11 +1003,13 @@ func chatHistoryEntriesForView(
             } else {
                 message = mellowsgramArchivedMessage(record: record)
             }
-            entries.append(mellowsgramMessageEntryWithUniqueStableId(
+            if let entry = mellowsgramMessageEntryWithUniqueStableId(
                 message,
                 presentationData: presentationData,
                 occupiedStableIds: &occupiedMellowsgramEntryStableIds
-            ))
+            ) {
+                entries.append(entry)
+            }
             projectedMellowsgramMessageIds.insert(record.messageId)
         }
         entries.sort()
