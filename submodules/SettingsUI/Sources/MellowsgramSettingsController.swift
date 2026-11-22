@@ -1182,8 +1182,8 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
         ]
     case .backgroundNotifications:
         entries = [
-            .barkInstall,
-            .barkDeviceKey(snapshot.barkDeviceKey)
+            .barkDeviceKey(snapshot.barkDeviceKey),
+            .barkInstall
         ]
     case .appearance:
         entries = [
@@ -1268,7 +1268,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             return false
         }
     }
-    return entries
+    return entries.sorted()
 }
 
 private func mellowsgramGlobalSettingsSnapshot(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<MellowsgramSettingsSnapshot, NoError> {
