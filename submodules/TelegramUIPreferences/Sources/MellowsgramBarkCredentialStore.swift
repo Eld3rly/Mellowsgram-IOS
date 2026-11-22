@@ -6,11 +6,28 @@ public struct MellowsgramBarkStoredRegistration: Codable, Equatable {
     public let barkDeviceKey: String
     public let token: Data
     public let registeredAccountIds: [Int64]
+    public let liveContainerNotificationLinks: Bool
 
-    public init(barkDeviceKey: String, token: Data, registeredAccountIds: [Int64]) {
+    public init(barkDeviceKey: String, token: Data, registeredAccountIds: [Int64], liveContainerNotificationLinks: Bool = false) {
         self.barkDeviceKey = barkDeviceKey
         self.token = token
         self.registeredAccountIds = registeredAccountIds
+        self.liveContainerNotificationLinks = liveContainerNotificationLinks
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case barkDeviceKey
+        case token
+        case registeredAccountIds
+        case liveContainerNotificationLinks
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.barkDeviceKey = try container.decode(String.self, forKey: .barkDeviceKey)
+        self.token = try container.decode(Data.self, forKey: .token)
+        self.registeredAccountIds = try container.decode([Int64].self, forKey: .registeredAccountIds)
+        self.liveContainerNotificationLinks = try container.decodeIfPresent(Bool.self, forKey: .liveContainerNotificationLinks) ?? false
     }
 }
 

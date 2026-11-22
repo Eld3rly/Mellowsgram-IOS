@@ -24,6 +24,7 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     case sendHDPhotos
     case barkNotificationsEnabled
     case barkAllAccounts
+    case liveContainerNotificationLinks
 
     case hideTabBar
     case showTabNames
@@ -128,7 +129,7 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
              .secondsInMessages, .doubleTapToEdit, .hideReactions, .sendWithReturnKey,
              .emojiTabFirst, .standardEmojisFirst, .foldersAtBottom:
             return "false"
-        case .barkNotificationsEnabled, .barkAllAccounts:
+        case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
             return "false"
         case .uploadBoost:
             return "true"

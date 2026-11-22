@@ -294,7 +294,8 @@ public final class MellowsgramBarkNotificationManager {
                     _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                         barkDeviceKey: storedRegistration.barkDeviceKey,
                         token: storedRegistration.token,
-                        registeredAccountIds: remainingIds
+                        registeredAccountIds: remainingIds,
+                        liveContainerNotificationLinks: storedRegistration.liveContainerNotificationLinks
                     ))
                 }
                 return
@@ -305,11 +306,13 @@ public final class MellowsgramBarkNotificationManager {
                     entry.value == token ? entry.key.int64 : nil
                 }
                 .sorted()
-            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token)
+            let liveContainerNotificationLinks = self.globalSettings.bool(for: .liveContainerNotificationLinks)
+            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks)
             _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                 barkDeviceKey: barkKey,
                 token: token,
-                registeredAccountIds: registeredIds
+                registeredAccountIds: registeredIds,
+                liveContainerNotificationLinks: liveContainerNotificationLinks
             ))
             if shouldRetry {
                 self.scheduleReconcile(after: Self.registrationRetryDelay)
@@ -760,7 +763,7 @@ public final class MellowsgramBarkNotificationManager {
         URLSession.shared.dataTask(with: request).resume()
     }
 
-    private func updateRelayClientRegistration(active: Bool, token: Data) {
+    private func updateRelayClientRegistration(active: Bool, token: Data, liveContainerNotificationLinks: Bool = false) {
         guard let credentials = Self.makeRelayCredentials(token: token),
               var components = URLComponents(string: Self.relayBaseURL) else {
             return
@@ -770,10 +773,21 @@ public final class MellowsgramBarkNotificationManager {
             return
         }
         let method = active ? "PUT" : "DELETE"
-        let body = Data()
+        let body: Data
+        if active {
+            body = (try? JSONSerialization.data(withJSONObject: [
+                "liveContainer": liveContainerNotificationLinks,
+                "bundleId": "com.mellowsgram.ios"
+            ], options: [])) ?? Data()
+        } else {
+            body = Data()
+        }
         let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000.0))
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
         request.httpMethod = method
+        if active {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         request.setValue(Self.registrationClientHeader, forHTTPHeaderField: "X-Mellowsgram-Client")
         request.setValue(credentials.route, forHTTPHeaderField: Self.registrationSubscriptionHeader)
         request.setValue(timestamp, forHTTPHeaderField: Self.registrationTimestampHeader)

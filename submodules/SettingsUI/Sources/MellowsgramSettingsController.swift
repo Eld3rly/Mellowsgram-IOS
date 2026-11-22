@@ -86,7 +86,7 @@ private extension MellowsgramGlobalSettingKey {
              .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat, .protectScreenshots,
              .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
             return .appearance
-        case .barkNotificationsEnabled, .barkAllAccounts:
+        case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
             return .backgroundNotifications
         case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .callConfirmation, .hidePhoneInSettings:
             return .profilesAndCalls
@@ -113,6 +113,7 @@ private extension MellowsgramGlobalSettingKey {
         case .outgoingPhotoQuality: return mellowsgramText("Outgoing Photo Quality", "Качество отправляемых фото", languageCode: languageCode)
         case .barkNotificationsEnabled: return mellowsgramText("Bark Notifications", "Уведомления через Bark", languageCode: languageCode)
         case .barkAllAccounts: return mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
+        case .liveContainerNotificationLinks: return mellowsgramText("Open Notifications in LiveContainer", "Открывать уведомления в LiveContainer", languageCode: languageCode)
         case .sendHDPhotos: return mellowsgramText("Send HD Photos", "Отправлять фото в HD", languageCode: languageCode)
         case .hideTabBar: return mellowsgramText("Hide Tab Bar", "Скрыть панель вкладок", languageCode: languageCode)
         case .showContactsTab: return mellowsgramText("Show Contacts Tab", "Показывать вкладку контактов", languageCode: languageCode)
@@ -461,6 +462,7 @@ private final class MellowsgramCategoryControllerArguments {
     let updateShowDeletedMessages: (Bool) -> Void
     let updateTranslucentDeletedMessages: (Bool) -> Void
     let updateBarkDeviceKey: (String) -> Void
+    let openExternalUrl: (String) -> Void
     let updateGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void
     let selectGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void
 
@@ -476,6 +478,7 @@ private final class MellowsgramCategoryControllerArguments {
         updateShowDeletedMessages: @escaping (Bool) -> Void,
         updateTranslucentDeletedMessages: @escaping (Bool) -> Void,
         updateBarkDeviceKey: @escaping (String) -> Void,
+        openExternalUrl: @escaping (String) -> Void,
         updateGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void,
         selectGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void
     ) {
@@ -490,6 +493,7 @@ private final class MellowsgramCategoryControllerArguments {
         self.updateShowDeletedMessages = updateShowDeletedMessages
         self.updateTranslucentDeletedMessages = updateTranslucentDeletedMessages
         self.updateBarkDeviceKey = updateBarkDeviceKey
+        self.openExternalUrl = openExternalUrl
         self.updateGlobalSetting = updateGlobalSetting
         self.selectGlobalSetting = selectGlobalSetting
     }
@@ -537,6 +541,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case saveEditedMessages(Bool)
     case spyAndGhostFooter
     case backgroundNotificationsFooter
+    case barkInstall
     case barkDeviceKey(String)
     case appearanceHeader
     case translucentDeletedMessages(Bool)
@@ -580,6 +585,8 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return 1000
         case .barkDeviceKey:
             return 20
+        case .barkInstall:
+            return 21
         case .appearanceHeader:
             return 23
         case .translucentDeletedMessages:
@@ -638,7 +645,21 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         case .spyAndGhostFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Ghost Mode suppresses network read and presence updates. The archive is stored only on this account.", "Режим невидимки подавляет сетевые отметки о прочтении и статусе. Архив хранится только в этом аккаунте.", languageCode: languageCode)), sectionId: self.section)
         case .backgroundNotificationsFooter:
-            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Bark must be installed on the receiving device. The Telegram push is decrypted by the relay before it is forwarded to Bark, so the relay operator can see notification text. This client does not stay active in the background for notifications.", "На принимающем устройстве должен быть установлен Bark. Relay расшифровывает push Telegram перед отправкой в Bark, поэтому оператор relay может видеть текст уведомлений. Клиент не остаётся активным в фоне ради уведомлений.", languageCode: languageCode)), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Bark must be installed on the receiving device. The relay decrypts the Telegram push before forwarding it to Bark. LiveContainer mode only changes the link opened after tapping a notification; it does not keep the app alive in the background.", "На принимающем устройстве должен быть установлен Bark. Relay расшифровывает push Telegram перед отправкой в Bark. Режим LiveContainer меняет только ссылку, открываемую после нажатия на уведомление, и не удерживает приложение в фоне.", languageCode: languageCode)), sectionId: self.section)
+        case .barkInstall:
+            return ItemListDisclosureItem(
+                presentationData: presentationData,
+                systemStyle: .glass,
+                title: mellowsgramText("Install Bark", "Установить Bark", languageCode: languageCode),
+                label: "App Store",
+                labelStyle: .coloredText(presentationData.theme.list.itemAccentColor),
+                sectionId: self.section,
+                style: .blocks,
+                disclosureStyle: .arrow,
+                action: {
+                    arguments.openExternalUrl("https://apps.apple.com/us/app/bark-custom-notifications/id1403753865")
+                }
+            )
         case let .barkDeviceKey(value):
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: value, placeholder: mellowsgramText("Bark device key", "Ключ устройства Bark", languageCode: languageCode), type: .password, returnKeyType: .done, sectionId: self.section, textUpdated: arguments.updateBarkDeviceKey, action: {})
         case .appearanceHeader:
@@ -1161,6 +1182,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
         ]
     case .backgroundNotifications:
         entries = [
+            .barkInstall,
             .barkDeviceKey(snapshot.barkDeviceKey)
         ]
     case .appearance:
@@ -1186,7 +1208,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
         entries.append(contentsOf: globalKeys.map { key in
             let enabled: Bool
             switch key {
-            case .barkAllAccounts:
+            case .barkAllAccounts, .liveContainerNotificationLinks:
                 enabled = snapshot.global.bool(for: .barkNotificationsEnabled)
             case .showContactsTab, .showCallsTab, .showTabNames, .searchButton, .wideTabBar:
                 enabled = !snapshot.global.bool(for: .hideTabBar)
@@ -1268,6 +1290,7 @@ private func mellowsgramGlobalSettingsSnapshot(accountManager: AccountManager<Te
 }
 
 private func mellowsgramCategoryController(context: AccountContext, category: MellowsgramSettingsCategory, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> ViewController {
+    var openExternalUrlImpl: ((String) -> Void)?
     let updateGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void = { key, rawValue in
         switch key {
         case .showContactsTab:
@@ -1352,6 +1375,9 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
         updateBarkDeviceKey: { value in
             _ = MellowsgramBarkCredentialStore.updateDeviceKey(value)
         },
+        openExternalUrl: { url in
+            openExternalUrlImpl?(url)
+        },
         updateGlobalSetting: updateGlobalSetting,
         selectGlobalSetting: { key, selectedValue in
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
@@ -1393,7 +1419,11 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
         return (controllerState, (listState, arguments))
     }
 
-    return ItemListController(context: context, state: signal)
+    let controller = ItemListController(context: context, state: signal)
+    openExternalUrlImpl = { [weak controller] url in
+        openMellowsgramExternalUrl(context: context, url: url, navigationController: controller?.navigationController as? NavigationController)
+    }
+    return controller
 }
 
 private func openMellowsgramExternalUrl(context: AccountContext, url: String, navigationController: NavigationController?) {
