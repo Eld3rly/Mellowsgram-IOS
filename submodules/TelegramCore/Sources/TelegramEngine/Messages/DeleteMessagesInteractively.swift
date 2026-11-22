@@ -304,7 +304,7 @@ func _internal_clearAuthorHistory(account: Account, peerId: PeerId, memberId: Pe
             |> `catch` { success -> Signal<Void, NoError> in
                 if success {
                     return account.postbox.transaction { transaction -> Void in
-                        _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .just(Namespaces.Message.Cloud), authorId: memberId)
+                        _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: Set([Namespaces.Message.Cloud]), authorId: memberId)
                         _internal_deleteAllMessagesWithAuthor(transaction: transaction, mediaBox: account.postbox.mediaBox, peerId: peerId, authorId: memberId, namespace: Namespaces.Message.Cloud)
                     }
                 } else {

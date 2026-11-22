@@ -236,7 +236,7 @@ public extension TelegramEngine {
 
         public func deleteAllMessagesWithAuthor(peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
-                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .just(namespace), authorId: authorId)
+                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: Set([namespace]), authorId: authorId)
                 _internal_deleteAllMessagesWithAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, authorId: authorId, namespace: namespace)
             }
             |> ignoreValues
@@ -263,7 +263,7 @@ public extension TelegramEngine {
 
         public func deleteAllMessagesWithForwardAuthor(peerId: EnginePeer.Id, forwardAuthorId: EnginePeer.Id, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
             return self.account.postbox.transaction { transaction -> Void in
-                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .just(namespace), forwardAuthorId: forwardAuthorId)
+                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: Set([namespace]), forwardAuthorId: forwardAuthorId)
                 _internal_deleteAllMessagesWithForwardAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, forwardAuthorId: forwardAuthorId, namespace: namespace)
             }
             |> ignoreValues
