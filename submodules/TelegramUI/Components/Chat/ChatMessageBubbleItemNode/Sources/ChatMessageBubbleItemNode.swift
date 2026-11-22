@@ -2369,7 +2369,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
         }
         
         var authorNameString: String?
-        var authorBadgeRanges: [(range: NSRange, foreground: UIColor, background: UIColor)] = []
+        var authorBadges: [MellowsgramBadge] = []
         var authorRank: CachedChannelAdminRank?
         var authorIsChannel: Bool = false
         switch content {
@@ -2802,15 +2802,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                     peerNamespace: peer.id.namespace._internalGetInt32Value(),
                     peerId: peer.id.id._internalGetInt64Value()
                 )
-                for badge in badges {
-                    let badgeText = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
-                    let currentName = authorNameString ?? ""
-                    let range = NSRange(location: currentName.utf16.count, length: badgeText.utf16.count)
-                    let foreground = UInt32(String(badge.foreground.dropFirst()), radix: 16).map { UIColor(rgb: $0) } ?? .white
-                    let background = UInt32(String(badge.background.dropFirst()), radix: 16).map { UIColor(rgb: $0) } ?? .clear
-                    authorBadgeRanges.append((range, foreground, background))
-                    authorNameString = currentName + badgeText
-                }
+                authorBadges.append(contentsOf: badges)
                 
                 let peer = (peer as Peer)
                 let nameColors: PeerNameColors.Colors?
@@ -2829,15 +2821,7 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                     peerNamespace: effectiveAuthor.id.namespace._internalGetInt32Value(),
                     peerId: effectiveAuthor.id.id._internalGetInt64Value()
                 )
-                for badge in badges {
-                    let badgeText = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
-                    let currentName = authorNameString ?? ""
-                    let range = NSRange(location: currentName.utf16.count, length: badgeText.utf16.count)
-                    let foreground = UInt32(String(badge.foreground.dropFirst()), radix: 16).map { UIColor(rgb: $0) } ?? .white
-                    let background = UInt32(String(badge.background.dropFirst()), radix: 16).map { UIColor(rgb: $0) } ?? .clear
-                    authorBadgeRanges.append((range, foreground, background))
-                    authorNameString = currentName + badgeText
-                }
+                authorBadges.append(contentsOf: badges)
                 // Not when the author is the chat itself (an anonymous admin), which the chat header already badges, as
                 // a broadcast channel's own posts above.
                 if effectiveAuthor.id != item.message.id.peerId {
@@ -3195,13 +3179,10 @@ open class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewIte
                     attributedString = NSAttributedString(string: "", font: nameFont, textColor: inlineBotNameColor)
                 }
 
-                if !authorBadgeRanges.isEmpty {
+                if !authorBadges.isEmpty {
                     let styledAuthorName = NSMutableAttributedString(attributedString: attributedString)
-                    for badge in authorBadgeRanges where NSMaxRange(badge.range) <= styledAuthorName.length {
-                        styledAuthorName.addAttributes([
-                            .foregroundColor: badge.foreground,
-                            .backgroundColor: badge.background
-                        ], range: badge.range)
+                    if let badgeAttachment = mellowsgramBadgeAttachment(authorBadges, font: nameFont, labelColor: authorNameColor) {
+                        styledAuthorName.append(badgeAttachment)
                     }
                     attributedString = styledAuthorName
                 }

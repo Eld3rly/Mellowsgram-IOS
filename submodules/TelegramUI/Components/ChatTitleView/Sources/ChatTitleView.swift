@@ -356,17 +356,8 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                 )
                                 if !badges.isEmpty {
                                     let updated = NSMutableAttributedString(attributedString: attributedString)
-                                    for badge in badges {
-                                        let text = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
-                                        let foregroundHex = String(badge.foreground.dropFirst())
-                                        let backgroundHex = String(badge.background.dropFirst())
-                                        let foreground = UInt32(foregroundHex, radix: 16).map { UIColor(rgb: $0) } ?? titleTheme.rootController.navigationBar.primaryTextColor
-                                        let background = UInt32(backgroundHex, radix: 16).map { UIColor(rgb: $0) } ?? .clear
-                                        updated.append(NSAttributedString(string: text, attributes: [
-                                            .font: titleFont,
-                                            .foregroundColor: foreground,
-                                            .backgroundColor: background
-                                        ]))
+                                    if let badgeAttachment = mellowsgramBadgeAttachment(badges, font: titleFont, labelColor: titleTheme.rootController.navigationBar.primaryTextColor) {
+                                        updated.append(badgeAttachment)
                                     }
                                     segments[0] = .text(id, updated)
                                 }

@@ -1256,7 +1256,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
             let mellowsgramBarkNotificationManager = MellowsgramBarkNotificationManager(
                 accountManager: sharedContext.accountManager,
-                activeAccounts: sharedContext.activeAccountContexts
+                activeAccounts: sharedContext.activeAccountContexts,
+                applicationIsActive: applicationBindings.applicationIsActive
             )
             let liveLocationPolling = self.context.get()
             |> mapToSignal { context -> Signal<AccountRecordId?, NoError> in
@@ -3405,6 +3406,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     @available(iOS 10.0, *)
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Telegram's notification service extension can finish processing a
+        // push while the app is already being used. Do not turn that push into
+        // a banner/list entry (or a sound) in the active app. This also covers
+        // notification payloads that cannot be mapped to an account yet.
+        if self.isActiveValue || UIApplication.shared.applicationState == .active {
+            completionHandler([])
+            return
+        }
+
         if notification.request.content.userInfo[CallUnlockVideoNotificationState.userInfoKey] != nil {
             completionHandler([])
             return
@@ -3412,10 +3422,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
-            if let context = self.contextValue {
-                if let accountId = accountId, context.context.account.id != accountId || notification.request.content.userInfo["url"] != nil {
-                    completionHandler([.banner, .list])
-                }
+            guard let context = self.contextValue else {
+                completionHandler([])
+                return
+            }
+            if let accountId = accountId, context.context.account.id == accountId, notification.request.content.userInfo["url"] == nil {
+                completionHandler([])
+            } else {
+                completionHandler([.banner, .list])
             }
         })
     }

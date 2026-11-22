@@ -3615,17 +3615,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         )
                         if !badges.isEmpty {
                             let updatedTitle = NSMutableAttributedString(attributedString: currentTitle)
-                            for badge in badges {
-                                let text = "  \(badge.emoji.isEmpty ? "" : "\(badge.emoji) ")\(badge.label)"
-                                let foregroundHex = String(badge.foreground.dropFirst())
-                                let backgroundHex = String(badge.background.dropFirst())
-                                let foreground = UInt32(foregroundHex, radix: 16).map { UIColor(rgb: $0) } ?? theme.titleColor
-                                let background = UInt32(backgroundHex, radix: 16).map { UIColor(rgb: $0) } ?? .clear
-                                updatedTitle.append(NSAttributedString(string: text, attributes: [
-                                    .font: titleFont,
-                                    .foregroundColor: foreground,
-                                    .backgroundColor: background
-                                ]))
+                            if let badgeAttachment = mellowsgramBadgeAttachment(badges, font: titleFont, labelColor: theme.titleColor) {
+                                updatedTitle.append(badgeAttachment)
                             }
                             titleAttributedString = updatedTitle
                         }

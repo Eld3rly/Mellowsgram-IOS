@@ -274,6 +274,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     let animationRenderer: MultiAnimationRenderer
     
     var emojiStatusPackDisposable = MetaDisposable()
+    private let mellowsgramBadgeDisposable = MetaDisposable()
     var emojiStatusFileAndPackTitle = Promise<(TelegramMediaFile, LoadedStickerPack)?>()
     
     var customNavigationContentNode: PeerInfoPanelNodeNavigationContentNode?
@@ -387,6 +388,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self?.requestUpdateLayout?(false)
         }
 
+        self.mellowsgramBadgeDisposable.set((MellowsgramBadgeRuntime.shared.signal
+        |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            self?.requestUpdateLayout?(false)
+        }))
+
         self.view.addSubview(self.backgroundBannerView)
         self.titleNodeContainer.addSubnode(self.titleNode)
         self.subtitleNodeContainer.addSubnode(self.subtitleNode)
@@ -460,6 +466,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     
     deinit {
         self.emojiStatusPackDisposable.dispose()
+        self.mellowsgramBadgeDisposable.dispose()
     }
     
     /// VoiceOver: the avatar, name and status (with the buttons, in `PeerInfoHeaderRegularContentNode`), then the gifts
@@ -1257,6 +1264,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var isVerified = false
         var isFake = false
         let titleStringText: String
+        var titleAttributedText: NSAttributedString? = nil
         let smallTitleAttributes: MultiScaleTextState.Attributes
         let titleAttributes: MultiScaleTextState.Attributes
         let subtitleStringText: String
@@ -1307,12 +1315,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 }
             }
 
-            let badgeText = MellowsgramBadgeRuntime.shared.badgeText(
+            let badges = MellowsgramBadgeRuntime.shared.badges(
                 peerNamespace: peer.id.namespace._internalGetInt32Value(),
                 peerId: peer.id.id._internalGetInt64Value()
             )
-            if !badgeText.isEmpty {
-                title += "  \(badgeText)"
+            if let badgeAttachment = mellowsgramBadgeAttachment(badges, font: Font.medium(28.0), labelColor: .white) {
+                let attributedTitle = NSMutableAttributedString(string: title)
+                attributedTitle.append(badgeAttachment)
+                titleAttributedText = attributedTitle
             }
             titleStringText = title
             titleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white)
@@ -1454,10 +1464,16 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             titleConstrainedSize.width -= 60.0
         }
         
-        let titleNodeLayout = self.titleNode.updateLayout(text: titleStringText, states: [
+        let titleStates: [AnyHashable: MultiScaleTextState] = [
             TitleNodeStateRegular: MultiScaleTextState(attributes: titleAttributes, constrainedSize: titleConstrainedSize),
             TitleNodeStateExpanded: MultiScaleTextState(attributes: smallTitleAttributes, constrainedSize: titleConstrainedSize)
-        ], mainState: TitleNodeStateRegular)
+        ]
+        let titleNodeLayout: [AnyHashable: MultiScaleTextLayout]
+        if let titleAttributedText {
+            titleNodeLayout = self.titleNode.updateLayout(attributedText: titleAttributedText, accessibilityText: titleStringText, states: titleStates, mainState: TitleNodeStateRegular)
+        } else {
+            titleNodeLayout = self.titleNode.updateLayout(text: titleStringText, states: titleStates, mainState: TitleNodeStateRegular)
+        }
         
         var subtitleRatingSize: CGSize?
 

@@ -22,8 +22,11 @@ private func mellowsgramThenAfterCompletion<T>(_ signal: Signal<Never, NoError>,
     }
 }
 
-/// Registers Telegram Web Push tokens for the Bark relay. While foregrounded,
-/// it uploads small avatar thumbnails already present in MediaBox; it never
+/// Registers Telegram Web Push tokens for the Bark relay. While the app is
+/// active, it keeps a short-lived presence marker on the relay so the relay
+/// can suppress Bark notifications instead of forwarding them back to the
+/// device that is already being used.
+/// It uploads small avatar thumbnails already present in MediaBox; it never
 /// fetches avatars just for this feature or keeps an account connection alive.
 /// It does not create local message notifications.
 public final class MellowsgramBarkNotificationManager {
@@ -62,6 +65,7 @@ public final class MellowsgramBarkNotificationManager {
     private let activeAccountsDisposable = MetaDisposable()
     private let settingsDisposable = MetaDisposable()
     private let deviceKeyDisposable = MetaDisposable()
+    private let applicationActiveDisposable = MetaDisposable()
     private let reconcileDisposable = MetaDisposable()
     private let avatarScanDisposable = MetaDisposable()
     private let avatarImageProcessingQueue: OperationQueue = {
@@ -93,12 +97,12 @@ public final class MellowsgramBarkNotificationManager {
     private var pendingAvatarPeerIds = Set<Int64>()
     private var lastAvatarScanTimestamp: TimeInterval = 0.0
     private var remainingAvatarPeerBudget = 0
-    private var isAppForeground = UIApplication.shared.applicationState == .active
-    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var isAppActive = UIApplication.shared.applicationState == .active
 
     public init(
         accountManager: AccountManager<TelegramAccountManagerTypes>,
-        activeAccounts: Signal<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?), NoError>
+        activeAccounts: Signal<(primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?), NoError>,
+        applicationIsActive: Signal<Bool, NoError>
     ) {
         Self.removeLegacyLocalNotifications()
         MellowsgramBadgeRuntime.shared.refresh()
@@ -124,21 +128,20 @@ public final class MellowsgramBarkNotificationManager {
             self?.scheduleReconcile()
         }))
 
-        let notificationCenter = NotificationCenter.default
-        self.lifecycleObservers = [
-            notificationCenter.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main, using: { [weak self] _ in
-                self?.updateAppForeground(true)
-            }),
-            notificationCenter.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main, using: { [weak self] _ in
-                self?.updateAppForeground(false)
-            })
-        ]
+        // Use the same scene-aware signal as the rest of Telegram. UIApplication
+        // didBecomeActive/didEnterBackground notifications are not a reliable
+        // source of truth once the app is driven by UIWindowScene delegates.
+        self.applicationActiveDisposable.set((applicationIsActive
+        |> deliverOnMainQueue).startStrict(next: { [weak self] isActive in
+            self?.updateAppActive(isActive)
+        }))
     }
 
     deinit {
         self.activeAccountsDisposable.dispose()
         self.settingsDisposable.dispose()
         self.deviceKeyDisposable.dispose()
+        self.applicationActiveDisposable.dispose()
         self.reconcileDisposable.dispose()
         self.avatarScanDisposable.dispose()
         self.avatarImageProcessingQueue.cancelAllOperations()
@@ -149,9 +152,6 @@ public final class MellowsgramBarkNotificationManager {
         self.avatarRefreshTimer?.invalidate()
         for task in self.avatarUploadTasks.values {
             task.cancel()
-        }
-        for observer in self.lifecycleObservers {
-            NotificationCenter.default.removeObserver(observer)
         }
     }
 
@@ -319,7 +319,7 @@ public final class MellowsgramBarkNotificationManager {
             } else if !registeredIds.isEmpty {
                 self.scheduleRegistrationRefresh()
             }
-            if self.isAppForeground {
+            if self.isAppActive {
                 self.syncAvatarCache()
                 self.startAvatarRefreshTimer()
             } else {
@@ -371,7 +371,7 @@ public final class MellowsgramBarkNotificationManager {
         }
         self.foregroundPresenceURL = updatedURL
         self.foregroundPresenceAuthSecret = relayCredentials?.authSecret
-        if self.isAppForeground {
+        if self.isAppActive {
             self.sendForegroundPresence(active: true)
             self.startForegroundPresenceTimer()
             self.syncAvatarCache()
@@ -383,8 +383,17 @@ public final class MellowsgramBarkNotificationManager {
         }
     }
 
-    private func updateAppForeground(_ value: Bool) {
-        self.isAppForeground = value
+    private func updateAppActive(_ value: Bool) {
+        guard self.isAppActive != value else {
+            // A repeated active value can happen while the scene is being
+            // reattached. Refresh the marker anyway so a transient network
+            // failure cannot leave the relay with an expired presence entry.
+            if value {
+                self.sendForegroundPresence(active: true)
+            }
+            return
+        }
+        self.isAppActive = value
         self.foregroundPresenceTimer?.invalidate()
         self.foregroundPresenceTimer = nil
         self.sendForegroundPresence(active: value)
@@ -399,7 +408,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func startAvatarRefreshTimer() {
-        guard self.isAppForeground, self.avatarSubscriptionRoute != nil, self.avatarRefreshTimer == nil else {
+        guard self.isAppActive, self.avatarSubscriptionRoute != nil, self.avatarRefreshTimer == nil else {
             return
         }
         let timer = SwiftSignalKit.Timer(timeout: Self.avatarRefreshInterval, repeat: true, completion: { [weak self] in
@@ -423,7 +432,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func syncAvatarCache() {
-        guard self.isAppForeground,
+        guard self.isAppActive,
               self.globalSettings.bool(for: .barkNotificationsEnabled),
               let route = self.avatarSubscriptionRoute,
               let authSecret = self.avatarAuthSecret,
@@ -462,7 +471,7 @@ public final class MellowsgramBarkNotificationManager {
                 |> take(1)
                 |> deliverOnMainQueue).startStrict(next: { [weak self] chatList in
                     guard let self,
-                          self.isAppForeground,
+                          self.isAppActive,
                           self.avatarSubscriptionRoute == route
                     else {
                         return
@@ -493,7 +502,7 @@ public final class MellowsgramBarkNotificationManager {
                         |> take(1)
                         |> deliverOnMainQueue).startStrict(next: { [weak self] resourceData in
                             guard let self,
-                                  self.isAppForeground,
+                                  self.isAppActive,
                                   self.avatarSubscriptionRoute == route,
                                   resourceData.isComplete
                             else {
@@ -510,7 +519,7 @@ public final class MellowsgramBarkNotificationManager {
                                 let digest = Self.sha256(imageData)
                                 DispatchQueue.main.async {
                                     guard let self,
-                                          self.isAppForeground,
+                                          self.isAppActive,
                                           self.avatarSubscriptionRoute == route
                                     else {
                                         self?.clearPendingAvatar(peerId, route: route)
@@ -535,7 +544,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func uploadAvatar(_ imageData: Data, digest: String, peerId: Int64, route: String, authSecret: Data) {
-        guard self.isAppForeground,
+        guard self.isAppActive,
               self.avatarSubscriptionRoute == route,
               let url = Self.makeAvatarUploadURL()
         else {
@@ -567,7 +576,7 @@ public final class MellowsgramBarkNotificationManager {
                     return
                 }
                 self.pendingAvatarPeerIds.remove(peerId)
-                guard self.isAppForeground,
+                guard self.isAppActive,
                       let response = response as? HTTPURLResponse,
                       response.statusCode == 204
                 else {
@@ -730,7 +739,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func startForegroundPresenceTimer() {
-        guard self.isAppForeground, self.foregroundPresenceURL != nil, self.foregroundPresenceTimer == nil else {
+        guard self.isAppActive, self.foregroundPresenceURL != nil, self.foregroundPresenceTimer == nil else {
             return
         }
         let timer = SwiftSignalKit.Timer(timeout: Self.foregroundPresenceInterval, repeat: true, completion: { [weak self] in
