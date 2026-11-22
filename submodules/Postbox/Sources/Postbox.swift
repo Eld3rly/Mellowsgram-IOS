@@ -190,6 +190,14 @@ public final class Transaction {
         return self.postbox?.mellowsgramArchiveRecord(messageId: messageId)
     }
 
+    /// Marks messages removed by an explicit user action on this device. The
+    /// Postbox archive consumes this context before the delete operation, so a
+    /// local delete cannot create a Mellowsgram tombstone.
+    public func markMellowsgramLocalDeletion(_ messageIds: [MessageId]) {
+        assert(!self.disposed)
+        self.postbox?.markMellowsgramLocalDeletion(messageIds)
+    }
+
     public var mellowsgramGhostModeEnabled: Bool {
         return self.postbox?.mellowsgramGhostModeEnabled ?? false
     }
@@ -1786,6 +1794,7 @@ final class PostboxImpl {
     private let mellowsgramArchiveEventsPipe = ValuePipe<PeerId>()
     private var mellowsgramArchiveEnabled = true
     private var mellowsgramSaveEditedMessagesEnabled = true
+    private var mellowsgramLocalDeletionIds = Set<MessageId>()
     var mellowsgramGhostModeEnabled = false
     var mellowsgramGhostModeReadReceiptsEnabled = false
     
@@ -2488,6 +2497,21 @@ final class PostboxImpl {
         |> map { _ in () }
     }
 
+    fileprivate func markMellowsgramLocalDeletion(_ messageIds: [MessageId]) {
+        let messageIds = Set(messageIds.filter { $0.namespace == 0 })
+        guard !messageIds.isEmpty else {
+            return
+        }
+
+        self.mellowsgramLocalDeletionIds.formUnion(messageIds)
+        for messageId in messageIds where self.mellowsgramMessageArchiveTable.get(messageId) != nil {
+            self.mellowsgramMessageArchiveTable.remove(messageId)
+            self.addAfterCommitAction { [weak self] in
+                self?.mellowsgramArchiveEventsPipe.putNext(messageId.peerId)
+            }
+        }
+    }
+
     private func archiveMellowsgramMessagesBeforeDeletion(_ indices: [MessageIndex]) {
         guard self.mellowsgramArchiveEnabled else {
             return
@@ -2499,6 +2523,9 @@ final class PostboxImpl {
             // That lifecycle cleanup is not a user deletion and must not
             // create a Mellowsgram tombstone beside the confirmed message.
             guard index.id.namespace == 0 else {
+                continue
+            }
+            guard !self.mellowsgramLocalDeletionIds.contains(index.id) else {
                 continue
             }
             if let message = self.messageHistoryTable.getMessage(index) {
@@ -3066,6 +3093,7 @@ final class PostboxImpl {
         self.currentStoryItemsEvents.removeAll()
         self.currentStoryTopItemEvents.removeAll()
         self.currentStoryEvents.removeAll()
+        self.mellowsgramLocalDeletionIds.removeAll()
         
         if !self.currentUpdatedTypingDrafts.isEmpty {
             self.currentUpdatedTypingDrafts.removeAll()

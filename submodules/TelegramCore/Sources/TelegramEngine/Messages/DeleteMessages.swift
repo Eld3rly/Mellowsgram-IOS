@@ -94,6 +94,36 @@ func _internal_deleteAllMessagesWithForwardAuthor(transaction: Transaction, medi
     }
 }
 
+/// Records an explicit local deletion before Postbox removes the messages.
+/// The marker is deliberately collected from the same history operation that
+/// will be executed, so clearing a range or an entire chat cannot leave a
+/// Mellowsgram projection behind.
+func _internal_markMellowsgramMessagesForLocalDeletion(
+    transaction: Transaction,
+    peerId: PeerId,
+    threadId: Int64?,
+    minTimestamp: Int32? = nil,
+    maxTimestamp: Int32? = nil,
+    namespaces: MessageIdNamespaces,
+    authorId: PeerId? = nil,
+    forwardAuthorId: PeerId? = nil
+) {
+    var messageIds: [MessageId] = []
+    transaction.withAllMessages(peerId: peerId) { message in
+        guard namespaces.contains(message.id.namespace),
+              threadId == nil || message.threadId == threadId,
+              minTimestamp == nil || message.timestamp >= minTimestamp!,
+              maxTimestamp == nil || message.timestamp <= maxTimestamp!,
+              authorId == nil || message.author?.id == authorId,
+              forwardAuthorId == nil || message.forwardInfo?.author?.id == forwardAuthorId else {
+            return true
+        }
+        messageIds.append(message.id)
+        return true
+    }
+    transaction.markMellowsgramLocalDeletion(messageIds)
+}
+
 func _internal_deleteAllReactionsWithAuthor(account: Account, peerId: PeerId, authorId: PeerId, aroundMessageId: MessageId?) -> Signal<Never, NoError> {
     return account.postbox.transaction { transaction -> (Peer?, Peer?) in
         let peer = transaction.getPeer(peerId)

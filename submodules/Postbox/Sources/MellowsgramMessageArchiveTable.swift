@@ -63,6 +63,8 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
         case stableVersion
         case mediaData
         case revisions
+        case groupingKey
+        case groupInfoStableId
     }
 
     public let messageId: MessageId
@@ -82,6 +84,10 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
     /// are never copied into the archive table.
     public var mediaData: Data
     public var revisions: [MellowsgramMessageRevision]
+    /// Album metadata is kept so a detached archive projection can use the
+    /// same Telegram grouping as the original message.
+    public var groupingKey: Int64?
+    public var groupInfoStableId: UInt32?
 
     public init(
         messageId: MessageId,
@@ -95,7 +101,9 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
         stableVersion: UInt32,
         revisions: [MellowsgramMessageRevision],
         stableId: UInt32 = 0,
-        mediaData: Data = Data()
+        mediaData: Data = Data(),
+        groupingKey: Int64? = nil,
+        groupInfoStableId: UInt32? = nil
     ) {
         self.messageId = messageId
         self.threadId = threadId
@@ -109,6 +117,8 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
         self.stableVersion = stableVersion
         self.mediaData = mediaData
         self.revisions = revisions
+        self.groupingKey = groupingKey
+        self.groupInfoStableId = groupInfoStableId
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,6 +141,12 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
         self.stableVersion = try mellowsgramDecodeStableVersion(container, forKey: .stableVersion)
         self.mediaData = try container.decodeIfPresent(Data.self, forKey: .mediaData) ?? Data()
         self.revisions = try container.decode([MellowsgramMessageRevision].self, forKey: .revisions)
+        self.groupingKey = try container.decodeIfPresent(Int64.self, forKey: .groupingKey)
+        if let groupInfoStableId = try container.decodeIfPresent(Int64.self, forKey: .groupInfoStableId), groupInfoStableId >= 0, groupInfoStableId <= Int64(UInt32.max) {
+            self.groupInfoStableId = UInt32(groupInfoStableId)
+        } else {
+            self.groupInfoStableId = nil
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -149,6 +165,8 @@ public struct MellowsgramMessageArchiveRecord: Codable, Equatable {
         try container.encode(Int64(self.stableVersion), forKey: .stableVersion)
         try container.encode(self.mediaData, forKey: .mediaData)
         try container.encode(self.revisions, forKey: .revisions)
+        try container.encodeIfPresent(self.groupingKey, forKey: .groupingKey)
+        try container.encodeIfPresent(self.groupInfoStableId.map { Int64($0) }, forKey: .groupInfoStableId)
     }
 }
 
@@ -234,6 +252,8 @@ final class MellowsgramMessageArchiveTable: Table {
         if var entry = self.get(message.id) {
             entry.stableId = message.stableId
             entry.mediaData = Self.encodeMedia(media)
+            entry.groupingKey = message.groupingKey
+            entry.groupInfoStableId = message.groupInfo?.stableId
             if entry.deletedAt == nil {
                 entry.deletedAt = timestamp
             }
@@ -251,7 +271,9 @@ final class MellowsgramMessageArchiveTable: Table {
                 stableVersion: message.stableVersion,
                 revisions: [],
                 stableId: message.stableId,
-                mediaData: Self.encodeMedia(media)
+                mediaData: Self.encodeMedia(media),
+                groupingKey: message.groupingKey,
+                groupInfoStableId: message.groupInfo?.stableId
             ))
         }
     }
@@ -279,7 +301,9 @@ final class MellowsgramMessageArchiveTable: Table {
             stableVersion: previousMessage.stableVersion,
             revisions: [],
             stableId: previousMessage.stableId,
-            mediaData: Self.encodeMedia(updatedMessage.media)
+            mediaData: Self.encodeMedia(updatedMessage.media),
+            groupingKey: previousMessage.groupingKey,
+            groupInfoStableId: previousMessage.groupInfo?.stableId
         )
 
         let previousRevision = MellowsgramMessageRevision(
@@ -296,6 +320,8 @@ final class MellowsgramMessageArchiveTable: Table {
         entry.stableVersion = previousMessage.stableVersion == UInt32.max ? UInt32.max : previousMessage.stableVersion + 1
         entry.stableId = previousMessage.stableId
         entry.mediaData = Self.encodeMedia(updatedMessage.media)
+        entry.groupingKey = previousMessage.groupingKey
+        entry.groupInfoStableId = previousMessage.groupInfo?.stableId
         self.set(entry)
     }
 

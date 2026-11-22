@@ -1452,7 +1452,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
     private let previousView = Atomic<(ChatHistoryView, Int, Set<MessageId>?, Int)?>(value: nil)
     private let previousHistoryAppearsCleared = Atomic<Bool?>(value: nil)
 
-    private func updateMellowsgramDeletionSnapshots(view: MessageHistoryView, archiveRecords: [EngineMellowsgramMessageArchiveRecord], ignoreMessageIds: Set<MessageId>, saveDeletedMessages: Bool) -> [MessageId: EngineRawMessage] {
+    private func updateMellowsgramDeletionSnapshots(view: MessageHistoryView, archiveRecords: [EngineMellowsgramMessageArchiveRecord], ignoreMessageIds _: Set<MessageId>, saveDeletedMessages: Bool) -> [MessageId: EngineRawMessage] {
         guard saveDeletedMessages else {
             self.mellowsgramLiveMessageSnapshots.removeAll()
             self.mellowsgramPendingDeletedMessageSnapshots.removeAll()
@@ -1478,23 +1478,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                   !engineMellowsgramMessageIsEphemeral(snapshot) else {
                 continue
             }
-            pending[messageId] = snapshot
-        }
-
-        func isVisibleInCurrentRange(_ message: EngineRawMessage) -> Bool {
-            guard !view.isLoading else {
-                return false
-            }
-            let indices = view.entries.map { $0.message.index }
-            guard let lowerBound = indices.min(), let upperBound = indices.max() else {
-                return view.earlierId == nil && view.laterId == nil && !view.holeEarlier && !view.holeLater
-            }
-            if message.index < lowerBound {
-                return view.earlierId == nil && !view.holeEarlier
-            } else if message.index > upperBound {
-                return view.laterId == nil && !view.holeLater
-            } else {
-                return true
+            if archivedIds.contains(messageId) {
+                pending[messageId] = snapshot
             }
         }
 
@@ -1506,11 +1491,10 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 continue
             }
 
-            // An explicit ignored id or a committed archive record covers
-            // interactive, remote and bulk deletion paths. A fully known range
-            // covers the short signal gap before either is published. The later
-            // history-entry pass applies the same range check before rendering.
-            if ignoreMessageIds.contains(messageId) || archivedIds.contains(messageId) || isVisibleInCurrentRange(snapshot) {
+            // A detached row is valid only after the archive transaction has
+            // committed. A disappearing row or an ignored id alone is not
+            // proof of a server-side deletion and must never create a duplicate.
+            if archivedIds.contains(messageId) {
                 pending[messageId] = snapshot
             }
         }

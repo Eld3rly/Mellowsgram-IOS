@@ -25,6 +25,7 @@ func _internal_terminateSecretChat(transaction: Transaction, peerId: PeerId, req
 }
 
 func _internal_removePeerChat(account: Account, transaction: Transaction, mediaBox: MediaBox, peerId: PeerId, reportChatSpam: Bool, deleteGloballyIfPossible: Bool) {
+    _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .all)
     if let _ = transaction.getPeerChatInterfaceState(peerId) {
         transaction.setPeerChatInterfaceState(peerId, state: nil)
     }

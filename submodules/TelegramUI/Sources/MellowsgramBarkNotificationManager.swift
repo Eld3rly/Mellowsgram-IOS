@@ -295,7 +295,7 @@ public final class MellowsgramBarkNotificationManager {
                         barkDeviceKey: storedRegistration.barkDeviceKey,
                         token: storedRegistration.token,
                         registeredAccountIds: remainingIds,
-                        liveContainerNotificationLinks: storedRegistration.liveContainerNotificationLinks
+                        liveContainerNotificationLinks: mellowsgramIsRunningInLiveContainer()
                     ))
                 }
                 return
@@ -306,7 +306,7 @@ public final class MellowsgramBarkNotificationManager {
                     entry.value == token ? entry.key.int64 : nil
                 }
                 .sorted()
-            let liveContainerNotificationLinks = self.globalSettings.bool(for: .liveContainerNotificationLinks)
+            let liveContainerNotificationLinks = mellowsgramIsRunningInLiveContainer()
             self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks)
             _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                 barkDeviceKey: barkKey,

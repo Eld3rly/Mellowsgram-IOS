@@ -1,6 +1,14 @@
 import Foundation
+import Darwin
 import Security
 import SwiftSignalKit
+
+/// LiveContainer exposes its home path to applications running inside the
+/// container. Keep this check in Preferences so registration and the settings
+/// screen use exactly the same runtime source of truth.
+public func mellowsgramIsRunningInLiveContainer() -> Bool {
+    return Darwin.getenv("LC_HOME_PATH") != nil
+}
 
 public struct MellowsgramBarkStoredRegistration: Codable, Equatable {
     public let barkDeviceKey: String

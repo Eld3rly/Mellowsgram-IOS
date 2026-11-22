@@ -46,6 +46,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>tg</string>
+				<string>mellowsgram</string>
 				<string>$(APP_SPECIFIC_URL_SCHEME)</string>
 			</array>
 		</dict>
@@ -81,24 +82,16 @@
 		<string>firefox</string>
 		<string>touch-http</string>
 		<string>yandexbrowser-open-url</string>
-		<string>vimeo</string>
-		<string>vine</string>
-		<string>coub</string>
 		<string>uber</string>
 		<string>citymapper</string>
 		<string>lyft</string>
-		<string>opera-http</string>
-		<string>firefox-focus</string>
-		<string>ddgQuickLink</string>
 		<string>moovit</string>
-		<string>alook</string>
 		<string>dgis</string>
-		<string>microsoft-edge-http</string>
 		<string>brave</string>
-		<string>onionhttp</string>
 		<string>ucbrowser</string>
 		<string>dolphin</string>
 		<string>instagram-stories</string>
+		<string>bark</string>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

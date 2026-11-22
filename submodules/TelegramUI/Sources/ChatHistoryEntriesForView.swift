@@ -68,12 +68,6 @@ private func mellowsgramPendingMessageIsVisibleInHistory(_ message: EngineRawMes
     }
 }
 
-private func mellowsgramArchiveRecordStableId(_ record: EngineMellowsgramMessageArchiveRecord) -> UInt32 {
-    // Records written by older builds did not persist the stable id. Their
-    // message id is still the same identity used by ChatHistoryEntry.
-    return record.stableId == 0 ? UInt32(bitPattern: record.messageId.id) : record.stableId
-}
-
 /// Returns a detached Mellowsgram row only when its original stable identity is
 /// not already present in the current history projection. An archive record is
 /// a fallback for a message that has disappeared from Postbox; remapping a
@@ -260,18 +254,12 @@ func chatHistoryEntriesForView(
     var count = 0
     let mellowsgramRecordsForView: [EngineMellowsgramMessageArchiveRecord]
     if mellowsgramShowDeletedMessages {
-        let liveMessageStableIds = Set(view.entries.map { $0.message.stableId })
         mellowsgramRecordsForView = mellowsgramArchiveRecordsForView(
             records: mellowsgramArchiveRecords,
             location: location,
             view: view,
             historyAppearsCleared: historyAppearsCleared
-        ).filter { record in
-            // A live row wins over a detached archive projection. This also
-            // covers the deletion window where the MessageId in the archive
-            // signal can arrive one transition after the live history update.
-            !liveMessageStableIds.contains(mellowsgramArchiveRecordStableId(record))
-        }
+        )
     } else {
         mellowsgramRecordsForView = []
     }
@@ -289,10 +277,6 @@ func chatHistoryEntriesForView(
         }
         return (record.messageId, record)
     })
-    var mellowsgramRecordsByStableId: [UInt32: EngineMellowsgramMessageArchiveRecord] = [:]
-    for record in mellowsgramRecordsById.values {
-        mellowsgramRecordsByStableId[mellowsgramArchiveRecordStableId(record)] = record
-    }
     var mellowsgramProjectionPeers = cachedPeerDataPeers
     if let chatPeer {
         mellowsgramProjectionPeers[chatPeer.id] = chatPeer
@@ -307,6 +291,87 @@ func chatHistoryEntriesForView(
         )
     }
     var projectedMellowsgramMessageIds = Set<MessageId>()
+    var occupiedMellowsgramEntryStableIds = Set(entries.map { $0.stableId })
+
+    func appendMellowsgramProjection(_ message: EngineRawMessage) {
+        guard !projectedMellowsgramMessageIds.contains(message.id) else {
+            return
+        }
+
+        let selection: ChatHistoryMessageSelection
+        if let selectedMessages = selectedMessages {
+            selection = .selectable(selected: selectedMessages.contains(message.id), num: nil)
+        } else {
+            selection = .none
+        }
+        let adminRank = message.author.flatMap { adminRanks[$0.id] }
+        let attributes = ChatMessageEntryAttributes(
+            rank: adminRank,
+            isContact: false,
+            contentTypeHint: .generic,
+            updatingMedia: updatingMedia[message.id],
+            isPlaying: message.index == associatedData.currentlyPlayingMessageId,
+            isCentered: false,
+            authorStoryStats: message.author.flatMap { view.peerStoryStats[$0.id] },
+            displayContinueThreadFooter: false,
+            pinToTop: false
+        )
+
+        if (groupMessages || reverseGroupedMessages), let groupingKey = message.groupingKey {
+            let groupStableId = currentState.messageGroupStableId(
+                messageStableId: message.stableId,
+                groupId: groupingKey,
+                isLocal: Namespaces.Message.allLocal.contains(message.id.namespace)
+            )
+            var found = false
+            for i in 0 ..< entries.count {
+                if case let .MessageEntry(currentMessage, _, currentIsRead, currentLocation, currentSelection, currentAttributes) = entries[i],
+                   let currentGroupingKey = currentMessage.groupingKey,
+                   currentState.messageGroupStableId(messageStableId: currentMessage.stableId, groupId: currentGroupingKey, isLocal: Namespaces.Message.allLocal.contains(currentMessage.id.namespace)) == groupStableId {
+                    var currentMessages: [(EngineRawMessage, Bool, ChatHistoryMessageSelection, ChatMessageEntryAttributes, EngineMessageHistoryEntryLocation?)] = []
+                    var currentAttributes = currentAttributes
+                    currentAttributes.groupStableId = nil
+                    currentMessages.append((currentMessage, currentIsRead, currentSelection, currentAttributes, currentLocation))
+                    if reverseGroupedMessages {
+                        currentMessages.insert((message, true, selection, attributes, nil), at: 0)
+                    } else {
+                        currentMessages.append((message, true, selection, attributes, nil))
+                    }
+                    entries[i] = .MessageGroupEntry(groupStableId, currentMessages, presentationData)
+                    found = true
+                    break
+                } else if case let .MessageGroupEntry(currentGroupStableId, currentMessages, _) = entries[i], currentGroupStableId == groupStableId {
+                    var currentMessages = currentMessages
+                    if reverseGroupedMessages {
+                        currentMessages.insert((message, true, selection, attributes, nil), at: 0)
+                    } else {
+                        currentMessages.append((message, true, selection, attributes, nil))
+                    }
+                    entries[i] = .MessageGroupEntry(currentGroupStableId, currentMessages, presentationData)
+                    found = true
+                    break
+                }
+            }
+            if !found {
+                var groupedAttributes = attributes
+                if groupMessages {
+                    groupedAttributes.groupStableId = groupStableId
+                }
+                let entry = ChatHistoryEntry.MessageEntry(message, presentationData, true, nil, selection, groupedAttributes)
+                if !occupiedMellowsgramEntryStableIds.contains(entry.stableId) {
+                    entries.append(entry)
+                    occupiedMellowsgramEntryStableIds.insert(entry.stableId)
+                }
+            }
+        } else if let entry = mellowsgramMessageEntryWithUniqueStableId(
+            message,
+            presentationData: presentationData,
+            occupiedStableIds: &occupiedMellowsgramEntryStableIds
+        ) {
+            entries.append(entry)
+        }
+        projectedMellowsgramMessageIds.insert(message.id)
+    }
 
     loop: for entry in view.entries {
         var message = entry.message.withAppliedEphemeralReplacementMessage()
@@ -321,7 +386,7 @@ func chatHistoryEntriesForView(
         }
         
         let deletedRecord = mellowsgramShowDeletedMessages
-            ? (mellowsgramRecordsById[message.id] ?? mellowsgramRecordsByStableId[message.stableId])
+            ? mellowsgramRecordsById[message.id]
             : nil
         if let record = deletedRecord, record.deletedAt != nil {
             // The archive can be committed before the live history view catches
@@ -968,8 +1033,6 @@ func chatHistoryEntriesForView(
     }
 
     if mellowsgramShowDeletedMessages {
-        var occupiedMellowsgramEntryStableIds = Set(entries.map { $0.stableId })
-
         for (messageId, snapshot) in mellowsgramPendingDeletedMessageSnapshots.sorted(by: { lhs, rhs in
             if lhs.value.index == rhs.value.index {
                 return lhs.key < rhs.key
@@ -986,14 +1049,7 @@ func chatHistoryEntriesForView(
                 continue
             }
             let message = engineMellowsgramDeletedMessage(message: snapshot, translucent: mellowsgramTranslucentDeletedMessages)
-            if let entry = mellowsgramMessageEntryWithUniqueStableId(
-                message,
-                presentationData: presentationData,
-                occupiedStableIds: &occupiedMellowsgramEntryStableIds
-            ) {
-                entries.append(entry)
-            }
-            projectedMellowsgramMessageIds.insert(messageId)
+            appendMellowsgramProjection(message)
         }
 
         for record in mellowsgramRecordsForView where !projectedMellowsgramMessageIds.contains(record.messageId) {
@@ -1003,14 +1059,7 @@ func chatHistoryEntriesForView(
             } else {
                 message = mellowsgramArchivedMessage(record: record)
             }
-            if let entry = mellowsgramMessageEntryWithUniqueStableId(
-                message,
-                presentationData: presentationData,
-                occupiedStableIds: &occupiedMellowsgramEntryStableIds
-            ) {
-                entries.append(entry)
-            }
-            projectedMellowsgramMessageIds.insert(record.messageId)
+            appendMellowsgramProjection(message)
         }
         entries.sort()
     }

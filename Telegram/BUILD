@@ -1831,8 +1831,6 @@ plist_fragment(
         <string>here-location</string>
         <string>yandexmaps</string>
         <string>yandexnavi</string>
-        <string>yandextaxi</string>
-        <string>yangoride</string>
         <string>comgooglemaps</string>
         <string>youtube</string>
         <string>twitter</string>
@@ -1842,27 +1840,16 @@ plist_fragment(
         <string>firefox</string>
         <string>touch-http</string>
         <string>yandexbrowser-open-url</string>
-        <string>vimeo</string>
-        <string>vine</string>
-        <string>coub</string>
         <string>uber</string>
         <string>citymapper</string>
         <string>lyft</string>
-        <string>opera-http</string>
-        <string>firefox-focus</string>
-        <string>ddgQuickLink</string>
         <string>moovit</string>
-        <string>alook</string>
         <string>dgis</string>
-        <string>microsoft-edge-http</string>
         <string>brave</string>
-        <string>onionhttp</string>
         <string>ucbrowser</string>
         <string>dolphin</string>
         <string>instagram-stories</string>
-        <string>yangomaps</string>
-        <string>vivaldi</string>
-        <string>rizogo</string>
+        <string>bark</string>
     </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>

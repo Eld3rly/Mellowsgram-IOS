@@ -37,7 +37,7 @@ func _internal_deleteMessagesInteractively(account: Account, messageIds: [Messag
             }
         }
 
-        deleteMessagesInteractively(transaction: transaction, stateManager: account.stateManager, postbox: account.postbox, messageIds: messageIds, type: type, removeIfPossiblyDelivered: true)
+        deleteMessagesInteractively(transaction: transaction, stateManager: account.stateManager, postbox: account.postbox, messageIds: messageIds, type: type, removeIfPossiblyDelivered: true, markMellowsgramLocalDeletion: true)
         return ephemeralRequests
     }
     |> mapToSignal { ephemeralRequests -> Signal<Void, NoError> in
@@ -67,7 +67,7 @@ func _internal_deleteMessagesInteractively(account: Account, messageIds: [Messag
     }
 }
     
-func deleteMessagesInteractively(transaction: Transaction, stateManager: AccountStateManager?, postbox: Postbox, messageIds initialMessageIds: [MessageId], type: InteractiveMessagesDeletionType, deleteAllInGroup: Bool = false, removeIfPossiblyDelivered: Bool) {
+func deleteMessagesInteractively(transaction: Transaction, stateManager: AccountStateManager?, postbox: Postbox, messageIds initialMessageIds: [MessageId], type: InteractiveMessagesDeletionType, deleteAllInGroup: Bool = false, removeIfPossiblyDelivered: Bool, markMellowsgramLocalDeletion: Bool = false) {
     var messageIds: [MessageAndThreadId] = []
     if deleteAllInGroup {
         var tempIds: [MessageId] = initialMessageIds
@@ -106,6 +106,10 @@ func deleteMessagesInteractively(transaction: Transaction, stateManager: Account
                 return MessageAndThreadId(messageId: id, threadId: nil)
             }
         }
+    }
+
+    if markMellowsgramLocalDeletion {
+        transaction.markMellowsgramLocalDeletion(messageIds.map { $0.messageId })
     }
     
     var uniqueIds: [Int64: PeerId] = [:]
@@ -177,6 +181,7 @@ func _internal_clearHistoryInRangeInteractively(postbox: Postbox, peerId: PeerId
             cloudChatAddClearHistoryOperation(transaction: transaction, peerId: peerId, threadId: threadId, explicitTopMessageId: nil, minTimestamp: minTimestamp, maxTimestamp: maxTimestamp, type: CloudChatClearHistoryType(type))
             if type == .scheduledMessages {
             } else {
+                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: threadId, minTimestamp: minTimestamp, maxTimestamp: maxTimestamp, namespaces: .not(Namespaces.Message.allNonRegular))
                 _internal_clearHistoryInRange(transaction: transaction, mediaBox: postbox.mediaBox, peerId: peerId, threadId: threadId, minTimestamp: minTimestamp, maxTimestamp: maxTimestamp, namespaces: .not(Namespaces.Message.allNonRegular))
             }
         } else if peerId.namespace == Namespaces.Peer.SecretChat {
@@ -211,6 +216,7 @@ func _internal_clearHistoryInteractively(postbox: Postbox, peerId: PeerId, threa
             if type == .scheduledMessages {
                 _internal_clearHistory(transaction: transaction, mediaBox: postbox.mediaBox, peerId: peerId, threadId: threadId, namespaces: .just(Namespaces.Message.allScheduled))
             } else {
+                _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
                 var topIndex: MessageIndex?
                 if let topMessageId = transaction.getTopPeerMessageId(peerId: peerId, namespace: Namespaces.Message.Cloud), let topMessage = transaction.getMessage(topMessageId) {
                     topIndex = topMessage.index
@@ -219,6 +225,7 @@ func _internal_clearHistoryInteractively(postbox: Postbox, peerId: PeerId, threa
                 _internal_clearHistory(transaction: transaction, mediaBox: postbox.mediaBox, peerId: peerId, threadId: threadId, namespaces: .not(Namespaces.Message.allNonRegular))
                 if let cachedData = transaction.getPeerCachedData(peerId: peerId) as? CachedChannelData, let migrationReference = cachedData.migrationReference {
                     cloudChatAddClearHistoryOperation(transaction: transaction, peerId: migrationReference.maxMessageId.peerId, threadId: threadId, explicitTopMessageId: MessageId(peerId: migrationReference.maxMessageId.peerId, namespace: migrationReference.maxMessageId.namespace, id: migrationReference.maxMessageId.id + 1), minTimestamp: nil, maxTimestamp: nil, type: CloudChatClearHistoryType(type))
+                    _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: migrationReference.maxMessageId.peerId, threadId: threadId, namespaces: .all)
                     _internal_clearHistory(transaction: transaction, mediaBox: postbox.mediaBox, peerId: migrationReference.maxMessageId.peerId, threadId: threadId, namespaces: .all)
                 }
                 if let topIndex = topIndex {
@@ -241,6 +248,7 @@ func _internal_clearHistoryInteractively(postbox: Postbox, peerId: PeerId, threa
                 }
             }
         } else if peerId.namespace == Namespaces.Peer.SecretChat {
+            _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .all)
             _internal_clearHistory(transaction: transaction, mediaBox: postbox.mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
             
             if let state = transaction.getPeerChatState(peerId) as? SecretChatState {
@@ -296,6 +304,7 @@ func _internal_clearAuthorHistory(account: Account, peerId: PeerId, memberId: Pe
             |> `catch` { success -> Signal<Void, NoError> in
                 if success {
                     return account.postbox.transaction { transaction -> Void in
+                        _internal_markMellowsgramMessagesForLocalDeletion(transaction: transaction, peerId: peerId, threadId: nil, namespaces: .just(Namespaces.Message.Cloud), authorId: memberId)
                         _internal_deleteAllMessagesWithAuthor(transaction: transaction, mediaBox: account.postbox.mediaBox, peerId: peerId, authorId: memberId, namespace: Namespaces.Message.Cloud)
                     }
                 } else {
