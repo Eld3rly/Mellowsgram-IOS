@@ -1434,9 +1434,11 @@ public class Account {
         // settings before any managed read/presence operation can react.
         self.managedOperationsDisposable.add(combineLatest(mellowsgramSettings(postbox: postbox), MellowsgramGlobalGhostModeRuntime.shared.signal).start(next: { settings, globalPolicy in
             let effectiveEnabled = settings.usesGlobalGhostMode ? globalPolicy.enabled : settings.ghostMode
-            let effectiveOptions = settings.usesGlobalGhostMode ? globalPolicy.options : settings.ghostModeOptions
+            let effectiveOptions = settings.usesGlobalGhostMode
+                ? MellowsgramGhostModePolicyOptions(rawValue: globalPolicy.options.rawValue)
+                : settings.ghostModeOptions
             postbox.setMellowsgramGhostMode(effectiveEnabled)
-            postbox.setMellowsgramGhostModeOptions(effectiveOptions)
+            postbox.setMellowsgramGhostModeOptions(MellowsgramGhostModeOptions(rawValue: effectiveOptions.rawValue))
             postbox.setMellowsgramArchiveSettings(saveDeletedMessages: settings.saveDeletedMessages, saveEditedMessages: settings.saveEditedMessages)
             postbox.setMellowsgramIgnoreAutoremoveTimers(settings.ignoreAutoremoveTimers)
         }))

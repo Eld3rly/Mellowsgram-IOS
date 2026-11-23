@@ -1308,11 +1308,11 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
         }
         let usesGlobal = selectedAccountSettings?.usesGlobalGhostMode ?? true
         let enabled: Bool
-        let options: MellowsgramGhostModeOptions
+        let options: MellowsgramGhostModePolicyOptions
         switch ghostScope {
         case .allAccounts:
             enabled = snapshot.global.bool(for: .ghostGlobalMode)
-            var globalOptions = MellowsgramGhostModeOptions()
+            var globalOptions = MellowsgramGhostModePolicyOptions()
             if snapshot.global.bool(for: .ghostGlobalDontReadMessages) { globalOptions.insert(.dontReadMessages) }
             if snapshot.global.bool(for: .ghostGlobalDontReadStories) { globalOptions.insert(.dontReadStories) }
             if snapshot.global.bool(for: .ghostGlobalDontSendOnline) { globalOptions.insert(.dontSendOnline) }
@@ -1325,7 +1325,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
                 options = selectedAccountSettings.ghostModeOptions
             } else {
                 enabled = snapshot.global.bool(for: .ghostGlobalMode)
-                var globalOptions = MellowsgramGhostModeOptions()
+                var globalOptions = MellowsgramGhostModePolicyOptions()
                 if snapshot.global.bool(for: .ghostGlobalDontReadMessages) { globalOptions.insert(.dontReadMessages) }
                 if snapshot.global.bool(for: .ghostGlobalDontReadStories) { globalOptions.insert(.dontReadStories) }
                 if snapshot.global.bool(for: .ghostGlobalDontSendOnline) { globalOptions.insert(.dontSendOnline) }
@@ -1512,9 +1512,9 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
     let selectedGhostScope = Atomic<MellowsgramGhostScope>(value: .allAccounts)
     let selectedGhostScopePromise = ValuePromise<MellowsgramGhostScope>(.allAccounts, ignoreRepeated: true)
 
-    func globalGhostSettings() -> (enabled: Bool, options: MellowsgramGhostModeOptions) {
+    func globalGhostSettings() -> (enabled: Bool, options: MellowsgramGhostModePolicyOptions) {
         let global = MellowsgramGlobalSettingsRuntime.shared
-        var options = MellowsgramGhostModeOptions()
+        var options = MellowsgramGhostModePolicyOptions()
         if global.bool(for: .ghostGlobalDontReadMessages) { options.insert(.dontReadMessages) }
         if global.bool(for: .ghostGlobalDontReadStories) { options.insert(.dontReadStories) }
         if global.bool(for: .ghostGlobalDontSendOnline) { options.insert(.dontSendOnline) }
@@ -1602,11 +1602,14 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
             let languageCode = presentationData.strings.primaryComponent.languageCode
             let actionSheet = ActionSheetController(presentationData: presentationData)
             let allTitle = mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
-            let _ = (mellowsgramActiveAccountLabels(context: context) |> take(1)).start(next: { accounts in
+            let _ = (mellowsgramActiveAccountLabels(context: context) |> take(1)).start(next: { [weak actionSheet] accounts in
+                guard let actionSheet else {
+                    return
+                }
                 var items: [ActionSheetButtonItem] = []
                 items.append(ActionSheetButtonItem(title: selectedGhostScope.with({ $0 }) == .allAccounts ? "✓  \(allTitle)" : allTitle, color: .accent, action: { [weak actionSheet] in
                     actionSheet?.dismissAnimated()
-                    selectedGhostScope.swap(.allAccounts)
+                    _ = selectedGhostScope.swap(.allAccounts)
                     selectedGhostScopePromise.set(.allAccounts)
                 }))
                 for (accountId, title) in accounts {
@@ -1614,7 +1617,7 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
                     let label = selectedGhostScope.with({ $0 }) == scope ? "✓  \(title)" : title
                     items.append(ActionSheetButtonItem(title: label, color: .accent, action: { [weak actionSheet] in
                         actionSheet?.dismissAnimated()
-                        selectedGhostScope.swap(scope)
+                        _ = selectedGhostScope.swap(scope)
                         selectedGhostScopePromise.set(scope)
                     }))
                 }

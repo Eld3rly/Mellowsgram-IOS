@@ -2,6 +2,23 @@ import Foundation
 import Postbox
 import SwiftSignalKit
 
+/// Ghost Mode options exposed to UI modules. The runtime coordinator lives in
+/// Postbox, so this module-level value keeps UI code independent of Postbox's
+/// implementation types while preserving the same bit layout.
+public struct MellowsgramGhostModePolicyOptions: OptionSet, Equatable {
+    public let rawValue: Int32
+
+    public init(rawValue: Int32) {
+        self.rawValue = rawValue
+    }
+
+    public static let dontReadMessages = MellowsgramGhostModePolicyOptions(rawValue: 1 << 0)
+    public static let dontReadStories = MellowsgramGhostModePolicyOptions(rawValue: 1 << 1)
+    public static let dontSendOnline = MellowsgramGhostModePolicyOptions(rawValue: 1 << 2)
+    public static let dontSendTyping = MellowsgramGhostModePolicyOptions(rawValue: 1 << 3)
+    public static let goOfflineAutomatically = MellowsgramGhostModePolicyOptions(rawValue: 1 << 4)
+}
+
 /// Bridges the app-wide Mellowsgram policy into the Postbox runtime without
 /// exposing Postbox implementation types to TelegramUIPreferences.
 public func updateMellowsgramGlobalGhostModeRuntime(
@@ -251,8 +268,8 @@ public struct MellowsgramSettings: Codable, Equatable {
         return self.copy(ignoreAutoremoveTimers: value)
     }
 
-    public var ghostModeOptions: MellowsgramGhostModeOptions {
-        var result = MellowsgramGhostModeOptions()
+    public var ghostModeOptions: MellowsgramGhostModePolicyOptions {
+        var result = MellowsgramGhostModePolicyOptions()
         if self.ghostDontReadMessages {
             result.insert(.dontReadMessages)
         }
