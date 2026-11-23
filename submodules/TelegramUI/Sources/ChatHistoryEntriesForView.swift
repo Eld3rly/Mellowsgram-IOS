@@ -173,7 +173,7 @@ func chatHistoryEntriesForView(
     mellowsgramArchiveRecords: [EngineMellowsgramMessageArchiveRecord],
     mellowsgramPendingDeletedMessageSnapshots: [MessageId: EngineRawMessage],
     mellowsgramShowDeletedMessages: Bool,
-    mellowsgramTranslucentDeletedMessages: Bool,
+    mellowsgramDeletedMessageOpacity: Int32,
     mellowsgramIgnoreAutoremoveTimers: Bool
 ) -> ([ChatHistoryEntry], ChatHistoryEntriesForViewState) {
     var currentState = currentState
@@ -285,7 +285,7 @@ func chatHistoryEntriesForView(
         let author = record.authorId.flatMap { mellowsgramProjectionPeers[$0] }
         return engineMellowsgramDeletedMessage(
             record: record,
-            translucent: mellowsgramTranslucentDeletedMessages,
+            opacity: mellowsgramDeletedMessageOpacity,
             author: author,
             peers: mellowsgramProjectionPeers
         )
@@ -392,7 +392,7 @@ func chatHistoryEntriesForView(
             // The archive can be committed before the live history view catches
             // up. Keep the live row's full media/peer context and only add the
             // in-memory deleted marker, so the list performs an item update.
-            message = engineMellowsgramDeletedMessage(message: message, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+            message = engineMellowsgramDeletedMessage(message: message, record: record, opacity: mellowsgramDeletedMessageOpacity)
             isRead = true
             projectedMellowsgramMessageIds.insert(message.id)
         } else if pendingRemovedMessages.contains(message.id) {
@@ -404,7 +404,7 @@ func chatHistoryEntriesForView(
                 // Keep the same live row while Postbox and the archive table
                 // publish their deletion transactions. The marker is enough
                 // for the regular renderer; no detached replacement is needed.
-                message = engineMellowsgramDeletedMessage(message: message, translucent: mellowsgramTranslucentDeletedMessages)
+                message = engineMellowsgramDeletedMessage(message: message, opacity: mellowsgramDeletedMessageOpacity)
                 isRead = true
                 projectedMellowsgramMessageIds.insert(message.id)
             } else {
@@ -1048,14 +1048,14 @@ func chatHistoryEntriesForView(
                   mellowsgramPendingMessageIsVisibleInHistory(snapshot, view: view) else {
                 continue
             }
-            let message = engineMellowsgramDeletedMessage(message: snapshot, translucent: mellowsgramTranslucentDeletedMessages)
+            let message = engineMellowsgramDeletedMessage(message: snapshot, opacity: mellowsgramDeletedMessageOpacity)
             appendMellowsgramProjection(message)
         }
 
         for record in mellowsgramRecordsForView where !projectedMellowsgramMessageIds.contains(record.messageId) {
             let message: EngineRawMessage
             if let snapshot = mellowsgramPendingDeletedMessageSnapshots[record.messageId] {
-                message = engineMellowsgramDeletedMessage(message: snapshot, record: record, translucent: mellowsgramTranslucentDeletedMessages)
+                message = engineMellowsgramDeletedMessage(message: snapshot, record: record, opacity: mellowsgramDeletedMessageOpacity)
             } else {
                 message = mellowsgramArchivedMessage(record: record)
             }

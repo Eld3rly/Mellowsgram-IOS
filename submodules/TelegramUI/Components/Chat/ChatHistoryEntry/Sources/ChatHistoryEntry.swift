@@ -172,9 +172,9 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
                         if engineMellowsgramMessageIsDeleted(lhsMessage) != engineMellowsgramMessageIsDeleted(rhsMessage) {
                             return false
                         }
-                        let lhsTranslucent = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
-                        let rhsTranslucent = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
-                        if lhsTranslucent != rhsTranslucent {
+                        let lhsOpacity = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.opacity }.first ?? 100
+                        let rhsOpacity = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.opacity }.first ?? 100
+                        if lhsOpacity != rhsOpacity {
                             return false
                         }
                         let lhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(lhsMessage)
@@ -268,9 +268,9 @@ public enum ChatHistoryEntry: Identifiable, Comparable {
                         if engineMellowsgramMessageIsDeleted(lhsMessage) != engineMellowsgramMessageIsDeleted(rhsMessage) {
                             return false
                         }
-                        let lhsTranslucent = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
-                        let rhsTranslucent = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.translucent }.first ?? false
-                        if lhsTranslucent != rhsTranslucent {
+                        let lhsOpacity = lhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.opacity }.first ?? 100
+                        let rhsOpacity = rhsMessage.attributes.compactMap { ($0 as? MellowsgramDeletedMessageAttribute)?.opacity }.first ?? 100
+                        if lhsOpacity != rhsOpacity {
                             return false
                         }
                         let lhsAutoremoveBypass = engineMellowsgramAutoremoveBypassAttribute(lhsMessage)

@@ -26,6 +26,53 @@ public struct MellowsgramGhostModeOptions: OptionSet, Equatable {
     ]
 }
 
+/// App-wide Ghost Mode policy. TelegramCore mirrors the persisted global
+/// preference into this small Postbox-level runtime object so each account can
+/// consume the same policy without introducing a TelegramCore/UI dependency.
+public struct MellowsgramGlobalGhostModePolicy: Equatable {
+    public let enabled: Bool
+    public let options: MellowsgramGhostModeOptions
+
+    public init(enabled: Bool, options: MellowsgramGhostModeOptions) {
+        self.enabled = enabled
+        self.options = options
+    }
+
+    public static let defaultPolicy = MellowsgramGlobalGhostModePolicy(
+        enabled: false,
+        options: .all
+    )
+}
+
+public final class MellowsgramGlobalGhostModeRuntime {
+    public static let shared = MellowsgramGlobalGhostModeRuntime()
+
+    private let policyValue = Atomic<MellowsgramGlobalGhostModePolicy>(value: .defaultPolicy)
+    private let policyPromise = ValuePromise<MellowsgramGlobalGhostModePolicy>(.defaultPolicy, ignoreRepeated: true)
+
+    private init() {
+    }
+
+    public var policy: MellowsgramGlobalGhostModePolicy {
+        return self.policyValue.with { $0 }
+    }
+
+    public var signal: Signal<MellowsgramGlobalGhostModePolicy, NoError> {
+        return self.policyPromise.get()
+    }
+
+    public func update(_ policy: MellowsgramGlobalGhostModePolicy) {
+        let previous = self.policyValue.swap(policy)
+        if previous != policy {
+            self.policyPromise.set(policy)
+        }
+    }
+
+    public func update(enabled: Bool, options: MellowsgramGhostModeOptions) {
+        self.update(MellowsgramGlobalGhostModePolicy(enabled: enabled, options: options))
+    }
+}
+
 /// Account-local, process-wide gate for client-side network side effects.
 ///
 /// It deliberately does not block message sends or media uploads. Callers use

@@ -1,5 +1,12 @@
 import Foundation
 
+/// Exposes the bot bit to Postbox without making the archive depend on
+/// TelegramCore's concrete peer types. TelegramCore's TelegramUser conforms
+/// to this protocol; other Peer implementations remain unaffected.
+public protocol MellowsgramBotPeer {
+    var mellowsgramIsBot: Bool { get }
+}
+
 public protocol MellowsgramMessageArchiveExclusion {
     var mellowsgramShouldNotArchive: Bool { get }
 }

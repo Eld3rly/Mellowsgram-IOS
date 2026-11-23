@@ -37,6 +37,16 @@ public struct MellowsgramBarkStoredRegistration: Codable, Equatable {
         self.registeredAccountIds = try container.decode([Int64].self, forKey: .registeredAccountIds)
         self.liveContainerNotificationLinks = try container.decodeIfPresent(Bool.self, forKey: .liveContainerNotificationLinks) ?? false
     }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.barkDeviceKey, forKey: .barkDeviceKey)
+        try container.encode(self.token, forKey: .token)
+        try container.encode(self.registeredAccountIds, forKey: .registeredAccountIds)
+        // `liveContainerNotificationLinks` is a legacy field. Its value is
+        // now derived from LC_HOME_PATH at runtime and must not be persisted as
+        // a second source of behaviour.
+    }
 }
 
 /// Keeps the Bark destination and the Telegram Web Push registration token in

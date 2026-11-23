@@ -158,7 +158,7 @@ public struct PeerVerification: Codable, Equatable {
     }
 }
 
-public final class TelegramUser: Peer, Equatable {
+public final class TelegramUser: Peer, MellowsgramBotPeer, Equatable {
     public let id: PeerId
     public let accessHash: TelegramPeerAccessHash?
     public let firstName: String?
@@ -179,6 +179,10 @@ public final class TelegramUser: Peer, Equatable {
     public let subscriberCount: Int32?
     public let verificationIconFileId: Int64?
     public let linkedCommunityId: PeerId?
+
+    public var mellowsgramIsBot: Bool {
+        return self.botInfo != nil
+    }
 
     public var nameOrPhone: String {
         if let firstName = self.firstName {

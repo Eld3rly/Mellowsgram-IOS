@@ -2400,7 +2400,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     mellowsgramArchiveRecords: mellowsgramArchiveRecords,
                     mellowsgramPendingDeletedMessageSnapshots: mellowsgramPendingDeletedMessageSnapshots,
                     mellowsgramShowDeletedMessages: mellowsgramSettings.showDeletedMessages,
-                    mellowsgramTranslucentDeletedMessages: mellowsgramSettings.translucentDeletedMessages,
+                    mellowsgramDeletedMessageOpacity: mellowsgramSettings.deletedMessageOpacity,
                     mellowsgramIgnoreAutoremoveTimers: mellowsgramSettings.ignoreAutoremoveTimers
                 )
                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0

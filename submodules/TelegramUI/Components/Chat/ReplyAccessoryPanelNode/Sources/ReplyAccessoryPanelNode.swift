@@ -126,7 +126,7 @@ public final class ReplyAccessoryPanelNode: AccessoryPanelNode {
                 guard let record = transaction.mellowsgramArchiveRecord(messageId: messageId), record.deletedAt != nil else {
                     return nil
                 }
-                return engineMellowsgramDeletedMessage(record: record, translucent: false)
+                return engineMellowsgramDeletedMessage(record: record, opacity: 100)
             }
         }
         self.messageDisposable.set((messageSignal

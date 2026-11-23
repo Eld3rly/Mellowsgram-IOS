@@ -75,11 +75,11 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
     case saveDeletedMessages
     case showDeletedMessages
     case saveEditedMessages
-    case translucentDeletedMessages
+    case deletedMessageOpacity
 
     var category: MellowsgramSettingsCategory {
         switch self {
-        case .translucentDeletedMessages:
+        case .deletedMessageOpacity:
             return .appearance
         default:
             return .spyAndGhost
@@ -97,12 +97,31 @@ private enum MellowsgramAccountSetting: CaseIterable, Equatable {
         case .saveDeletedMessages: return mellowsgramText("Save Deleted Messages", "Сохранять удалённые сообщения", languageCode: languageCode)
         case .showDeletedMessages: return mellowsgramText("Show Deleted Messages", "Показывать удалённые сообщения", languageCode: languageCode)
         case .saveEditedMessages: return mellowsgramText("Save Edits History", "Сохранять историю изменений", languageCode: languageCode)
-        case .translucentDeletedMessages: return mellowsgramText("Translucent Deleted Messages", "Полупрозрачные удалённые сообщения", languageCode: languageCode)
+        case .deletedMessageOpacity: return mellowsgramText("Deleted Message Opacity", "Непрозрачность удалённых сообщений", languageCode: languageCode)
         }
     }
 }
 
+private enum MellowsgramGhostScope: Equatable {
+    case allAccounts
+    case account(AccountRecordId)
+}
+
+private enum MellowsgramSliderKey: Equatable {
+    case global(MellowsgramGlobalSettingKey)
+    case deletedMessageOpacity
+}
+
 private extension MellowsgramGlobalSettingKey {
+    var isGlobalGhostPolicyKey: Bool {
+        switch self {
+        case .ghostGlobalMode, .ghostGlobalDontReadMessages, .ghostGlobalDontReadStories, .ghostGlobalDontSendOnline, .ghostGlobalDontSendTyping, .ghostGlobalGoOfflineAutomatically:
+            return true
+        default:
+            return false
+        }
+    }
+
     var mellowsgramCategory: MellowsgramSettingsCategory {
         switch self {
         case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
@@ -113,6 +132,8 @@ private extension MellowsgramGlobalSettingKey {
             return .appearance
         case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
             return .backgroundNotifications
+        case .ghostGlobalMode, .ghostGlobalDontReadMessages, .ghostGlobalDontReadStories, .ghostGlobalDontSendOnline, .ghostGlobalDontSendTyping, .ghostGlobalGoOfflineAutomatically:
+            return .spyAndGhost
         case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .callConfirmation, .hidePhoneInSettings:
             return .profilesAndCalls
         case .outgoingPhotoQuality, .sendHDPhotos, .translationService, .quickTranslateButton, .translateEntireChats,
@@ -139,6 +160,12 @@ private extension MellowsgramGlobalSettingKey {
         case .barkNotificationsEnabled: return mellowsgramText("Bark Notifications", "Уведомления через Bark", languageCode: languageCode)
         case .barkAllAccounts: return mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
         case .liveContainerNotificationLinks: return mellowsgramText("Open Notifications in LiveContainer", "Открывать уведомления в LiveContainer", languageCode: languageCode)
+        case .ghostGlobalMode: return mellowsgramText("Global Ghost Mode", "Глобальный режим невидимки", languageCode: languageCode)
+        case .ghostGlobalDontReadMessages: return mellowsgramText("Global: Don't Read Messages", "Глобально: не отмечать сообщения прочитанными", languageCode: languageCode)
+        case .ghostGlobalDontReadStories: return mellowsgramText("Global: Don't Read Stories", "Глобально: не отмечать истории просмотренными", languageCode: languageCode)
+        case .ghostGlobalDontSendOnline: return mellowsgramText("Global: Don't Send Online", "Глобально: не отправлять статус «в сети»", languageCode: languageCode)
+        case .ghostGlobalDontSendTyping: return mellowsgramText("Global: Don't Send Typing", "Глобально: не отправлять статус «печатает»", languageCode: languageCode)
+        case .ghostGlobalGoOfflineAutomatically: return mellowsgramText("Global: Go Offline Automatically", "Глобально: автоматически уходить в офлайн", languageCode: languageCode)
         case .sendHDPhotos: return mellowsgramText("Send HD Photos", "Отправлять фото в HD", languageCode: languageCode)
         case .hideTabBar: return mellowsgramText("Hide Tab Bar", "Скрыть панель вкладок", languageCode: languageCode)
         case .showContactsTab: return mellowsgramText("Show Contacts Tab", "Показывать вкладку контактов", languageCode: languageCode)
@@ -477,6 +504,8 @@ private func mellowsgramRootControllerEntries() -> [MellowsgramRootControllerEnt
 
 private final class MellowsgramCategoryControllerArguments {
     let context: AccountContext
+    let selectGhostScope: (MellowsgramGhostScope) -> Void
+    let updateGhostUsesGlobalSettings: (Bool) -> Void
     let updateGhostMode: (Bool) -> Void
     let updateGhostDontReadMessages: (Bool) -> Void
     let updateGhostDontReadStories: (Bool) -> Void
@@ -486,7 +515,7 @@ private final class MellowsgramCategoryControllerArguments {
     let updateSaveDeletedMessages: (Bool) -> Void
     let updateSaveEditedMessages: (Bool) -> Void
     let updateShowDeletedMessages: (Bool) -> Void
-    let updateTranslucentDeletedMessages: (Bool) -> Void
+    let updateDeletedMessageOpacity: (Int32) -> Void
     let updateBarkDeviceKey: (String) -> Void
     let openExternalUrl: (String) -> Void
     let updateGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void
@@ -494,6 +523,8 @@ private final class MellowsgramCategoryControllerArguments {
 
     init(
         context: AccountContext,
+        selectGhostScope: @escaping (MellowsgramGhostScope) -> Void,
+        updateGhostUsesGlobalSettings: @escaping (Bool) -> Void,
         updateGhostMode: @escaping (Bool) -> Void,
         updateGhostDontReadMessages: @escaping (Bool) -> Void,
         updateGhostDontReadStories: @escaping (Bool) -> Void,
@@ -503,13 +534,15 @@ private final class MellowsgramCategoryControllerArguments {
         updateSaveDeletedMessages: @escaping (Bool) -> Void,
         updateSaveEditedMessages: @escaping (Bool) -> Void,
         updateShowDeletedMessages: @escaping (Bool) -> Void,
-        updateTranslucentDeletedMessages: @escaping (Bool) -> Void,
+        updateDeletedMessageOpacity: @escaping (Int32) -> Void,
         updateBarkDeviceKey: @escaping (String) -> Void,
         openExternalUrl: @escaping (String) -> Void,
         updateGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void,
         selectGlobalSetting: @escaping (MellowsgramGlobalSettingKey, String) -> Void
     ) {
         self.context = context
+        self.selectGhostScope = selectGhostScope
+        self.updateGhostUsesGlobalSettings = updateGhostUsesGlobalSettings
         self.updateGhostMode = updateGhostMode
         self.updateGhostDontReadMessages = updateGhostDontReadMessages
         self.updateGhostDontReadStories = updateGhostDontReadStories
@@ -519,7 +552,7 @@ private final class MellowsgramCategoryControllerArguments {
         self.updateSaveDeletedMessages = updateSaveDeletedMessages
         self.updateSaveEditedMessages = updateSaveEditedMessages
         self.updateShowDeletedMessages = updateShowDeletedMessages
-        self.updateTranslucentDeletedMessages = updateTranslucentDeletedMessages
+        self.updateDeletedMessageOpacity = updateDeletedMessageOpacity
         self.updateBarkDeviceKey = updateBarkDeviceKey
         self.openExternalUrl = openExternalUrl
         self.updateGlobalSetting = updateGlobalSetting
@@ -557,6 +590,8 @@ private enum MellowsgramCategorySection: Int32 {
 
 private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case spyAndGhostHeader
+    case ghostScope(MellowsgramGhostScope, String)
+    case ghostUseGlobal(Bool)
     case ghostMode(Bool, Int32)
     case ghostDontReadMessages(Bool)
     case ghostDontReadStories(Bool)
@@ -572,10 +607,10 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case backgroundNotificationsFooter
     case barkStatus(Bool)
     case liveContainerStatus(Bool)
-    case barkInstall
+    case barkAction(Bool)
     case barkDeviceKey(String)
     case appearanceHeader
-    case translucentDeletedMessages(Bool)
+    case deletedMessageOpacity(Int32)
     case appearanceFooter
     case globalSettingsHeader(String)
     case globalSetting(MellowsgramGlobalSettingKey, String, Bool)
@@ -588,30 +623,34 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         switch self {
         case .spyAndGhostHeader:
             return 0
-        case .ghostMode:
+        case .ghostScope:
             return 1
-        case .ghostDontReadMessages:
+        case .ghostUseGlobal:
             return 2
-        case .ghostDontReadStories:
+        case .ghostMode:
             return 3
-        case .ghostDontSendOnline:
+        case .ghostDontReadMessages:
             return 4
-        case .ghostDontSendTyping:
+        case .ghostDontReadStories:
             return 5
-        case .ghostGoOfflineAutomatically:
+        case .ghostDontSendOnline:
             return 6
-        case .ghostEssentialsFooter:
+        case .ghostDontSendTyping:
             return 7
-        case .spyEssentialsHeader:
+        case .ghostGoOfflineAutomatically:
             return 8
-        case .saveDeletedMessages:
+        case .ghostEssentialsFooter:
             return 9
-        case .showDeletedMessages:
+        case .spyEssentialsHeader:
             return 10
-        case .saveEditedMessages:
+        case .saveDeletedMessages:
             return 11
-        case .spyAndGhostFooter:
+        case .showDeletedMessages:
             return 12
+        case .saveEditedMessages:
+            return 13
+        case .spyAndGhostFooter:
+            return 14
         case .backgroundNotificationsFooter:
             return 1000
         case .barkStatus:
@@ -620,11 +659,11 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return 19
         case .barkDeviceKey:
             return 20
-        case .barkInstall:
+        case .barkAction:
             return 21
         case .appearanceHeader:
             return 23
-        case .translucentDeletedMessages:
+        case .deletedMessageOpacity:
             return 24
         case .appearanceFooter:
             return 25
@@ -645,6 +684,12 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         switch self {
         case .spyAndGhostHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Ghost essentials", "Основные настройки невидимости", languageCode: languageCode), sectionId: self.section)
+        case let .ghostScope(scope, label):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Settings scope", "Область настроек", languageCode: languageCode), enabled: true, label: label, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                arguments.selectGhostScope(scope)
+            })
+        case let .ghostUseGlobal(value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Use Global Settings", "Использовать глобальные настройки", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateGhostUsesGlobalSettings)
         case let .ghostMode(value, enabledCount):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "\(mellowsgramText("Ghost Mode", "Режим невидимки", languageCode: languageCode)) \(enabledCount)/5", value: value, sectionId: self.section, style: .blocks, updated: arguments.updateGhostMode)
         case let .ghostDontReadMessages(value):
@@ -682,39 +727,48 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         case .backgroundNotificationsFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Bark installation is detected automatically. LiveContainer is detected from the running environment and cannot be enabled manually.", "Установка Bark определяется автоматически. LiveContainer определяется по окружению приложения и не включается вручную.", languageCode: languageCode)), sectionId: self.section)
         case let .barkStatus(installed):
-            let text = mellowsgramText(installed ? "Installed: Yes" : "Installed: No", installed ? "Установлен: Да" : "Установлен: Нет", languageCode: languageCode)
+            let text = mellowsgramText(installed ? "Bark installed: Yes" : "Bark installed: No", installed ? "Bark установлен: Да" : "Bark установлен: Нет", languageCode: languageCode)
             let attributedText = NSAttributedString(string: text, attributes: [
                 .font: Font.regular(presentationData.fontSize.itemListBaseHeaderFontSize),
                 .foregroundColor: installed ? UIColor.systemGreen : UIColor.systemRed
             ])
             return ItemListTextItem(presentationData: presentationData, text: .custom(context: arguments.context, string: attributedText), sectionId: self.section)
         case let .liveContainerStatus(isRunning):
-            let text = mellowsgramText("LiveContainer: \(isRunning ? "Yes" : "No")", "LiveContainer: \(isRunning ? "Да" : "Нет")", languageCode: languageCode)
+            let text = mellowsgramText("LiveContainer Support: Yes", "Поддержка LiveContainer: Да", languageCode: languageCode)
             let attributedText = NSAttributedString(string: text, attributes: [
                 .font: Font.regular(presentationData.fontSize.itemListBaseHeaderFontSize),
                 .foregroundColor: isRunning ? presentationData.theme.list.itemAccentColor : presentationData.theme.list.freeTextColor
             ])
             return ItemListTextItem(presentationData: presentationData, text: .custom(context: arguments.context, string: attributedText), sectionId: self.section)
-        case .barkInstall:
+        case let .barkAction(installed):
             return ItemListDisclosureItem(
                 presentationData: presentationData,
                 systemStyle: .glass,
-                title: mellowsgramText("Install Bark", "Установить Bark", languageCode: languageCode),
-                label: "App Store",
+                title: mellowsgramText(installed ? "Open Bark" : "Install Bark", installed ? "Открыть Bark" : "Установить Bark", languageCode: languageCode),
+                label: installed ? "bark://addserver" : "App Store",
                 labelStyle: .coloredText(presentationData.theme.list.itemAccentColor),
                 sectionId: self.section,
                 style: .blocks,
                 disclosureStyle: .arrow,
                 action: {
-                    arguments.openExternalUrl("https://apps.apple.com/us/app/bark-custom-notifications/id1403753865")
+                    arguments.openExternalUrl(installed ? "bark://addserver" : "https://apps.apple.com/us/app/bark-custom-notifications/id1403753865")
                 }
             )
         case let .barkDeviceKey(value):
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: value, placeholder: mellowsgramText("Bark device key", "Ключ устройства Bark", languageCode: languageCode), type: .password, returnKeyType: .done, sectionId: self.section, textUpdated: arguments.updateBarkDeviceKey, action: {})
         case .appearanceHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode), sectionId: self.section)
-        case let .translucentDeletedMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: mellowsgramText("Translucent Deleted Messages", "Полупрозрачные удалённые сообщения", languageCode: languageCode), value: value, sectionId: self.section, style: .blocks, updated: arguments.updateTranslucentDeletedMessages)
+        case let .deletedMessageOpacity(value):
+            return MellowsgramPercentageSliderItem(
+                theme: presentationData.theme,
+                key: .deletedMessageOpacity,
+                title: mellowsgramText("Deleted Message Opacity", "Непрозрачность удалённых сообщений", languageCode: languageCode),
+                limits: ("30%", "100%"),
+                value: value,
+                sampleText: mellowsgramText("Deleted message", "Удалённое сообщение", languageCode: languageCode),
+                sectionId: self.section,
+                updated: arguments.updateDeletedMessageOpacity
+            )
         case .appearanceFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Changes only the appearance of locally archived deleted-message rows.", "Меняет только отображение локальных строк удалённых сообщений.", languageCode: languageCode)), sectionId: self.section)
         case let .globalSettingsHeader(title):
@@ -723,7 +777,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             if key.mellowsgramIsPercentageSlider {
                 return MellowsgramPercentageSliderItem(
                     theme: presentationData.theme,
-                    key: key,
+                    key: .global(key),
                     title: key.mellowsgramTitle(languageCode: languageCode),
                     limits: key.mellowsgramSliderLimits(languageCode: languageCode),
                     value: Int32(value) ?? Int32(key.defaultValue) ?? 0,
@@ -753,7 +807,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
 
 private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem {
     let theme: PresentationTheme
-    let key: MellowsgramGlobalSettingKey
+    let key: MellowsgramSliderKey
     let title: String
     let limits: (minimum: String, maximum: String)
     let value: Int32
@@ -761,12 +815,12 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
     let sectionId: ItemListSectionId
     let updated: (Int32) -> Void
 
-    init(theme: PresentationTheme, key: MellowsgramGlobalSettingKey, title: String, limits: (minimum: String, maximum: String), value: Int32, sampleText: String, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
+    init(theme: PresentationTheme, key: MellowsgramSliderKey, title: String, limits: (minimum: String, maximum: String), value: Int32, sampleText: String, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
         self.theme = theme
         self.key = key
         self.title = title
         self.limits = limits
-        self.value = min(100, max(0, value))
+        self.value = key == .deletedMessageOpacity ? min(100, max(30, value)) : min(100, max(0, value))
         self.sampleText = sampleText
         self.sectionId = sectionId
         self.updated = updated
@@ -774,12 +828,14 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
 
     var previewHeight: CGFloat {
         switch self.key {
-        case .accountColorsSaturation:
+        case .global(.accountColorsSaturation):
             return 150.0
-        case .stickerSize:
+        case .global(.stickerSize):
             return 104.0
-        case .outgoingPhotoQuality:
+        case .global(.outgoingPhotoQuality):
             return 152.0
+        case .deletedMessageOpacity:
+            return 154.0
         default:
             return 0.0
         }
@@ -821,7 +877,7 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
 }
 
 private final class MellowsgramSliderPreviewView: UIView {
-    private var key: MellowsgramGlobalSettingKey = .accountColorsSaturation
+    private var key: MellowsgramSliderKey = .global(.accountColorsSaturation)
     private var value: Int32 = 100
     private var sampleText = "First Name Last Name"
     private var textColor: UIColor = .white
@@ -903,7 +959,7 @@ private final class MellowsgramSliderPreviewView: UIView {
         preconditionFailure("init(coder:) is not supported")
     }
 
-    func update(key: MellowsgramGlobalSettingKey, value: Int32, sampleText: String, textColor: UIColor, separatorColor: UIColor) {
+    func update(key: MellowsgramSliderKey, value: Int32, sampleText: String, textColor: UIColor, separatorColor: UIColor) {
         self.key = key
         self.value = min(100, max(0, value))
         self.sampleText = sampleText
@@ -911,7 +967,7 @@ private final class MellowsgramSliderPreviewView: UIView {
         self.separatorColor = separatorColor
         self.setNeedsDisplay()
 
-        guard key == .outgoingPhotoQuality, self.requestedPhotoQuality != self.value else {
+        guard key == .global(.outgoingPhotoQuality), self.requestedPhotoQuality != self.value else {
             return
         }
         self.requestedPhotoQuality = self.value
@@ -938,12 +994,14 @@ private final class MellowsgramSliderPreviewView: UIView {
     override func draw(_ rect: CGRect) {
         super.draw(rect)
         switch self.key {
-        case .accountColorsSaturation:
+        case .global(.accountColorsSaturation):
             self.drawAccountColorPreview(in: rect)
-        case .stickerSize:
+        case .global(.stickerSize):
             self.drawStickerSizePreview(in: rect)
-        case .outgoingPhotoQuality:
+        case .global(.outgoingPhotoQuality):
             self.drawPhotoQualityPreview(in: rect)
+        case .deletedMessageOpacity:
+            self.drawDeletedMessageOpacityPreview(in: rect)
         default:
             break
         }
@@ -1005,6 +1063,38 @@ private final class MellowsgramSliderPreviewView: UIView {
         UIColor(white: 0.0, alpha: 0.58).setFill()
         UIBezierPath(roundedRect: badgeRect, cornerRadius: 9.5).fill()
         (badgeText as NSString).draw(at: CGPoint(x: badgeRect.minX + 6.0, y: badgeRect.minY + 3.0), withAttributes: [.font: badgeFont, .foregroundColor: UIColor.white])
+    }
+
+    private func drawDeletedMessageOpacityPreview(in rect: CGRect) {
+        let background = UIColor(red: 0.12, green: 0.24, blue: 0.20, alpha: 1.0)
+        background.setFill()
+        UIBezierPath(roundedRect: rect.insetBy(dx: 8.0, dy: 8.0), cornerRadius: 12.0).fill()
+
+        let incomingRect = CGRect(x: 20.0, y: 18.0, width: min(230.0, rect.width * 0.68), height: 46.0)
+        let outgoingRect = CGRect(x: max(20.0, rect.width - min(230.0, rect.width * 0.68) - 20.0), y: rect.height - 64.0, width: min(230.0, rect.width * 0.68), height: 46.0)
+
+        // The setting affects the complete deleted row in the chat, not only
+        // the tombstone label. Mirror that here so the preview is useful while
+        // the slider is being dragged.
+        let deletedAlpha = CGFloat(self.value) / 100.0
+        let context = UIGraphicsGetCurrentContext()
+        context?.saveGState()
+        context?.setAlpha(deletedAlpha)
+        UIColor(white: 0.96, alpha: 1.0).setFill()
+        UIBezierPath(roundedRect: incomingRect, cornerRadius: 16.0).fill()
+        let deletedText = "▱  Deleted message"
+        (deletedText as NSString).draw(in: incomingRect.insetBy(dx: 14.0, dy: 13.0), withAttributes: [
+            .font: UIFont.systemFont(ofSize: 13.0, weight: .semibold),
+            .foregroundColor: UIColor(red: 0.20, green: 0.32, blue: 0.40, alpha: 1.0)
+        ])
+        context?.restoreGState()
+
+        UIColor(red: 0.30, green: 0.53, blue: 0.91, alpha: 1.0).setFill()
+        UIBezierPath(roundedRect: outgoingRect, cornerRadius: 16.0).fill()
+        ("Mock message" as NSString).draw(in: outgoingRect.insetBy(dx: 14.0, dy: 13.0), withAttributes: [
+            .font: UIFont.systemFont(ofSize: 14.0, weight: .medium),
+            .foregroundColor: UIColor.white
+        ])
     }
 }
 
@@ -1163,6 +1253,8 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
             sliderView.trackColor = item.theme.list.itemAccentColor
             sliderView.knobImage = PresentationResourcesItemList.knobImage(item.theme)
         }
+        sliderView.minimumValue = item.key == .deletedMessageOpacity ? 0.3 : 0.0
+        sliderView.maximumValue = 1.0
         sliderView.value = CGFloat(item.value) / 100.0
         sliderView.accessibilityLabel = item.title
         sliderView.accessibilityValue = "\(item.value)%"
@@ -1184,7 +1276,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         guard let sliderView = self.sliderView, let item = self.item else {
             return
         }
-        let value = Int32((sliderView.value * 100.0).rounded())
+        let value = min(100, max(item.key == .deletedMessageOpacity ? 30 : 0, Int32((sliderView.value * 100.0).rounded())))
         self.valueTextNode.attributedText = NSAttributedString(string: "\(value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
         let valueSize = self.valueTextNode.updateLayout(CGSize(width: 84.0, height: 24.0))
         self.valueTextNode.frame = CGRect(x: self.bounds.width - self.valueTextRightInset - valueSize.width, y: 10.0, width: valueSize.width, height: valueSize.height)
@@ -1203,25 +1295,68 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     }
 }
 
-private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsCategory, settings: MellowsgramSettings, snapshot: MellowsgramSettingsSnapshot, languageCode: String, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> [MellowsgramCategoryControllerEntry] {
+private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsCategory, settings: MellowsgramSettings, snapshot: MellowsgramSettingsSnapshot, ghostScope: MellowsgramGhostScope, activeAccounts: [(AccountRecordId, String)], accountSettings: [AccountRecordId: MellowsgramSettings], languageCode: String, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> [MellowsgramCategoryControllerEntry] {
     var entries: [MellowsgramCategoryControllerEntry]
     switch category {
     case .spyAndGhost:
+        let selectedAccountSettings: MellowsgramSettings?
+        switch ghostScope {
+        case .allAccounts:
+            selectedAccountSettings = nil
+        case let .account(accountId):
+            selectedAccountSettings = accountSettings[accountId]
+        }
+        let usesGlobal = selectedAccountSettings?.usesGlobalGhostMode ?? true
+        let enabled: Bool
+        let options: MellowsgramGhostModeOptions
+        switch ghostScope {
+        case .allAccounts:
+            enabled = snapshot.global.bool(for: .ghostGlobalMode)
+            var globalOptions = MellowsgramGhostModeOptions()
+            if snapshot.global.bool(for: .ghostGlobalDontReadMessages) { globalOptions.insert(.dontReadMessages) }
+            if snapshot.global.bool(for: .ghostGlobalDontReadStories) { globalOptions.insert(.dontReadStories) }
+            if snapshot.global.bool(for: .ghostGlobalDontSendOnline) { globalOptions.insert(.dontSendOnline) }
+            if snapshot.global.bool(for: .ghostGlobalDontSendTyping) { globalOptions.insert(.dontSendTyping) }
+            if snapshot.global.bool(for: .ghostGlobalGoOfflineAutomatically) { globalOptions.insert(.goOfflineAutomatically) }
+            options = globalOptions
+        case .account:
+            if let selectedAccountSettings, !selectedAccountSettings.usesGlobalGhostMode {
+                enabled = selectedAccountSettings.ghostMode
+                options = selectedAccountSettings.ghostModeOptions
+            } else {
+                enabled = snapshot.global.bool(for: .ghostGlobalMode)
+                var globalOptions = MellowsgramGhostModeOptions()
+                if snapshot.global.bool(for: .ghostGlobalDontReadMessages) { globalOptions.insert(.dontReadMessages) }
+                if snapshot.global.bool(for: .ghostGlobalDontReadStories) { globalOptions.insert(.dontReadStories) }
+                if snapshot.global.bool(for: .ghostGlobalDontSendOnline) { globalOptions.insert(.dontSendOnline) }
+                if snapshot.global.bool(for: .ghostGlobalDontSendTyping) { globalOptions.insert(.dontSendTyping) }
+                if snapshot.global.bool(for: .ghostGlobalGoOfflineAutomatically) { globalOptions.insert(.goOfflineAutomatically) }
+                options = globalOptions
+            }
+        }
+        let scopeLabel: String
+        switch ghostScope {
+        case .allAccounts:
+            scopeLabel = mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
+        case let .account(accountId):
+            scopeLabel = activeAccounts.first(where: { $0.0 == accountId })?.1 ?? "\(accountId.int64)"
+        }
         let enabledCount = [
-            settings.ghostDontReadMessages,
-            settings.ghostDontReadStories,
-            settings.ghostDontSendOnline,
-            settings.ghostDontSendTyping,
-            settings.ghostGoOfflineAutomatically
+            options.contains(.dontReadMessages),
+            options.contains(.dontReadStories),
+            options.contains(.dontSendOnline),
+            options.contains(.dontSendTyping),
+            options.contains(.goOfflineAutomatically)
         ].filter { $0 }.count
         entries = [
             .spyAndGhostHeader,
-            .ghostMode(settings.ghostMode, Int32(enabledCount)),
-            .ghostDontReadMessages(settings.ghostDontReadMessages),
-            .ghostDontReadStories(settings.ghostDontReadStories),
-            .ghostDontSendOnline(settings.ghostDontSendOnline),
-            .ghostDontSendTyping(settings.ghostDontSendTyping),
-            .ghostGoOfflineAutomatically(settings.ghostGoOfflineAutomatically),
+            .ghostScope(ghostScope, scopeLabel),
+            .ghostMode(enabled, Int32(enabledCount)),
+            .ghostDontReadMessages(options.contains(.dontReadMessages)),
+            .ghostDontReadStories(options.contains(.dontReadStories)),
+            .ghostDontSendOnline(options.contains(.dontSendOnline)),
+            .ghostDontSendTyping(options.contains(.dontSendTyping)),
+            .ghostGoOfflineAutomatically(options.contains(.goOfflineAutomatically)),
             .ghostEssentialsFooter,
             .spyEssentialsHeader,
             .saveDeletedMessages(settings.saveDeletedMessages),
@@ -1229,19 +1364,22 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             .saveEditedMessages(settings.saveEditedMessages),
             .spyAndGhostFooter,
         ]
+        if case .account = ghostScope {
+            entries.insert(.ghostUseGlobal(usesGlobal), at: 2)
+        }
     case .backgroundNotifications:
         entries = [
             .barkStatus(snapshot.barkInstalled),
-            .liveContainerStatus(mellowsgramIsRunningInLiveContainer()),
             .barkDeviceKey(snapshot.barkDeviceKey),
+            .barkAction(snapshot.barkInstalled),
         ]
-        if !snapshot.barkInstalled {
-            entries.append(.barkInstall)
+        if mellowsgramIsRunningInLiveContainer() {
+            entries.insert(.liveContainerStatus(true), at: 1)
         }
     case .appearance:
         entries = [
             .appearanceHeader,
-            .translucentDeletedMessages(settings.translucentDeletedMessages),
+            .deletedMessageOpacity(settings.deletedMessageOpacity),
             .appearanceFooter
         ]
     default:
@@ -1249,7 +1387,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
     }
 
     let globalKeys = MellowsgramGlobalSettingKey.allCases.filter { key in
-        key != .liveContainerNotificationLinks && key.mellowsgramCategory == category && (onlySetting == nil || onlySetting == key)
+        key != .liveContainerNotificationLinks && !key.isGlobalGhostPolicyKey && key.mellowsgramCategory == category && (onlySetting == nil || onlySetting == key)
     }
     if !globalKeys.isEmpty {
         if category == .appearance && onlySetting == nil {
@@ -1315,8 +1453,8 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
                 if case .showDeletedMessages = entry { return true }
             case .saveEditedMessages:
                 if case .saveEditedMessages = entry { return true }
-            case .translucentDeletedMessages:
-                if case .translucentDeletedMessages = entry { return true }
+            case .deletedMessageOpacity:
+                if case .deletedMessageOpacity = entry { return true }
             }
             return false
         }
@@ -1343,8 +1481,93 @@ private func mellowsgramGlobalSettingsSnapshot(accountManager: AccountManager<Te
     }
 }
 
+private func mellowsgramActiveAccountSettings(context: AccountContext) -> Signal<[AccountRecordId: MellowsgramSettings], NoError> {
+    return context.sharedContext.activeAccountContexts
+    |> mapToSignal { _, accounts, _ -> Signal<[AccountRecordId: MellowsgramSettings], NoError> in
+        if accounts.isEmpty {
+            return .single([:])
+        }
+        return combineLatest(accounts.map { accountId, account, _ in
+            return mellowsgramSettings(engine: account.engine)
+            |> map { (accountId, $0) }
+        })
+        |> map { values in
+            return Dictionary(uniqueKeysWithValues: values)
+        }
+    }
+}
+
+private func mellowsgramActiveAccountLabels(context: AccountContext) -> Signal<[(AccountRecordId, String)], NoError> {
+    return context.sharedContext.activeAccountsWithInfo
+    |> map { _, accounts in
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        return accounts.map { info in
+            (info.account.id, info.peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder))
+        }
+    }
+}
+
 private func mellowsgramCategoryController(context: AccountContext, category: MellowsgramSettingsCategory, onlySetting: MellowsgramGlobalSettingKey?, onlyAccountSetting: MellowsgramAccountSetting?) -> ViewController {
     var openExternalUrlImpl: ((String) -> Void)?
+    let selectedGhostScope = Atomic<MellowsgramGhostScope>(value: .allAccounts)
+    let selectedGhostScopePromise = ValuePromise<MellowsgramGhostScope>(.allAccounts, ignoreRepeated: true)
+
+    func globalGhostSettings() -> (enabled: Bool, options: MellowsgramGhostModeOptions) {
+        let global = MellowsgramGlobalSettingsRuntime.shared
+        var options = MellowsgramGhostModeOptions()
+        if global.bool(for: .ghostGlobalDontReadMessages) { options.insert(.dontReadMessages) }
+        if global.bool(for: .ghostGlobalDontReadStories) { options.insert(.dontReadStories) }
+        if global.bool(for: .ghostGlobalDontSendOnline) { options.insert(.dontSendOnline) }
+        if global.bool(for: .ghostGlobalDontSendTyping) { options.insert(.dontSendTyping) }
+        if global.bool(for: .ghostGlobalGoOfflineAutomatically) { options.insert(.goOfflineAutomatically) }
+        return (global.bool(for: .ghostGlobalMode), options)
+    }
+
+    func prepareAccountGhostOverride(_ settings: MellowsgramSettings) -> MellowsgramSettings {
+        guard settings.usesGlobalGhostMode else {
+            return settings
+        }
+        let global = globalGhostSettings()
+        var result = settings.withUpdatedUsesGlobalGhostMode(false)
+        result = result.withUpdatedGhostMode(global.enabled)
+        result = result.withUpdatedGhostDontReadMessages(global.options.contains(.dontReadMessages))
+        result = result.withUpdatedGhostDontReadStories(global.options.contains(.dontReadStories))
+        result = result.withUpdatedGhostDontSendOnline(global.options.contains(.dontSendOnline))
+        result = result.withUpdatedGhostDontSendTyping(global.options.contains(.dontSendTyping))
+        result = result.withUpdatedGhostGoOfflineAutomatically(global.options.contains(.goOfflineAutomatically))
+        return result
+    }
+
+    func updateSelectedGhost(_ transform: @escaping (MellowsgramSettings) -> MellowsgramSettings) {
+        let scope = selectedGhostScope.with { $0 }
+        switch scope {
+        case .allAccounts:
+            return
+        case let .account(accountId):
+            let _ = (context.sharedContext.activeAccountContexts
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { _, accounts, _ in
+                guard let account = accounts.first(where: { $0.0 == accountId })?.1 else {
+                    return
+                }
+                let _ = updateMellowsgramSettingsInteractively(engine: account.engine) { settings in
+                    return transform(prepareAccountGhostOverride(settings))
+                }.start()
+            })
+        }
+    }
+
+    func updateSelectedOrGlobalGhost(_ globalKey: MellowsgramGlobalSettingKey, _ value: Bool, accountTransform: @escaping (MellowsgramSettings) -> MellowsgramSettings) {
+        switch selectedGhostScope.with({ $0 }) {
+        case .allAccounts:
+            let _ = updateMellowsgramGlobalSettingsInteractively(accountManager: context.sharedContext.accountManager) { settings in
+                settings.withUpdatedValue(value ? "true" : "false", for: globalKey)
+            }.start()
+        case .account:
+            updateSelectedGhost(accountTransform)
+        }
+    }
+
     let updateGlobalSetting: (MellowsgramGlobalSettingKey, String) -> Void = { key, rawValue in
         switch key {
         case .showContactsTab:
@@ -1374,38 +1597,77 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
 
     let arguments = MellowsgramCategoryControllerArguments(
         context: context,
+        selectGhostScope: { _ in
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let languageCode = presentationData.strings.primaryComponent.languageCode
+            let actionSheet = ActionSheetController(presentationData: presentationData)
+            let allTitle = mellowsgramText("All Accounts", "Все аккаунты", languageCode: languageCode)
+            let _ = (mellowsgramActiveAccountLabels(context: context) |> take(1)).start(next: { accounts in
+                var items: [ActionSheetButtonItem] = []
+                items.append(ActionSheetButtonItem(title: selectedGhostScope.with({ $0 }) == .allAccounts ? "✓  \(allTitle)" : allTitle, color: .accent, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    selectedGhostScope.swap(.allAccounts)
+                    selectedGhostScopePromise.set(.allAccounts)
+                }))
+                for (accountId, title) in accounts {
+                    let scope = MellowsgramGhostScope.account(accountId)
+                    let label = selectedGhostScope.with({ $0 }) == scope ? "✓  \(title)" : title
+                    items.append(ActionSheetButtonItem(title: label, color: .accent, action: { [weak actionSheet] in
+                        actionSheet?.dismissAnimated()
+                        selectedGhostScope.swap(scope)
+                        selectedGhostScopePromise.set(scope)
+                    }))
+                }
+                items.append(ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                }))
+                actionSheet.setItemGroups([ActionSheetItemGroup(items: items)])
+                context.sharedContext.presentGlobalController(actionSheet, nil)
+            })
+        },
+        updateGhostUsesGlobalSettings: { value in
+            guard case .account = selectedGhostScope.with({ $0 }) else {
+                return
+            }
+            if value {
+                updateSelectedGhost { settings in
+                    return settings.withUpdatedUsesGlobalGhostMode(true)
+                }
+            } else {
+                updateSelectedGhost { settings in
+                    return prepareAccountGhostOverride(settings)
+                }
+            }
+        },
         updateGhostMode: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
-                // The master switch changes the active policy only. Keep the
-                // five safeguards account-scoped so an individual option is
-                // not silently overwritten every time the master is toggled.
+            updateSelectedOrGlobalGhost(.ghostGlobalMode, value) { settings in
                 return settings.withUpdatedGhostMode(value)
-            }.start()
+            }
         },
         updateGhostDontReadMessages: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
+            updateSelectedOrGlobalGhost(.ghostGlobalDontReadMessages, value) { settings in
                 return settings.withUpdatedGhostDontReadMessages(value)
-            }.start()
+            }
         },
         updateGhostDontReadStories: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
+            updateSelectedOrGlobalGhost(.ghostGlobalDontReadStories, value) { settings in
                 return settings.withUpdatedGhostDontReadStories(value)
-            }.start()
+            }
         },
         updateGhostDontSendOnline: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
+            updateSelectedOrGlobalGhost(.ghostGlobalDontSendOnline, value) { settings in
                 return settings.withUpdatedGhostDontSendOnline(value)
-            }.start()
+            }
         },
         updateGhostDontSendTyping: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
+            updateSelectedOrGlobalGhost(.ghostGlobalDontSendTyping, value) { settings in
                 return settings.withUpdatedGhostDontSendTyping(value)
-            }.start()
+            }
         },
         updateGhostGoOfflineAutomatically: { value in
-            let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
+            updateSelectedOrGlobalGhost(.ghostGlobalGoOfflineAutomatically, value) { settings in
                 return settings.withUpdatedGhostGoOfflineAutomatically(value)
-            }.start()
+            }
         },
         updateSaveDeletedMessages: { value in
             let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
@@ -1422,9 +1684,9 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
                 return settings.withUpdatedShowDeletedMessages(value)
             }.start()
         },
-        updateTranslucentDeletedMessages: { value in
+        updateDeletedMessageOpacity: { value in
             let _ = updateMellowsgramSettingsInteractively(engine: context.engine) { settings in
-                return settings.withUpdatedTranslucentDeletedMessages(value)
+                return settings.withUpdatedDeletedMessageOpacity(value)
             }.start()
         },
         updateBarkDeviceKey: { value in
@@ -1455,9 +1717,9 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
         }
     )
 
-    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, mellowsgramSettings(engine: context.engine), mellowsgramGlobalSettingsSnapshot(accountManager: context.sharedContext.accountManager))
+    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, mellowsgramSettings(engine: context.engine), mellowsgramGlobalSettingsSnapshot(accountManager: context.sharedContext.accountManager), selectedGhostScopePromise.get(), mellowsgramActiveAccountLabels(context: context), mellowsgramActiveAccountSettings(context: context))
     |> deliverOnMainQueue
-    |> map { presentationData, settings, snapshot -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, settings, snapshot, ghostScope, activeAccounts, accountSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
             title: .text(category.title(languageCode: presentationData.strings.primaryComponent.languageCode)),
@@ -1467,7 +1729,7 @@ private func mellowsgramCategoryController(context: AccountContext, category: Me
         )
         let listState = ItemListNodeState(
             presentationData: ItemListPresentationData(presentationData),
-            entries: mellowsgramCategoryControllerEntries(category: category, settings: settings, snapshot: snapshot, languageCode: presentationData.strings.primaryComponent.languageCode, onlySetting: onlySetting, onlyAccountSetting: onlyAccountSetting),
+            entries: mellowsgramCategoryControllerEntries(category: category, settings: settings, snapshot: snapshot, ghostScope: ghostScope, activeAccounts: activeAccounts, accountSettings: accountSettings, languageCode: presentationData.strings.primaryComponent.languageCode, onlySetting: onlySetting, onlyAccountSetting: onlyAccountSetting),
             style: .blocks,
             animateChanges: true
         )

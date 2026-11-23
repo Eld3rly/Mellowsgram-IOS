@@ -82,6 +82,15 @@ private func mellowsgramBadgeIconId(_ badge: MellowsgramBadge) -> String {
     return "symbol"
 }
 
+private func mellowsgramBadgeIsIconOnly(_ badge: MellowsgramBadge) -> Bool {
+    switch mellowsgramBadgeIconId(badge) {
+    case "verified", "official", "check", "bot", "star":
+        return true
+    default:
+        return false
+    }
+}
+
 private func mellowsgramStarburstPath(center: CGPoint, outerRadius: CGFloat, innerRadius: CGFloat, points: Int) -> UIBezierPath {
     let path = UIBezierPath()
     let totalPoints = points * 2
@@ -109,7 +118,9 @@ private func mellowsgramDrawBadgeGlyph(_ badge: MellowsgramBadge, in rect: CGRec
 
     switch iconId {
     case "verified", "official", "check":
-        let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 12)
+        // Telegram's official badge is an icon-only eight-point rosette. The
+        // manifest controls both colors; blue is only a server-side default.
+        let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 8)
         background.setFill()
         backgroundPath.fill()
         let check = UIBezierPath()
@@ -225,7 +236,11 @@ public func mellowsgramBadgeAttachment(_ badges: [MellowsgramBadge], font: UIFon
         let placeholderWidth = ("\u{FFFC}" as NSString).size(withAttributes: [.font: font]).width
         attachment.addAttribute(.kern, value: max(0.0, image.size.width - placeholderWidth), range: attachmentRange)
         result.append(attachment)
-        if !badge.label.isEmpty {
+        // Icon badges intentionally never append their administrative label
+        // (for example, "Official" or "Bot"). Telegram shows the glyph only;
+        // the label remains in the signed manifest for the admin UI and legacy
+        // symbol badges.
+        if !mellowsgramBadgeIsIconOnly(badge), !badge.label.isEmpty {
             var textAttributes: [NSAttributedString.Key: Any] = [.font: font]
             if let labelColor {
                 textAttributes[.foregroundColor] = labelColor
@@ -329,6 +344,7 @@ public final class MellowsgramBadgeRuntime {
 
     public func badgeText(peerNamespace: Int32, peerId: Int64) -> String {
         return self.badges(peerNamespace: peerNamespace, peerId: peerId)
+            .filter { !mellowsgramBadgeIsIconOnly($0) }
             .map { badge in
                 let prefix = badge.emoji.isEmpty ? "" : "\(badge.emoji) "
                 return "\(prefix)\(badge.label)"

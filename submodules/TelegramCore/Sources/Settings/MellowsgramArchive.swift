@@ -10,16 +10,21 @@ public final class MellowsgramDeletedMessageAttribute: MessageAttribute {
     /// lets the regular message item open edit history without adding a second
     /// Postbox message or a ChatInfo row.
     public let record: MellowsgramMessageArchiveRecord?
-    public let translucent: Bool
+    public let opacity: Int32
 
-    public init(record: MellowsgramMessageArchiveRecord? = nil, translucent: Bool = false) {
+    public init(record: MellowsgramMessageArchiveRecord? = nil, opacity: Int32 = 100) {
         self.record = record
-        self.translucent = translucent
+        self.opacity = min(100, max(30, opacity))
+    }
+
+    /// Compatibility view for older renderers.
+    public var translucent: Bool {
+        return self.opacity < 100
     }
 
     required public init(decoder: PostboxDecoder) {
         self.record = nil
-        self.translucent = false
+        self.opacity = 100
     }
 
     public func encode(_ encoder: PostboxEncoder) {
@@ -340,11 +345,11 @@ func mellowsgramDeletedReplyFormatting(record: EngineMellowsgramMessageArchiveRe
 /// existing row instead of inserting a fake service message.
 public func engineMellowsgramDeletedMessage(
     record: EngineMellowsgramMessageArchiveRecord,
-    translucent: Bool,
+    opacity: Int32,
     author: EngineRawPeer? = nil,
     peers: [PeerId: EngineRawPeer] = [:]
 ) -> EngineRawMessage {
-    var textEntities: [MessageAttribute] = [MellowsgramDeletedMessageAttribute(record: record, translucent: translucent)]
+    var textEntities: [MessageAttribute] = [MellowsgramDeletedMessageAttribute(record: record, opacity: opacity)]
     if let autoremoveAttribute = engineMellowsgramAutoremoveBypassAttribute(record.attributesData) {
         textEntities.append(autoremoveAttribute)
     }
@@ -378,28 +383,48 @@ public func engineMellowsgramDeletedMessage(
     )
 }
 
+@available(*, deprecated, message: "Use the opacity overload")
+public func engineMellowsgramDeletedMessage(
+    record: EngineMellowsgramMessageArchiveRecord,
+    translucent: Bool,
+    author: EngineRawPeer? = nil,
+    peers: [PeerId: EngineRawPeer] = [:]
+) -> EngineRawMessage {
+    return engineMellowsgramDeletedMessage(record: record, opacity: translucent ? 58 : 100, author: author, peers: peers)
+}
+
 /// Keeps the already-rendered live message (including its media, peers and
 /// captions) and only adds the in-memory deleted marker. This is used during
 /// the deletion transition so the media renderer never falls back to a text
 /// placeholder while Postbox removes the original row.
-public func engineMellowsgramDeletedMessage(message: EngineRawMessage, record: EngineMellowsgramMessageArchiveRecord, translucent: Bool) -> EngineRawMessage {
+public func engineMellowsgramDeletedMessage(message: EngineRawMessage, record: EngineMellowsgramMessageArchiveRecord, opacity: Int32) -> EngineRawMessage {
     let bypassAttribute = mellowsgramAutoremoveBypassAttribute(attributes: message.attributes)
     var attributes = mellowsgramArchivedDisplayAttributes(message.attributes)
     if let bypassAttribute {
         attributes.append(bypassAttribute)
     }
-    attributes.append(MellowsgramDeletedMessageAttribute(record: record, translucent: translucent))
+    attributes.append(MellowsgramDeletedMessageAttribute(record: record, opacity: opacity))
     return message.withUpdatedAttributes(attributes)
+}
+
+@available(*, deprecated, message: "Use the opacity overload")
+public func engineMellowsgramDeletedMessage(message: EngineRawMessage, record: EngineMellowsgramMessageArchiveRecord, translucent: Bool) -> EngineRawMessage {
+    return engineMellowsgramDeletedMessage(message: message, record: record, opacity: translucent ? 58 : 100)
 }
 
 /// In-memory tombstone used for the short interval between Postbox removing a
 /// live row and the archive table publishing its committed record.
-public func engineMellowsgramDeletedMessage(message: EngineRawMessage, translucent: Bool) -> EngineRawMessage {
+public func engineMellowsgramDeletedMessage(message: EngineRawMessage, opacity: Int32) -> EngineRawMessage {
     let bypassAttribute = mellowsgramAutoremoveBypassAttribute(attributes: message.attributes)
     var attributes = mellowsgramArchivedDisplayAttributes(message.attributes)
     if let bypassAttribute {
         attributes.append(bypassAttribute)
     }
-    attributes.append(MellowsgramDeletedMessageAttribute(translucent: translucent))
+    attributes.append(MellowsgramDeletedMessageAttribute(opacity: opacity))
     return message.withUpdatedAttributes(attributes)
+}
+
+@available(*, deprecated, message: "Use the opacity overload")
+public func engineMellowsgramDeletedMessage(message: EngineRawMessage, translucent: Bool) -> EngineRawMessage {
+    return engineMellowsgramDeletedMessage(message: message, opacity: translucent ? 58 : 100)
 }

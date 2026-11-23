@@ -2483,12 +2483,20 @@ final class PostboxImpl {
 
     func mellowsgramArchiveRecords(peerId: PeerId, threadId: Int64?) -> [MellowsgramMessageArchiveRecord] {
         assert(self.queue.isCurrent())
-        return self.mellowsgramMessageArchiveTable.records(peerId: peerId, threadId: threadId)
+        // A direct bot dialog must never expose archived rows. In group and
+        // channel chats, also hide records authored by bots. This keeps older
+        // records from being rendered after the runtime guard is introduced.
+        return self.mellowsgramMessageArchiveTable.records(peerId: peerId, threadId: threadId).filter { entry in
+            !self.mellowsgramShouldSkipArchive(peerId: peerId, authorId: entry.authorId)
+        }
     }
 
     func mellowsgramArchiveRecord(messageId: MessageId) -> MellowsgramMessageArchiveRecord? {
         assert(self.queue.isCurrent())
-        return self.mellowsgramMessageArchiveTable.get(messageId)
+        guard let entry = self.mellowsgramMessageArchiveTable.get(messageId), !self.mellowsgramShouldSkipArchive(peerId: messageId.peerId, authorId: entry.authorId) else {
+            return nil
+        }
+        return entry
     }
 
     func mellowsgramArchiveEvents(peerId: PeerId) -> Signal<Void, NoError> {
@@ -2529,6 +2537,9 @@ final class PostboxImpl {
                 continue
             }
             if let message = self.messageHistoryTable.getMessage(index) {
+                guard !self.mellowsgramShouldSkipArchive(message) else {
+                    continue
+                }
                 let media = self.messageHistoryTable.renderMessageMedia(referencedMedia: message.referencedMedia, embeddedMediaData: message.embeddedMediaData)
                 self.mellowsgramMessageArchiveTable.archiveDeletedMessage(message, timestamp: timestamp, media: media)
                 self.addAfterCommitAction { [weak self] in
@@ -2541,6 +2552,24 @@ final class PostboxImpl {
     private func archiveMellowsgramMessagesBeforeDeletion(_ messageIds: [MessageId]) {
         let indices = messageIds.compactMap { self.messageHistoryIndexTable.getIndex($0) }
         self.archiveMellowsgramMessagesBeforeDeletion(indices)
+    }
+
+    private func mellowsgramIsBotPeer(_ peerId: PeerId) -> Bool {
+        return (self.peerTable.get(peerId) as? MellowsgramBotPeer)?.mellowsgramIsBot ?? false
+    }
+
+    private func mellowsgramShouldSkipArchive(peerId: PeerId, authorId: PeerId?) -> Bool {
+        if self.mellowsgramIsBotPeer(peerId) {
+            return true
+        }
+        if let authorId = authorId, self.mellowsgramIsBotPeer(authorId) {
+            return true
+        }
+        return false
+    }
+
+    private func mellowsgramShouldSkipArchive(_ message: IntermediateMessage) -> Bool {
+        return self.mellowsgramShouldSkipArchive(peerId: message.id.peerId, authorId: message.authorId)
     }
     
     fileprivate func deleteMessages(_ messageIds: [MessageId], forEachMedia: ((Media) -> Void)?) {
@@ -3339,7 +3368,7 @@ final class PostboxImpl {
         if let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) {
             let message = self.renderIntermediateMessage(intermediateMessage)
             if case let .update(updatedMessage) = update(message) {
-                if self.mellowsgramSaveEditedMessagesEnabled && id.namespace == 0 {
+                if self.mellowsgramSaveEditedMessagesEnabled && id.namespace == 0 && !self.mellowsgramShouldSkipArchive(intermediateMessage) {
                     self.mellowsgramMessageArchiveTable.archiveRevision(previousMessage: intermediateMessage, updatedMessage: updatedMessage, timestamp: Int32(Date().timeIntervalSince1970))
                     self.addAfterCommitAction { [weak self] in
                         self?.mellowsgramArchiveEventsPipe.putNext(id.peerId)

@@ -1432,9 +1432,11 @@ public class Account {
 
         // Keep the account-local Postbox switches in sync with the persisted
         // settings before any managed read/presence operation can react.
-        self.managedOperationsDisposable.add(mellowsgramSettings(postbox: postbox).start(next: { settings in
-            postbox.setMellowsgramGhostMode(settings.ghostMode)
-            postbox.setMellowsgramGhostModeOptions(settings.ghostModeOptions)
+        self.managedOperationsDisposable.add(combineLatest(mellowsgramSettings(postbox: postbox), MellowsgramGlobalGhostModeRuntime.shared.signal).start(next: { settings, globalPolicy in
+            let effectiveEnabled = settings.usesGlobalGhostMode ? globalPolicy.enabled : settings.ghostMode
+            let effectiveOptions = settings.usesGlobalGhostMode ? globalPolicy.options : settings.ghostModeOptions
+            postbox.setMellowsgramGhostMode(effectiveEnabled)
+            postbox.setMellowsgramGhostModeOptions(effectiveOptions)
             postbox.setMellowsgramArchiveSettings(saveDeletedMessages: settings.saveDeletedMessages, saveEditedMessages: settings.saveEditedMessages)
             postbox.setMellowsgramIgnoreAutoremoveTimers(settings.ignoreAutoremoveTimers)
         }))

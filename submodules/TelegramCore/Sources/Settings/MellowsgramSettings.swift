@@ -4,6 +4,9 @@ import SwiftSignalKit
 
 /// Account-local settings for Mellowsgram features.
 public struct MellowsgramSettings: Codable, Equatable {
+    /// When true, Ghost Mode is inherited from the app-wide policy. An
+    /// account can opt out and keep an independent override.
+    public let usesGlobalGhostMode: Bool
     public let ghostMode: Bool
     // The global Ghost Mode switch controls the policy as a whole. These
     // account-scoped flags are the individual AyuGram-style safeguards that
@@ -20,13 +23,17 @@ public struct MellowsgramSettings: Codable, Equatable {
     public let saveDeletedMessages: Bool
     public let saveEditedMessages: Bool
     public let showDeletedMessages: Bool
-    public let translucentDeletedMessages: Bool
+    /// Opacity of an archived deleted-message row, expressed as a percentage.
+    /// 100 means fully opaque. The old Bool setting is decoded below for
+    /// backwards compatibility (true -> 58%, false -> 100%).
+    public let deletedMessageOpacity: Int32
     /// Keep regular cloud-chat media usable after Telegram's client-side
     /// autoremove/autoclear deadline. Secret and ephemeral messages are still
     /// excluded by the archive/privacy guards.
     public let ignoreAutoremoveTimers: Bool
     public static var defaultSettings: MellowsgramSettings {
         return MellowsgramSettings(
+            usesGlobalGhostMode: true,
             ghostMode: false,
             ghostDontReadMessages: true,
             ghostDontReadStories: true,
@@ -39,12 +46,19 @@ public struct MellowsgramSettings: Codable, Equatable {
             saveDeletedMessages: true,
             saveEditedMessages: true,
             showDeletedMessages: true,
-            translucentDeletedMessages: false,
+            deletedMessageOpacity: 100,
             ignoreAutoremoveTimers: true
         )
     }
 
+    /// Compatibility view for older callers. New code should use
+    /// `deletedMessageOpacity` directly.
+    public var translucentDeletedMessages: Bool {
+        return self.deletedMessageOpacity < 100
+    }
+
     public init(
+        usesGlobalGhostMode: Bool = true,
         ghostMode: Bool,
         ghostDontReadMessages: Bool = true,
         ghostDontReadStories: Bool = true,
@@ -57,9 +71,10 @@ public struct MellowsgramSettings: Codable, Equatable {
         saveDeletedMessages: Bool,
         saveEditedMessages: Bool,
         showDeletedMessages: Bool,
-        translucentDeletedMessages: Bool,
+        deletedMessageOpacity: Int32 = 100,
         ignoreAutoremoveTimers: Bool = true
     ) {
+        self.usesGlobalGhostMode = usesGlobalGhostMode
         self.ghostMode = ghostMode
         self.ghostDontReadMessages = ghostDontReadMessages
         self.ghostDontReadStories = ghostDontReadStories
@@ -72,32 +87,58 @@ public struct MellowsgramSettings: Codable, Equatable {
         self.saveDeletedMessages = saveDeletedMessages
         self.saveEditedMessages = saveEditedMessages
         self.showDeletedMessages = showDeletedMessages
-        self.translucentDeletedMessages = translucentDeletedMessages
+        self.deletedMessageOpacity = min(100, max(30, deletedMessageOpacity))
         self.ignoreAutoremoveTimers = ignoreAutoremoveTimers
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: StringCodingKey.self)
-        self.ghostMode = (try container.decodeIfPresent(Int32.self, forKey: "ghostMode") ?? 0) != 0
+        let ghostMode = (try container.decodeIfPresent(Int32.self, forKey: "ghostMode") ?? 0) != 0
+        self.ghostMode = ghostMode
         // Missing keys are intentional here: older account preferences should
         // get the safe AyuGram-compatible defaults without a migration pass.
-        self.ghostDontReadMessages = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontReadMessages") ?? 1) != 0
-        self.ghostDontReadStories = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontReadStories") ?? 1) != 0
-        self.ghostDontSendOnline = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontSendOnline") ?? 1) != 0
-        self.ghostDontSendTyping = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontSendTyping") ?? 1) != 0
-        self.ghostGoOfflineAutomatically = (try container.decodeIfPresent(Int32.self, forKey: "ghostGoOfflineAutomatically") ?? 1) != 0
+        let ghostDontReadMessages = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontReadMessages") ?? 1) != 0
+        let ghostDontReadStories = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontReadStories") ?? 1) != 0
+        let ghostDontSendOnline = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontSendOnline") ?? 1) != 0
+        let ghostDontSendTyping = (try container.decodeIfPresent(Int32.self, forKey: "ghostDontSendTyping") ?? 1) != 0
+        let ghostGoOfflineAutomatically = (try container.decodeIfPresent(Int32.self, forKey: "ghostGoOfflineAutomatically") ?? 1) != 0
+        self.ghostDontReadMessages = ghostDontReadMessages
+        self.ghostDontReadStories = ghostDontReadStories
+        self.ghostDontSendOnline = ghostDontSendOnline
+        self.ghostDontSendTyping = ghostDontSendTyping
+        self.ghostGoOfflineAutomatically = ghostGoOfflineAutomatically
         self.ghostReadOnInteract = (try container.decodeIfPresent(Int32.self, forKey: "ghostReadOnInteract") ?? 1) != 0
         self.ghostScheduleMessages = (try container.decodeIfPresent(Int32.self, forKey: "ghostScheduleMessages") ?? 0) != 0
         self.ghostStoryModeAlert = (try container.decodeIfPresent(Int32.self, forKey: "ghostStoryModeAlert") ?? 1) != 0
         self.saveDeletedMessages = (try container.decodeIfPresent(Int32.self, forKey: "saveDeletedMessages") ?? 1) != 0
         self.saveEditedMessages = (try container.decodeIfPresent(Int32.self, forKey: "saveEditedMessages") ?? 1) != 0
         self.showDeletedMessages = (try container.decodeIfPresent(Int32.self, forKey: "showDeletedMessages") ?? 1) != 0
-        self.translucentDeletedMessages = (try container.decodeIfPresent(Int32.self, forKey: "translucentDeletedMessages") ?? 0) != 0
+        if let storedOpacity = try container.decodeIfPresent(Int32.self, forKey: "deletedMessageOpacity") {
+            self.deletedMessageOpacity = min(100, max(30, storedOpacity))
+        } else {
+            let legacyTranslucent = (try container.decodeIfPresent(Int32.self, forKey: "translucentDeletedMessages") ?? 0) != 0
+            self.deletedMessageOpacity = legacyTranslucent ? 58 : 100
+        }
+        if let storedUsesGlobal = try container.decodeIfPresent(Int32.self, forKey: "usesGlobalGhostMode") {
+            self.usesGlobalGhostMode = storedUsesGlobal != 0
+        } else {
+            // Preserve an explicitly customised legacy account. Accounts that
+            // still contain the old defaults safely inherit the new global
+            // policy.
+            let legacyDefaults = ghostMode == MellowsgramSettings.defaultSettings.ghostMode
+                && ghostDontReadMessages == MellowsgramSettings.defaultSettings.ghostDontReadMessages
+                && ghostDontReadStories == MellowsgramSettings.defaultSettings.ghostDontReadStories
+                && ghostDontSendOnline == MellowsgramSettings.defaultSettings.ghostDontSendOnline
+                && ghostDontSendTyping == MellowsgramSettings.defaultSettings.ghostDontSendTyping
+                && ghostGoOfflineAutomatically == MellowsgramSettings.defaultSettings.ghostGoOfflineAutomatically
+            self.usesGlobalGhostMode = legacyDefaults
+        }
         self.ignoreAutoremoveTimers = (try container.decodeIfPresent(Int32.self, forKey: "ignoreAutoremoveTimers") ?? 1) != 0
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: StringCodingKey.self)
+        try container.encode((self.usesGlobalGhostMode ? 1 : 0) as Int32, forKey: "usesGlobalGhostMode")
         try container.encode((self.ghostMode ? 1 : 0) as Int32, forKey: "ghostMode")
         try container.encode((self.ghostDontReadMessages ? 1 : 0) as Int32, forKey: "ghostDontReadMessages")
         try container.encode((self.ghostDontReadStories ? 1 : 0) as Int32, forKey: "ghostDontReadStories")
@@ -110,12 +151,19 @@ public struct MellowsgramSettings: Codable, Equatable {
         try container.encode((self.saveDeletedMessages ? 1 : 0) as Int32, forKey: "saveDeletedMessages")
         try container.encode((self.saveEditedMessages ? 1 : 0) as Int32, forKey: "saveEditedMessages")
         try container.encode((self.showDeletedMessages ? 1 : 0) as Int32, forKey: "showDeletedMessages")
+        try container.encode(self.deletedMessageOpacity, forKey: "deletedMessageOpacity")
+        // Keep the legacy field so an older Mellowsgram build does not lose
+        // the user's visual preference when it reads this entry.
         try container.encode((self.translucentDeletedMessages ? 1 : 0) as Int32, forKey: "translucentDeletedMessages")
         try container.encode((self.ignoreAutoremoveTimers ? 1 : 0) as Int32, forKey: "ignoreAutoremoveTimers")
     }
 
     public func withUpdatedGhostMode(_ value: Bool) -> MellowsgramSettings {
         return self.copy(ghostMode: value)
+    }
+
+    public func withUpdatedUsesGlobalGhostMode(_ value: Bool) -> MellowsgramSettings {
+        return self.copy(usesGlobalGhostMode: value)
     }
 
     public func withUpdatedGhostDontReadMessages(_ value: Bool) -> MellowsgramSettings {
@@ -163,7 +211,11 @@ public struct MellowsgramSettings: Codable, Equatable {
     }
 
     public func withUpdatedTranslucentDeletedMessages(_ value: Bool) -> MellowsgramSettings {
-        return self.copy(translucentDeletedMessages: value)
+        return self.copy(deletedMessageOpacity: value ? 58 : 100)
+    }
+
+    public func withUpdatedDeletedMessageOpacity(_ value: Int32) -> MellowsgramSettings {
+        return self.copy(deletedMessageOpacity: value)
     }
 
     public func withUpdatedIgnoreAutoremoveTimers(_ value: Bool) -> MellowsgramSettings {
@@ -191,6 +243,7 @@ public struct MellowsgramSettings: Codable, Equatable {
     }
 
     private func copy(
+        usesGlobalGhostMode: Bool? = nil,
         ghostMode: Bool? = nil,
         ghostDontReadMessages: Bool? = nil,
         ghostDontReadStories: Bool? = nil,
@@ -203,10 +256,11 @@ public struct MellowsgramSettings: Codable, Equatable {
         saveDeletedMessages: Bool? = nil,
         saveEditedMessages: Bool? = nil,
         showDeletedMessages: Bool? = nil,
-        translucentDeletedMessages: Bool? = nil,
+        deletedMessageOpacity: Int32? = nil,
         ignoreAutoremoveTimers: Bool? = nil
     ) -> MellowsgramSettings {
         return MellowsgramSettings(
+            usesGlobalGhostMode: usesGlobalGhostMode ?? self.usesGlobalGhostMode,
             ghostMode: ghostMode ?? self.ghostMode,
             ghostDontReadMessages: ghostDontReadMessages ?? self.ghostDontReadMessages,
             ghostDontReadStories: ghostDontReadStories ?? self.ghostDontReadStories,
@@ -219,7 +273,7 @@ public struct MellowsgramSettings: Codable, Equatable {
             saveDeletedMessages: saveDeletedMessages ?? self.saveDeletedMessages,
             saveEditedMessages: saveEditedMessages ?? self.saveEditedMessages,
             showDeletedMessages: showDeletedMessages ?? self.showDeletedMessages,
-            translucentDeletedMessages: translucentDeletedMessages ?? self.translucentDeletedMessages,
+            deletedMessageOpacity: deletedMessageOpacity ?? self.deletedMessageOpacity,
             ignoreAutoremoveTimers: ignoreAutoremoveTimers ?? self.ignoreAutoremoveTimers
         )
     }

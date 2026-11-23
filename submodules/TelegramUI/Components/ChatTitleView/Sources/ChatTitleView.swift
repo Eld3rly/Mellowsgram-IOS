@@ -348,11 +348,11 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                             } else {
                                 isEnabled = isEnabledValue
                             }
-                            if peerView.peerId != self.context.account.peerId, let peer = peerView.peer,
+                            if peerView.peerId != self.context.account.peerId, peerView.peer != nil,
                                let first = segments.first, case let .text(id, attributedString) = first {
                                 let badges = MellowsgramBadgeRuntime.shared.badges(
-                                    peerNamespace: peer.id.namespace._internalGetInt32Value(),
-                                    peerId: peer.id.id._internalGetInt64Value()
+                                    peerNamespace: peerView.peerId.namespace._internalGetInt32Value(),
+                                    peerId: peerView.peerId.id._internalGetInt64Value()
                                 )
                                 if !badges.isEmpty {
                                     let updated = NSMutableAttributedString(attributedString: attributedString)

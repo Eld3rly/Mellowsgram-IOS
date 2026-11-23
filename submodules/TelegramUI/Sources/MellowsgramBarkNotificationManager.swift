@@ -82,6 +82,14 @@ public final class MellowsgramBarkNotificationManager {
     private var globalSettings = MellowsgramGlobalSettings.defaultSettings
     private var hasLoadedSettings = false
     private var registeredTokens: [AccountRecordId: Data] = [:]
+    /// Invalidates callbacks from a reconcile that started under an older
+    /// Bark setting. Without this guard a late Web Push registration could
+    /// recreate the relay route after the user had just disabled Bark.
+    private var reconcileGeneration: UInt64 = 0
+    /// Keep the last active PUT cancellable. DELETE requests for an older
+    /// route are intentionally allowed to finish independently, otherwise a
+    /// token rotation could cancel the cleanup of the old route.
+    private var relayActivationTask: URLSessionDataTask?
     private var reconcileTimer: SwiftSignalKit.Timer?
     private var registrationRefreshTimer: SwiftSignalKit.Timer?
     private var foregroundPresenceTimer: SwiftSignalKit.Timer?
@@ -117,15 +125,61 @@ public final class MellowsgramBarkNotificationManager {
             guard let self else {
                 return
             }
+            let wasEnabled = self.globalSettings.bool(for: .barkNotificationsEnabled) && !MellowsgramBarkCredentialStore.deviceKey.isEmpty
             self.globalSettings = settings
             self.hasLoadedSettings = true
             self.lastAvatarScanTimestamp = 0.0
+            let isEnabled = settings.bool(for: .barkNotificationsEnabled) && !MellowsgramBarkCredentialStore.deviceKey.isEmpty
+            if wasEnabled != isEnabled {
+                // Invalidate both late registrations and late revokes. This
+                // matters when the user toggles Bark off and on before the
+                // previous DELETE has completed: the old DELETE must not
+                // remove the new route created by the following PUT.
+                self.reconcileGeneration &+= 1
+            }
+            if wasEnabled && !isEnabled {
+                let disableGeneration = self.reconcileGeneration
+                self.reconcileDisposable.set(nil)
+                self.reconcileTimer?.invalidate()
+                self.reconcileTimer = nil
+                self.registrationRefreshTimer?.invalidate()
+                self.registrationRefreshTimer = nil
+                self.relayActivationTask?.cancel()
+                self.relayActivationTask = nil
+                self.stopAvatarSync()
+                self.updateForegroundPresenceToken(nil)
+                if let registration = MellowsgramBarkCredentialStore.registration {
+                    self.updateRelayClientRegistration(active: false, token: registration.token, generation: disableGeneration) { [weak self] success in
+                        guard let self,
+                              self.reconcileGeneration == disableGeneration,
+                              (!self.globalSettings.bool(for: .barkNotificationsEnabled) || MellowsgramBarkCredentialStore.deviceKey.isEmpty)
+                        else {
+                            return
+                        }
+                        if success {
+                            _ = MellowsgramBarkCredentialStore.updateRegistration(nil)
+                        } else {
+                            self.scheduleReconcile(after: Self.registrationRetryDelay)
+                        }
+                    }
+                } else {
+                    _ = MellowsgramBarkCredentialStore.updateRegistration(nil)
+                }
+            }
             self.scheduleReconcile()
         }))
 
         self.deviceKeyDisposable.set((MellowsgramBarkCredentialStore.deviceKeySignal
         |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
-            self?.scheduleReconcile()
+            guard let self else {
+                return
+            }
+            // A key rotation changes the relay route. Invalidate any request
+            // built with the previous key before scheduling the new one.
+            self.reconcileGeneration &+= 1
+            self.relayActivationTask?.cancel()
+            self.relayActivationTask = nil
+            self.scheduleReconcile()
         }))
 
         // Use the same scene-aware signal as the rest of Telegram. UIApplication
@@ -143,6 +197,7 @@ public final class MellowsgramBarkNotificationManager {
         self.deviceKeyDisposable.dispose()
         self.applicationActiveDisposable.dispose()
         self.reconcileDisposable.dispose()
+        self.relayActivationTask?.cancel()
         self.avatarScanDisposable.dispose()
         self.avatarImageProcessingQueue.cancelAllOperations()
         self.avatarUploadStatePersistenceWorkItem?.cancel()
@@ -186,6 +241,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func reconcile() {
+        let generation = self.reconcileGeneration
         let storedRegistration = MellowsgramBarkCredentialStore.registration
         let barkKey = MellowsgramBarkCredentialStore.deviceKey
         let notificationsEnabled = self.globalSettings.bool(for: .barkNotificationsEnabled) && !barkKey.isEmpty
@@ -214,7 +270,7 @@ public final class MellowsgramBarkNotificationManager {
         }
 
         if let storedRegistration, let token, storedRegistration.token != token {
-            self.updateRelayClientRegistration(active: false, token: storedRegistration.token)
+            self.updateRelayClientRegistration(active: false, token: storedRegistration.token, generation: generation)
         }
 
         if notificationsEnabled && token == nil {
@@ -270,6 +326,9 @@ public final class MellowsgramBarkNotificationManager {
             guard let self else {
                 return
             }
+            guard generation == self.reconcileGeneration else {
+                return
+            }
             let shouldRetry = notificationsEnabled && results.contains(where: { result in
                 return desiredAccountIds.contains(result.0) && result.1 == nil
             })
@@ -285,18 +344,18 @@ public final class MellowsgramBarkNotificationManager {
             guard let token else {
                 self.stopAvatarSync()
                 if let storedRegistration {
-                    self.updateRelayClientRegistration(active: false, token: storedRegistration.token)
-                    let remainingIds = self.registeredTokens
-                        .compactMap { entry -> Int64? in
-                            entry.value == storedRegistration.token ? entry.key.int64 : nil
+                    self.updateRelayClientRegistration(active: false, token: storedRegistration.token, generation: generation) { [weak self] success in
+                        guard let self, generation == self.reconcileGeneration else {
+                            return
                         }
-                        .sorted()
-                    _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
-                        barkDeviceKey: storedRegistration.barkDeviceKey,
-                        token: storedRegistration.token,
-                        registeredAccountIds: remainingIds,
-                        liveContainerNotificationLinks: mellowsgramIsRunningInLiveContainer()
-                    ))
+                        if success {
+                            _ = MellowsgramBarkCredentialStore.updateRegistration(nil)
+                        } else {
+                            self.scheduleReconcile(after: Self.registrationRetryDelay)
+                        }
+                    }
+                } else {
+                    _ = MellowsgramBarkCredentialStore.updateRegistration(nil)
                 }
                 return
             }
@@ -307,7 +366,7 @@ public final class MellowsgramBarkNotificationManager {
                 }
                 .sorted()
             let liveContainerNotificationLinks = mellowsgramIsRunningInLiveContainer()
-            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks)
+            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks, generation: generation)
             _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                 barkDeviceKey: barkKey,
                 token: token,
@@ -772,13 +831,19 @@ public final class MellowsgramBarkNotificationManager {
         URLSession.shared.dataTask(with: request).resume()
     }
 
-    private func updateRelayClientRegistration(active: Bool, token: Data, liveContainerNotificationLinks: Bool = false) {
+    private func updateRelayClientRegistration(active: Bool, token: Data, liveContainerNotificationLinks: Bool = false, generation: UInt64? = nil, completion: ((Bool) -> Void)? = nil) {
+        if let generation, generation != self.reconcileGeneration {
+            completion?(false)
+            return
+        }
         guard let credentials = Self.makeRelayCredentials(token: token),
               var components = URLComponents(string: Self.relayBaseURL) else {
+            completion?(false)
             return
         }
         components.path = "/client/notification-registration"
         guard let url = components.url else {
+            completion?(false)
             return
         }
         let method = active ? "PUT" : "DELETE"
@@ -801,7 +866,29 @@ public final class MellowsgramBarkNotificationManager {
         request.setValue(credentials.route, forHTTPHeaderField: Self.registrationSubscriptionHeader)
         request.setValue(timestamp, forHTTPHeaderField: Self.registrationTimestampHeader)
         request.setValue(Self.requestSignature(method: method, path: "/client/notification-registration", route: credentials.route, timestamp: timestamp, body: body, authSecret: credentials.authSecret), forHTTPHeaderField: Self.registrationSignatureHeader)
-        URLSession.shared.dataTask(with: request).resume()
+        if active {
+            self.relayActivationTask?.cancel()
+        }
+        let task = URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
+            let success = (response as? HTTPURLResponse).map { response in
+                // DELETE is idempotent: a route removed by an earlier retry
+                // is already in the desired state.
+                return (200 ..< 300).contains(response.statusCode) || (!active && response.statusCode == 404)
+            } ?? false
+            guard let completion else {
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+                completion(success)
+            }
+        }
+        if active {
+            self.relayActivationTask = task
+        }
+        task.resume()
     }
 
     private static func requestSignature(method: String, path: String, route: String, timestamp: String, body: Data, authSecret: Data) -> String {

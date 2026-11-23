@@ -401,7 +401,7 @@ public final class ChatMessageItemImpl: ChatMessageItem, CustomStringConvertible
             }
             node.setupItem(self, synchronousLoad: synchronousLoads)
             if let deletedAttribute = self.message.attributes.compactMap({ $0 as? MellowsgramDeletedMessageAttribute }).first {
-                node.alpha = deletedAttribute.translucent ? 0.58 : 1.0
+                node.alpha = CGFloat(deletedAttribute.opacity) / 100.0
             } else {
                 node.alpha = 1.0
             }

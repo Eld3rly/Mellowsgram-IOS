@@ -706,7 +706,7 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
     open func setupItem(_ item: ChatMessageItem, synchronousLoad: Bool) {
         self.item = item
         if let deletedAttribute = item.message.attributes.compactMap({ $0 as? MellowsgramDeletedMessageAttribute }).first {
-            self.alpha = deletedAttribute.translucent ? 0.58 : 1.0
+            self.alpha = CGFloat(deletedAttribute.opacity) / 100.0
         } else {
             self.alpha = 1.0
         }

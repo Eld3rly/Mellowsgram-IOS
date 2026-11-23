@@ -35,7 +35,7 @@ extension ChatControllerImpl {
             var sortedMessages = messageMap.values.compactMap { $0?._asMessage() }
             let existingIds = Set(sortedMessages.map { $0.id })
             for record in archiveRecords where messageIds.contains(record.messageId) && !existingIds.contains(record.messageId) {
-                sortedMessages.append(engineMellowsgramDeletedMessage(record: record, translucent: false))
+                sortedMessages.append(engineMellowsgramDeletedMessage(record: record, opacity: 100))
             }
             sortedMessages.sort { lhs, rhs in
                 return lhs.id < rhs.id

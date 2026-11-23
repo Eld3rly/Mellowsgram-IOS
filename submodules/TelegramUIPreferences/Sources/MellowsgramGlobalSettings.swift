@@ -1,4 +1,5 @@
 import Foundation
+import Postbox
 import TelegramCore
 import SwiftSignalKit
 import UIKitRuntimeUtils
@@ -9,6 +10,43 @@ public func mellowsgramLocalizedString(english: String, russian: String, languag
         .split(whereSeparator: { $0 == "-" || $0 == "_" })
         .first
     return primaryLanguageCode == "ru" ? russian : english
+}
+
+/// Persisted global Ghost Mode policy. The individual keys in
+/// `MellowsgramGlobalSettings` remain the on-disk compatibility format, while
+/// this value type gives the runtime and UI one coherent policy to pass around.
+public struct MellowsgramGlobalGhostModeSettings: Codable, Equatable {
+    public let enabled: Bool
+    public let dontReadMessages: Bool
+    public let dontReadStories: Bool
+    public let dontSendOnline: Bool
+    public let dontSendTyping: Bool
+    public let goOfflineAutomatically: Bool
+
+    public init(
+        enabled: Bool,
+        dontReadMessages: Bool,
+        dontReadStories: Bool,
+        dontSendOnline: Bool,
+        dontSendTyping: Bool,
+        goOfflineAutomatically: Bool
+    ) {
+        self.enabled = enabled
+        self.dontReadMessages = dontReadMessages
+        self.dontReadStories = dontReadStories
+        self.dontSendOnline = dontSendOnline
+        self.dontSendTyping = dontSendTyping
+        self.goOfflineAutomatically = goOfflineAutomatically
+    }
+
+    public static let defaultSettings = MellowsgramGlobalGhostModeSettings(
+        enabled: false,
+        dontReadMessages: true,
+        dontReadStories: true,
+        dontSendOnline: true,
+        dontSendTyping: true,
+        goOfflineAutomatically: true
+    )
 }
 
 /// App-wide Mellowsgram preferences. Settings that already belong to a native
@@ -25,6 +63,15 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     case barkNotificationsEnabled
     case barkAllAccounts
     case liveContainerNotificationLinks
+
+    // Global Ghost Mode policy. Per-account settings keep their own override
+    // values; Account.swift chooses between these values and that override.
+    case ghostGlobalMode
+    case ghostGlobalDontReadMessages
+    case ghostGlobalDontReadStories
+    case ghostGlobalDontSendOnline
+    case ghostGlobalDontSendTyping
+    case ghostGlobalGoOfflineAutomatically
 
     case hideTabBar
     case showTabNames
@@ -110,7 +157,10 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
              .contextSelectFromAuthor, .contextRestrict, .contextReport,
              .contextReply, .contextPin, .contextViewThread,
              .contextJSON, .voiceRecordingButton, .messageDeletionEffects,
-             .sendAsButton, .translateEntireChats:
+             .sendAsButton, .translateEntireChats,
+             .ghostGlobalDontReadMessages, .ghostGlobalDontReadStories,
+             .ghostGlobalDontSendOnline, .ghostGlobalDontSendTyping,
+             .ghostGlobalGoOfflineAutomatically:
             return "true"
         case .translationService, .transcriptionService:
             return "telegram"
@@ -127,7 +177,8 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
              .startRoundVideoWithRearCamera, .cameraInGallery,
              .contextSaveToFiles, .pullToNextUnreadChannel, .pullToNextTopic,
              .secondsInMessages, .doubleTapToEdit, .hideReactions, .sendWithReturnKey,
-             .emojiTabFirst, .standardEmojisFirst, .foldersAtBottom:
+             .emojiTabFirst, .standardEmojisFirst, .foldersAtBottom,
+             .ghostGlobalMode:
             return "false"
         case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
             return "false"
@@ -166,6 +217,27 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
 
     public func bool(for key: MellowsgramGlobalSettingKey) -> Bool {
         return self.value(for: key) == "true"
+    }
+
+    public var ghostMode: MellowsgramGlobalGhostModeSettings {
+        return MellowsgramGlobalGhostModeSettings(
+            enabled: self.bool(for: .ghostGlobalMode),
+            dontReadMessages: self.bool(for: .ghostGlobalDontReadMessages),
+            dontReadStories: self.bool(for: .ghostGlobalDontReadStories),
+            dontSendOnline: self.bool(for: .ghostGlobalDontSendOnline),
+            dontSendTyping: self.bool(for: .ghostGlobalDontSendTyping),
+            goOfflineAutomatically: self.bool(for: .ghostGlobalGoOfflineAutomatically)
+        )
+    }
+
+    public func withUpdatedGhostMode(_ policy: MellowsgramGlobalGhostModeSettings) -> MellowsgramGlobalSettings {
+        var result = self
+        result = result.withUpdatedValue(policy.enabled ? "true" : "false", for: .ghostGlobalMode)
+        result = result.withUpdatedValue(policy.dontReadMessages ? "true" : "false", for: .ghostGlobalDontReadMessages)
+        result = result.withUpdatedValue(policy.dontReadStories ? "true" : "false", for: .ghostGlobalDontReadStories)
+        result = result.withUpdatedValue(policy.dontSendOnline ? "true" : "false", for: .ghostGlobalDontSendOnline)
+        result = result.withUpdatedValue(policy.dontSendTyping ? "true" : "false", for: .ghostGlobalDontSendTyping)
+        return result.withUpdatedValue(policy.goOfflineAutomatically ? "true" : "false", for: .ghostGlobalGoOfflineAutomatically)
     }
 
     public func integer(for key: MellowsgramGlobalSettingKey) -> Int {
@@ -343,6 +415,24 @@ public final class MellowsgramGlobalSettingsRuntime {
         UserDefaults.standard.set(settings.bool(for: .uploadBoost), forKey: "mellowsgram.global.uploadBoost")
         UserDefaults.standard.set(settings.value(for: .downloadBoost), forKey: "mellowsgram.global.downloadBoost")
         setMellowsgramScreenshotProtectionEnabled(settings.bool(for: .protectScreenshots))
+        let ghostMode = settings.ghostMode
+        var ghostOptions = MellowsgramGhostModeOptions()
+        if ghostMode.dontReadMessages {
+            ghostOptions.insert(.dontReadMessages)
+        }
+        if ghostMode.dontReadStories {
+            ghostOptions.insert(.dontReadStories)
+        }
+        if ghostMode.dontSendOnline {
+            ghostOptions.insert(.dontSendOnline)
+        }
+        if ghostMode.dontSendTyping {
+            ghostOptions.insert(.dontSendTyping)
+        }
+        if ghostMode.goOfflineAutomatically {
+            ghostOptions.insert(.goOfflineAutomatically)
+        }
+        MellowsgramGlobalGhostModeRuntime.shared.update(enabled: ghostMode.enabled, options: ghostOptions)
         self.settingsPromise.set(settings)
     }
 
