@@ -2,6 +2,35 @@ import Foundation
 import Postbox
 import SwiftSignalKit
 
+/// Bridges the app-wide Mellowsgram policy into the Postbox runtime without
+/// exposing Postbox implementation types to TelegramUIPreferences.
+public func updateMellowsgramGlobalGhostModeRuntime(
+    enabled: Bool,
+    dontReadMessages: Bool,
+    dontReadStories: Bool,
+    dontSendOnline: Bool,
+    dontSendTyping: Bool,
+    goOfflineAutomatically: Bool
+) {
+    var options = MellowsgramGhostModeOptions()
+    if dontReadMessages {
+        options.insert(.dontReadMessages)
+    }
+    if dontReadStories {
+        options.insert(.dontReadStories)
+    }
+    if dontSendOnline {
+        options.insert(.dontSendOnline)
+    }
+    if dontSendTyping {
+        options.insert(.dontSendTyping)
+    }
+    if goOfflineAutomatically {
+        options.insert(.goOfflineAutomatically)
+    }
+    MellowsgramGlobalGhostModeRuntime.shared.update(enabled: enabled, options: options)
+}
+
 /// Account-local settings for Mellowsgram features.
 public struct MellowsgramSettings: Codable, Equatable {
     /// When true, Ghost Mode is inherited from the app-wide policy. An

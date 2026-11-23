@@ -415,23 +415,14 @@ public final class MellowsgramGlobalSettingsRuntime {
         UserDefaults.standard.set(settings.value(for: .downloadBoost), forKey: "mellowsgram.global.downloadBoost")
         setMellowsgramScreenshotProtectionEnabled(settings.bool(for: .protectScreenshots))
         let ghostMode = settings.ghostMode
-        var ghostOptions = MellowsgramGhostModeOptions()
-        if ghostMode.dontReadMessages {
-            ghostOptions.insert(.dontReadMessages)
-        }
-        if ghostMode.dontReadStories {
-            ghostOptions.insert(.dontReadStories)
-        }
-        if ghostMode.dontSendOnline {
-            ghostOptions.insert(.dontSendOnline)
-        }
-        if ghostMode.dontSendTyping {
-            ghostOptions.insert(.dontSendTyping)
-        }
-        if ghostMode.goOfflineAutomatically {
-            ghostOptions.insert(.goOfflineAutomatically)
-        }
-        MellowsgramGlobalGhostModeRuntime.shared.update(enabled: ghostMode.enabled, options: ghostOptions)
+        updateMellowsgramGlobalGhostModeRuntime(
+            enabled: ghostMode.enabled,
+            dontReadMessages: ghostMode.dontReadMessages,
+            dontReadStories: ghostMode.dontReadStories,
+            dontSendOnline: ghostMode.dontSendOnline,
+            dontSendTyping: ghostMode.dontSendTyping,
+            goOfflineAutomatically: ghostMode.goOfflineAutomatically
+        )
         self.settingsPromise.set(settings)
     }
 
