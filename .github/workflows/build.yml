@@ -60,16 +60,31 @@ jobs:
             --url-scheme mellowsgram
 
       - name: Prepare Bazel disk cache
+        if: matrix.target == 'simulator'
         shell: bash
         run: mkdir -p build-input/bazel-disk-cache
 
       - name: Restore Bazel disk cache
+        if: matrix.target == 'simulator'
         uses: actions/cache@v4
         with:
           path: build-input/bazel-disk-cache
-          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'Telegram/BUILD', 'submodules/TelegramApi/swift_scheme.tl') }}
+          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'versions.json', 'build-system/Make/Make.py', 'Telegram/BUILD', 'submodules/TelegramApi/swift_scheme.tl') }}
           restore-keys: |
-            bazel-${{ runner.os }}-${{ runner.arch }}-
+            bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+
+      - name: Reclaim device runner disk space
+        if: matrix.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk space before cleanup:"
+          df -h /
+          rm -rf /Users/runner/Library/Developer/Xcode/DerivedData
+          rm -rf /Users/runner/Library/Caches/Homebrew
+          rm -rf /Users/runner/Library/Caches/com.apple.dt.Xcode
+          echo "Disk space after cleanup:"
+          df -h /
 
       - name: Fast preflight (no build)
         shell: bash
@@ -136,7 +151,6 @@ jobs:
           set -euo pipefail
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
-            --cacheDir build-input/bazel-disk-cache \
             build \
             --configurationPath build-input/mellowsgram-configuration.json \
             --xcodeManagedCodesigning \
