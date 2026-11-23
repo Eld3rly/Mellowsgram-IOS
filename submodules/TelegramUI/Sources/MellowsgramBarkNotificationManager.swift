@@ -869,7 +869,7 @@ public final class MellowsgramBarkNotificationManager {
         if active {
             self.relayActivationTask?.cancel()
         }
-        let task = URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
+        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
             let success = (response as? HTTPURLResponse).map { response in
                 // DELETE is idempotent: a route removed by an earlier retry
                 // is already in the desired state.
@@ -879,9 +879,6 @@ public final class MellowsgramBarkNotificationManager {
                 return
             }
             DispatchQueue.main.async {
-                guard let self else {
-                    return
-                }
                 completion(success)
             }
         }
