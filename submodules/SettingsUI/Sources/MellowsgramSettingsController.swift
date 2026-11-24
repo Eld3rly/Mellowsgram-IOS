@@ -1180,7 +1180,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         self.sliderView = sliderView
         if let item = self.item {
             self.updatePreview(item: item, params: nil, value: self.displayedValue(for: item))
-            self.updateSliderView(sliderView, item: item, themeUpdated: true)
+            self.updateSliderView(sliderView, item: item, value: self.displayedValue(for: item), themeUpdated: true)
         }
     }
 
