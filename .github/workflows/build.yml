@@ -32,6 +32,26 @@ jobs:
           fetch-depth: 2
           submodules: recursive
 
+      - name: Check test source access
+        if: matrix.target == 'device' && github.ref == 'refs/heads/indev'
+        env:
+          SOURCE_DEPLOY_HOST: ${{ secrets.SOURCE_DEPLOY_HOST }}
+          SOURCE_DEPLOY_SSH_KEY: ${{ secrets.SOURCE_DEPLOY_SSH_KEY }}
+          SOURCE_DEPLOY_KNOWN_HOSTS: ${{ secrets.SOURCE_DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_DEPLOY_HOST"
+          test -n "$SOURCE_DEPLOY_SSH_KEY"
+          test -n "$SOURCE_DEPLOY_KNOWN_HOSTS"
+          ssh_dir="$RUNNER_TEMP/mellowsgram-source-ssh"
+          install -m 700 -d "$ssh_dir"
+          printf '%s\n' "$SOURCE_DEPLOY_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$SOURCE_DEPLOY_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+          ssh -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o ConnectTimeout=15 "mellowsource@${SOURCE_DEPLOY_HOST}" 'test -w /srv/mellowsgram-testsource/staging'
+
       - name: Select Xcode and inspect SDK
         shell: bash
         run: |
@@ -93,6 +113,7 @@ jobs:
           git show --check --format= HEAD
           python3 -m py_compile ci/mellowsgram_configuration.py
           python3 -m py_compile ci/mellowsgram_sideload.py
+          python3 -m py_compile ci/publish_testsource.py
           python3 build-system/Make/PostboxImportCheck.py
           swiftc_path="$(xcrun --find swiftc)"
           for source in \
@@ -125,7 +146,7 @@ jobs:
 
       - name: Set build number
         shell: bash
-        run: echo "BUILD_NUMBER=$((10000 + $(git rev-list --count HEAD)))" >> "$GITHUB_ENV"
+        run: echo "BUILD_NUMBER=$((10000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Build simulator IPA
         if: matrix.target == 'simulator'
@@ -212,3 +233,22 @@ jobs:
           path: build/mellowsgram-device-artifacts/Telegram.ipa
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish indev IPA to test source
+        if: matrix.target == 'device' && github.ref == 'refs/heads/indev'
+        env:
+          SOURCE_DEPLOY_HOST: ${{ secrets.SOURCE_DEPLOY_HOST }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_dir="$RUNNER_TEMP/mellowsgram-source-ssh"
+          test -s "$ssh_dir/key"
+          test -s "$ssh_dir/known_hosts"
+          ssh_options=(-i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=5)
+          destination="mellowsource@${SOURCE_DEPLOY_HOST}"
+          scp "${ssh_options[@]}" ci/publish_testsource.py "${destination}:/srv/mellowsgram-testsource/staging/publish_testsource.py"
+          scp "${ssh_options[@]}" build/mellowsgram-device-artifacts/Telegram.ipa "${destination}:/srv/mellowsgram-testsource/staging/Telegram-${GITHUB_RUN_ID}.ipa"
+          # Run ID and SHA are expanded here before the remote command is sent.
+          # shellcheck disable=SC2029
+          ssh "${ssh_options[@]}" "$destination" \
+            "python3 /srv/mellowsgram-testsource/staging/publish_testsource.py --ipa /srv/mellowsgram-testsource/staging/Telegram-${GITHUB_RUN_ID}.ipa --run-id ${GITHUB_RUN_ID} --commit ${GITHUB_SHA}"
