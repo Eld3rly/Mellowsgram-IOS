@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path("/srv/mellowsgram-testsource")
 BASE_URL = "https://testsource.mellowsgram.cc"
 BUNDLE_ID = "com.mellowsgram.ios"
-MAX_VERSIONS = 5
+MAX_VERSIONS = 1
 
 
 def publish(staged_ipa: Path, run_id: str, commit: str) -> Path:
