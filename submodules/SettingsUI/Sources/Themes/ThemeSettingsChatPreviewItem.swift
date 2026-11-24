@@ -30,6 +30,9 @@ struct ChatPreviewMessageItem: Equatable {
         if lhs.backgroundEmojiId != rhs.backgroundEmojiId {
             return false
         }
+        if lhs.deleted != rhs.deleted {
+            return false
+        }
         return true
     }
     
@@ -38,6 +41,17 @@ struct ChatPreviewMessageItem: Equatable {
     let text: String
     let nameColor: PeerColor
     let backgroundEmojiId: Int64?
+
+    let deleted: Bool
+
+    init(outgoing: Bool, reply: (String, String)?, text: String, nameColor: PeerColor, backgroundEmojiId: Int64?, deleted: Bool = false) {
+        self.outgoing = outgoing
+        self.reply = reply
+        self.text = text
+        self.nameColor = nameColor
+        self.backgroundEmojiId = backgroundEmojiId
+        self.deleted = deleted
+    }
 }
 
 class ThemeSettingsChatPreviewItem: ListViewItem, ItemListItem {
@@ -53,8 +67,10 @@ class ThemeSettingsChatPreviewItem: ListViewItem, ItemListItem {
     let dateTimeFormat: PresentationDateTimeFormat
     let nameDisplayOrder: PresentationPersonNameOrder
     let messageItems: [ChatPreviewMessageItem]
+    let deletedMessageOpacity: Int32
+    let isPreview: Bool
     
-    init(context: AccountContext, systemStyle: ItemListSystemStyle = .legacy, theme: PresentationTheme, componentTheme: PresentationTheme, strings: PresentationStrings, sectionId: ItemListSectionId, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, wallpaper: TelegramWallpaper, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, messageItems: [ChatPreviewMessageItem]) {
+    init(context: AccountContext, systemStyle: ItemListSystemStyle = .legacy, theme: PresentationTheme, componentTheme: PresentationTheme, strings: PresentationStrings, sectionId: ItemListSectionId, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, wallpaper: TelegramWallpaper, dateTimeFormat: PresentationDateTimeFormat, nameDisplayOrder: PresentationPersonNameOrder, messageItems: [ChatPreviewMessageItem], deletedMessageOpacity: Int32 = 100, isPreview: Bool = true) {
         self.context = context
         self.systemStyle = systemStyle
         self.theme = theme
@@ -67,6 +83,8 @@ class ThemeSettingsChatPreviewItem: ListViewItem, ItemListItem {
         self.dateTimeFormat = dateTimeFormat
         self.nameDisplayOrder = nameDisplayOrder
         self.messageItems = messageItems
+        self.deletedMessageOpacity = deletedMessageOpacity
+        self.isPreview = isPreview
     }
     
     func nodeConfiguredForParams(async: @escaping (@escaping () -> Void) -> Void, params: ListViewItemLayoutParams, synchronousLoads: Bool, neighbors: ListViewItemNeighbors, completion: @escaping (ListViewItemNode, @escaping () -> (Signal<Void, NoError>?, (ListViewItemApply) -> Void)) -> Void) {
@@ -137,6 +155,15 @@ class ThemeSettingsChatPreviewItemNode: ListViewItemNode {
     deinit {
         self.disposable.dispose()
     }
+
+    func setDeletedMessageOpacity(_ value: Int32) {
+        guard let item = self.item, let nodes = self.messageNodes else {
+            return
+        }
+        for (index, message) in item.messageItems.reversed().enumerated() where message.deleted && index < nodes.count {
+            nodes[index].alpha = CGFloat(min(100, max(30, value))) / 100.0
+        }
+    }
     
     func asyncLayout() -> (_ item: ThemeSettingsChatPreviewItem, _ params: ListViewItemLayoutParams, _ neighbors: ItemListNeighbors) -> (ListViewItemNodeLayout, () -> Void) {
         let currentNodes = self.messageNodes
@@ -145,7 +172,7 @@ class ThemeSettingsChatPreviewItemNode: ListViewItemNode {
         
         return { [weak self] item, params, neighbors in
             if currentBackgroundNode == nil {
-                currentBackgroundNode = createWallpaperBackgroundNode(context: item.context, forChatDisplay: false)
+                currentBackgroundNode = createWallpaperBackgroundNode(context: item.context, forChatDisplay: !item.isPreview)
             }
             currentBackgroundNode?.update(wallpaper: item.wallpaper, animated: false)
             currentBackgroundNode?.updateBubbleTheme(bubbleTheme: item.componentTheme, bubbleCorners: item.chatBubbleCorners)
@@ -166,8 +193,8 @@ class ThemeSettingsChatPreviewItemNode: ListViewItemNode {
                     messages[replyMessageId] = EngineRawMessage(stableId: 3, stableVersion: 0, id: replyMessageId, globallyUniqueId: nil, groupingKey: nil, groupInfo: nil, threadId: nil, timestamp: 66000, flags: [.Incoming], tags: [], globalTags: [], localTags: [], customTags: [], forwardInfo: nil, author: peers[peerId], text: text, attributes: [], media: [], peers: peers, associatedMessages: EngineSimpleDictionary(), associatedMessageIds: [], associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:])
                 }
                 
-                let message = EngineRawMessage(stableId: 1, stableVersion: 0, id: EngineMessage.Id(peerId: messageItem.outgoing ? otherPeerId : peerId, namespace: 0, id: 1), globallyUniqueId: nil, groupingKey: nil, groupInfo: nil, threadId: nil, timestamp: 66000, flags: messageItem.outgoing ? [] : [.Incoming], tags: [], globalTags: [], localTags: [], customTags: [], forwardInfo: nil, author: messageItem.outgoing ? TelegramUser(id: otherPeerId, accessHash: nil, firstName: "", lastName: "", username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil) : nil, text: messageItem.text, attributes: messageItem.reply != nil ? [ReplyMessageAttribute(messageId: replyMessageId, threadMessageId: nil, quote: nil, isQuote: false, innerSubject: nil)] : [], media: [], peers: peers, associatedMessages: messages, associatedMessageIds: [], associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:])
-                items.append(item.context.sharedContext.makeChatMessagePreviewItem(context: item.context, messages: [EngineMessage(message)], theme: item.componentTheme, strings: item.strings, wallpaper: item.wallpaper, fontSize: item.fontSize, chatBubbleCorners: item.chatBubbleCorners, dateTimeFormat: item.dateTimeFormat, nameOrder: item.nameDisplayOrder, forcedResourceStatus: nil, tapMessage: nil, clickThroughMessage: nil, backgroundNode: currentBackgroundNode, availableReactions: nil, accountPeer: nil, isCentered: false, isPreview: true, isStandalone: false, rank: nil, rankRole: nil, isGiftMessageComposerPreview: false, activateGiftMessageInput: nil))
+                let message = EngineRawMessage(stableId: 1, stableVersion: 0, id: EngineMessage.Id(peerId: messageItem.outgoing ? otherPeerId : peerId, namespace: 0, id: 1), globallyUniqueId: nil, groupingKey: nil, groupInfo: nil, threadId: nil, timestamp: 66000, flags: messageItem.outgoing ? [] : [.Incoming], tags: [], globalTags: [], localTags: [], customTags: [], forwardInfo: nil, author: messageItem.outgoing ? TelegramUser(id: otherPeerId, accessHash: nil, firstName: "", lastName: "", username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil) : nil, text: messageItem.text, attributes: messageItem.deleted ? [MellowsgramDeletedMessageAttribute()] : messageItem.reply != nil ? [ReplyMessageAttribute(messageId: replyMessageId, threadMessageId: nil, quote: nil, isQuote: false, innerSubject: nil)] : [], media: [], peers: peers, associatedMessages: messages, associatedMessageIds: [], associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:])
+                items.append(item.context.sharedContext.makeChatMessagePreviewItem(context: item.context, messages: [EngineMessage(message)], theme: item.componentTheme, strings: item.strings, wallpaper: item.wallpaper, fontSize: item.fontSize, chatBubbleCorners: item.chatBubbleCorners, dateTimeFormat: item.dateTimeFormat, nameOrder: item.nameDisplayOrder, forcedResourceStatus: nil, tapMessage: nil, clickThroughMessage: nil, backgroundNode: currentBackgroundNode, availableReactions: nil, accountPeer: nil, isCentered: false, isPreview: item.isPreview, isStandalone: false, rank: nil, rankRole: nil, isGiftMessageComposerPreview: false, activateGiftMessageInput: nil))
             }
             
             var nodes: [ListViewItemNode] = []
@@ -218,6 +245,7 @@ class ThemeSettingsChatPreviewItemNode: ListViewItemNode {
                     strongSelf.containerNode.frame = CGRect(origin: CGPoint(), size: contentSize)
                     
                     strongSelf.messageNodes = nodes
+                    strongSelf.setDeletedMessageOpacity(item.deletedMessageOpacity)
                     var topOffset: CGFloat = 4.0
                     for node in nodes {
                         if node.supernode == nil {

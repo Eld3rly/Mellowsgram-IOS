@@ -51,31 +51,18 @@ public struct MellowsgramGlobalGhostModeSettings: Codable, Equatable {
 /// App-wide Mellowsgram preferences. Settings that already belong to a native
 /// Telegram preference model are intentionally not stored here.
 public enum MellowsgramGlobalSettingKey: String, CaseIterable {
+    // Appearance: chat, channels, tabs, folders, list and stories.
     case accountColorsSaturation
     case stickerSize
     case showStickerTimestamp
     case wideChannelPosts
     case channelBottomPanel
-    case protectScreenshots
-    case outgoingPhotoQuality
-    case sendHDPhotos
-    case barkNotificationsEnabled
-    case barkAllAccounts
-    case liveContainerNotificationLinks
-
-    // Global Ghost Mode policy. Per-account settings keep their own override
-    // values; Account.swift chooses between these values and that override.
-    case ghostGlobalMode
-    case ghostGlobalDontReadMessages
-    case ghostGlobalDontReadStories
-    case ghostGlobalDontSendOnline
-    case ghostGlobalDontSendTyping
-    case ghostGlobalGoOfflineAutomatically
-
-    case hideTabBar
+    case showContactsTab
+    case showCallsTab
     case showTabNames
     case searchButton
     case wideTabBar
+    case foldersAtBottom
     case hideAllChats
     case smallerFolderSpacing
     case allChatsTitle
@@ -90,54 +77,66 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     case askBeforeViewingStories
     case repostToStory
 
-    case showProfileId
-    case showDataCenter
-    case showRegistrationDate
-    case showChatCreationDate
-    case callConfirmation
-    case hidePhoneInSettings
-
-    case translationService
-    case quickTranslateButton
-    case transcriptionService
-    case forceDeviceMicrophone
-
-    case startRoundVideoWithRearCamera
-    case videoPipWithSwipe
-    case cameraInGallery
-    case cameraPreviewInGallery
-    case uploadBoost
-    case downloadBoost
-
-    case contextSaveToCloud
-    case contextHideSenderNames
-    case contextSelectFromAuthor
-    case contextRestrict
-    case contextReport
-    case contextReply
-    case contextPin
-    case contextSaveToFiles
-    case contextViewThread
-    case contextJSON
-
+    // Message controls and context actions.
     case secondsInMessages
     case doubleTapToEdit
     case voiceRecordingButton
     case messageDeletionEffects
     case sendAsButton
-    case pullToNextUnreadChannel
-    case pullToNextTopic
-    case hideReactions
     case sendWithReturnKey
     case emojiTabFirst
     case standardEmojisFirst
+    case pullToNextUnreadChannel
+    case pullToNextTopic
+    case hideReactions
+    case contextReply
+    case contextPin
+    case contextSaveToCloud
+    case contextSaveToFiles
+    case contextHideSenderNames
+    case contextSelectFromAuthor
+    case contextRestrict
+    case contextReport
+    case contextViewThread
+    case contextJSON
 
-    /// These values are owned by Telegram shared preferences and are surfaced
-    /// in this enum only so the Mellowsgram settings list has one stable key set.
-    case showContactsTab
-    case showCallsTab
-    case foldersAtBottom
+    // Media, voice, translation and transfers.
+    case outgoingPhotoQuality
+    case sendHDPhotos
+    case startRoundVideoWithRearCamera
+    case videoPipWithSwipe
+    case cameraInGallery
+    case cameraPreviewInGallery
+    case transcriptionService
+    case forceDeviceMicrophone
+    case translationService
+    case quickTranslateButton
     case translateEntireChats
+    case uploadBoost
+    case downloadBoost
+
+    // Profile and calls.
+    case showProfileId
+    case showDataCenter
+    case showRegistrationDate
+    case showChatCreationDate
+    case hidePhoneInSettings
+    case callConfirmation
+
+    // Privacy, push and global Ghost Mode.
+    case protectScreenshots
+    case barkNotificationsEnabled
+    case barkAllAccounts
+    case liveContainerNotificationLinks
+    case ghostGlobalMode
+    case ghostGlobalDontReadMessages
+    case ghostGlobalDontReadStories
+    case ghostGlobalDontSendOnline
+    case ghostGlobalDontSendTyping
+    case ghostGlobalGoOfflineAutomatically
+
+    // Decoding compatibility for old installations. The UI no longer offers it.
+    case hideTabBar
 
     public var defaultValue: String {
         switch self {
@@ -211,6 +210,11 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
     }
 
     public func value(for key: MellowsgramGlobalSettingKey) -> String {
+        if key == .hideTabBar {
+            // Retain the legacy key for decoding old settings, but never hide
+            // the only navigation bar after removing its control from the UI.
+            return "false"
+        }
         return self.values[key.rawValue] ?? key.defaultValue
     }
 
@@ -244,7 +248,7 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
     }
 
     public func withUpdatedValue(_ value: String, for key: MellowsgramGlobalSettingKey) -> MellowsgramGlobalSettings {
-        guard !key.isTelegramPreference else {
+        guard !key.isTelegramPreference && key != .hideTabBar else {
             return self
         }
         var values = self.values

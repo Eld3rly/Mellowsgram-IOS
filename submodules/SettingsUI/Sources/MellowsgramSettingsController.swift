@@ -41,26 +41,26 @@ private func mellowsgramBarkInstallationSignal() -> Signal<Bool, NoError> {
 
 private enum MellowsgramSettingsCategory: Int32, CaseIterable {
     case spyAndGhost
-    case backgroundNotifications
     case appearance
-    case profilesAndCalls
-    case mediaAndVoice
     case messagesAndContext
+    case mediaAndVoice
+    case profilesAndCalls
+    case backgroundNotifications
 
     func title(languageCode: String) -> String {
         switch self {
         case .spyAndGhost:
-            return mellowsgramText("Spy&Ghost", "Шпионаж и невидимость", languageCode: languageCode)
+            return mellowsgramText("Ghost & Archive", "Невидимка и архив", languageCode: languageCode)
         case .backgroundNotifications:
-            return mellowsgramText("Background Notifications", "Фоновые уведомления", languageCode: languageCode)
+            return mellowsgramText("Push Notifications", "Push-уведомления", languageCode: languageCode)
         case .appearance:
             return mellowsgramText("Appearance", "Внешний вид", languageCode: languageCode)
         case .profilesAndCalls:
             return mellowsgramText("Profiles & Calls", "Профили и звонки", languageCode: languageCode)
         case .mediaAndVoice:
-            return mellowsgramText("Media & Voice", "Медиа и голос", languageCode: languageCode)
+            return mellowsgramText("Media & Translation", "Медиа и перевод", languageCode: languageCode)
         case .messagesAndContext:
-            return mellowsgramText("Messages & Context", "Сообщения и меню", languageCode: languageCode)
+            return mellowsgramText("Messages & Actions", "Сообщения и действия", languageCode: languageCode)
         }
     }
 }
@@ -125,11 +125,13 @@ private extension MellowsgramGlobalSettingKey {
     var mellowsgramCategory: MellowsgramSettingsCategory {
         switch self {
         case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
-             .hideTabBar, .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
+             .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
              .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder,
-             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat, .protectScreenshots,
+             .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat,
              .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
             return .appearance
+        case .protectScreenshots, .hideTabBar:
+            return .spyAndGhost
         case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
             return .backgroundNotifications
         case .ghostGlobalMode, .ghostGlobalDontReadMessages, .ghostGlobalDontReadStories, .ghostGlobalDontSendOnline, .ghostGlobalDontSendTyping, .ghostGlobalGoOfflineAutomatically:
@@ -145,6 +147,49 @@ private extension MellowsgramGlobalSettingKey {
              .secondsInMessages, .doubleTapToEdit, .voiceRecordingButton, .messageDeletionEffects, .sendAsButton,
              .pullToNextUnreadChannel, .pullToNextTopic, .hideReactions, .sendWithReturnKey, .emojiTabFirst, .standardEmojisFirst:
             return .messagesAndContext
+        }
+    }
+
+    func mellowsgramGroupTitle(languageCode: String) -> String {
+        switch self {
+        case .accountColorsSaturation, .stickerSize, .showStickerTimestamp:
+            return mellowsgramText("Colors & Stickers", "Цвета и стикеры", languageCode: languageCode)
+        case .wideChannelPosts, .channelBottomPanel:
+            return mellowsgramText("Channels", "Каналы", languageCode: languageCode)
+        case .showContactsTab, .showCallsTab, .showTabNames, .searchButton, .wideTabBar:
+            return mellowsgramText("Tab Bar", "Панель вкладок", languageCode: languageCode)
+        case .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder:
+            return mellowsgramText("Chat Folders", "Папки чатов", languageCode: languageCode)
+        case .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat:
+            return mellowsgramText("Chat List", "Список чатов", languageCode: languageCode)
+        case .hideStories, .disableSwipeToRecordStory, .askBeforeViewingStories, .repostToStory:
+            return mellowsgramText("Stories", "Истории", languageCode: languageCode)
+        case .secondsInMessages, .doubleTapToEdit, .voiceRecordingButton, .messageDeletionEffects, .sendAsButton, .sendWithReturnKey, .emojiTabFirst, .standardEmojisFirst:
+            return mellowsgramText("Messages & Input", "Сообщения и ввод", languageCode: languageCode)
+        case .pullToNextUnreadChannel, .pullToNextTopic, .hideReactions:
+            return mellowsgramText("Chat Navigation", "Навигация по чатам", languageCode: languageCode)
+        case .contextReply, .contextPin, .contextSaveToCloud, .contextSaveToFiles, .contextHideSenderNames, .contextSelectFromAuthor, .contextRestrict, .contextReport, .contextViewThread, .contextJSON:
+            return mellowsgramText("Context Menu", "Меню сообщения", languageCode: languageCode)
+        case .outgoingPhotoQuality, .sendHDPhotos:
+            return mellowsgramText("Photos", "Фотографии", languageCode: languageCode)
+        case .startRoundVideoWithRearCamera, .videoPipWithSwipe, .cameraInGallery, .cameraPreviewInGallery:
+            return mellowsgramText("Video & Gallery", "Видео и галерея", languageCode: languageCode)
+        case .transcriptionService, .forceDeviceMicrophone:
+            return mellowsgramText("Voice", "Голосовые", languageCode: languageCode)
+        case .translationService, .quickTranslateButton, .translateEntireChats:
+            return mellowsgramText("Translation", "Перевод", languageCode: languageCode)
+        case .uploadBoost, .downloadBoost:
+            return mellowsgramText("Transfers", "Передача файлов", languageCode: languageCode)
+        case .showProfileId, .showDataCenter, .showRegistrationDate, .showChatCreationDate, .hidePhoneInSettings:
+            return mellowsgramText("Profiles", "Профили", languageCode: languageCode)
+        case .callConfirmation:
+            return mellowsgramText("Calls", "Звонки", languageCode: languageCode)
+        case .protectScreenshots:
+            return mellowsgramText("Privacy", "Приватность", languageCode: languageCode)
+        case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
+            return "Bark"
+        case .ghostGlobalMode, .ghostGlobalDontReadMessages, .ghostGlobalDontReadStories, .ghostGlobalDontSendOnline, .ghostGlobalDontSendTyping, .ghostGlobalGoOfflineAutomatically, .hideTabBar:
+            return mellowsgramText("Ghost Mode", "Режим невидимки", languageCode: languageCode)
         }
     }
 
@@ -443,9 +488,9 @@ private enum MellowsgramRootControllerEntry: ItemListNodeEntry {
             case .appearance:
                 icon = PresentationResourcesSettings.appearance
             case .profilesAndCalls:
-                icon = PresentationResourcesSettings.devices
+                icon = PresentationResourcesSettings.myProfile
             case .mediaAndVoice:
-                icon = PresentationResourcesSettings.dataAndStorage
+                icon = PresentationResourcesSettings.photos
             case .messagesAndContext:
                 icon = PresentationResourcesSettings.chatHistory
             }
@@ -612,7 +657,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case appearanceHeader
     case deletedMessageOpacity(Int32)
     case appearanceFooter
-    case globalSettingsHeader(String)
+    case globalGroupHeader(MellowsgramGlobalSettingKey, String)
     case globalSetting(MellowsgramGlobalSettingKey, String, Bool)
 
     var section: ItemListSectionId {
@@ -667,10 +712,10 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return 24
         case .appearanceFooter:
             return 25
-        case .globalSettingsHeader:
-            return 30
+        case let .globalGroupHeader(key, _):
+            return 39 + 2 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
         case let .globalSetting(key, _, _):
-            return 40 + Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
+            return 40 + 2 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
         }
     }
 
@@ -765,13 +810,15 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
                 title: mellowsgramText("Deleted Message Opacity", "Непрозрачность удалённых сообщений", languageCode: languageCode),
                 limits: ("30%", "100%"),
                 value: value,
-                sampleText: mellowsgramText("Deleted message", "Удалённое сообщение", languageCode: languageCode),
+                sampleText: "",
                 sectionId: self.section,
+                chatPreviewContext: arguments.context,
+                chatPreviewPresentationData: arguments.context.sharedContext.currentPresentationData.with { $0 },
                 updated: arguments.updateDeletedMessageOpacity
             )
         case .appearanceFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(mellowsgramText("Changes only the appearance of locally archived deleted-message rows.", "Меняет только отображение локальных строк удалённых сообщений.", languageCode: languageCode)), sectionId: self.section)
-        case let .globalSettingsHeader(title):
+        case let .globalGroupHeader(_, title):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: title, sectionId: self.section)
         case let .globalSetting(key, value, enabled):
             if key.mellowsgramIsPercentageSlider {
@@ -813,9 +860,11 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
     let value: Int32
     let sampleText: String
     let sectionId: ItemListSectionId
+    let chatPreviewContext: AccountContext?
+    let chatPreviewPresentationData: PresentationData?
     let updated: (Int32) -> Void
 
-    init(theme: PresentationTheme, key: MellowsgramSliderKey, title: String, limits: (minimum: String, maximum: String), value: Int32, sampleText: String, sectionId: ItemListSectionId, updated: @escaping (Int32) -> Void) {
+    init(theme: PresentationTheme, key: MellowsgramSliderKey, title: String, limits: (minimum: String, maximum: String), value: Int32, sampleText: String, sectionId: ItemListSectionId, chatPreviewContext: AccountContext? = nil, chatPreviewPresentationData: PresentationData? = nil, updated: @escaping (Int32) -> Void) {
         self.theme = theme
         self.key = key
         self.title = title
@@ -823,6 +872,8 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
         self.value = key == .deletedMessageOpacity ? min(100, max(30, value)) : min(100, max(0, value))
         self.sampleText = sampleText
         self.sectionId = sectionId
+        self.chatPreviewContext = chatPreviewContext
+        self.chatPreviewPresentationData = chatPreviewPresentationData
         self.updated = updated
     }
 
@@ -835,7 +886,7 @@ private final class MellowsgramPercentageSliderItem: ListViewItem, ItemListItem 
         case .global(.outgoingPhotoQuality):
             return 152.0
         case .deletedMessageOpacity:
-            return 154.0
+            return 180.0
         default:
             return 0.0
         }
@@ -1000,8 +1051,6 @@ private final class MellowsgramSliderPreviewView: UIView {
             self.drawStickerSizePreview(in: rect)
         case .global(.outgoingPhotoQuality):
             self.drawPhotoQualityPreview(in: rect)
-        case .deletedMessageOpacity:
-            self.drawDeletedMessageOpacityPreview(in: rect)
         default:
             break
         }
@@ -1065,37 +1114,6 @@ private final class MellowsgramSliderPreviewView: UIView {
         (badgeText as NSString).draw(at: CGPoint(x: badgeRect.minX + 6.0, y: badgeRect.minY + 3.0), withAttributes: [.font: badgeFont, .foregroundColor: UIColor.white])
     }
 
-    private func drawDeletedMessageOpacityPreview(in rect: CGRect) {
-        let background = UIColor(red: 0.12, green: 0.24, blue: 0.20, alpha: 1.0)
-        background.setFill()
-        UIBezierPath(roundedRect: rect.insetBy(dx: 8.0, dy: 8.0), cornerRadius: 12.0).fill()
-
-        let incomingRect = CGRect(x: 20.0, y: 18.0, width: min(230.0, rect.width * 0.68), height: 46.0)
-        let outgoingRect = CGRect(x: max(20.0, rect.width - min(230.0, rect.width * 0.68) - 20.0), y: rect.height - 64.0, width: min(230.0, rect.width * 0.68), height: 46.0)
-
-        // The setting affects the complete deleted row in the chat, not only
-        // the tombstone label. Mirror that here so the preview is useful while
-        // the slider is being dragged.
-        let deletedAlpha = CGFloat(self.value) / 100.0
-        let context = UIGraphicsGetCurrentContext()
-        context?.saveGState()
-        context?.setAlpha(deletedAlpha)
-        UIColor(white: 0.96, alpha: 1.0).setFill()
-        UIBezierPath(roundedRect: incomingRect, cornerRadius: 16.0).fill()
-        let deletedText = "▱  Deleted message"
-        (deletedText as NSString).draw(in: incomingRect.insetBy(dx: 14.0, dy: 13.0), withAttributes: [
-            .font: UIFont.systemFont(ofSize: 13.0, weight: .semibold),
-            .foregroundColor: UIColor(red: 0.20, green: 0.32, blue: 0.40, alpha: 1.0)
-        ])
-        context?.restoreGState()
-
-        UIColor(red: 0.30, green: 0.53, blue: 0.91, alpha: 1.0).setFill()
-        UIBezierPath(roundedRect: outgoingRect, cornerRadius: 16.0).fill()
-        ("Mock message" as NSString).draw(in: outgoingRect.insetBy(dx: 14.0, dy: 13.0), withAttributes: [
-            .font: UIFont.systemFont(ofSize: 14.0, weight: .medium),
-            .foregroundColor: UIColor.white
-        ])
-    }
 }
 
 private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
@@ -1109,7 +1127,10 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
     private let maximumTextNode: ImmediateTextNode
     private var sliderView: TGPhotoEditorSliderView?
     private var previewView: MellowsgramSliderPreviewView?
+    private var chatPreviewNode: ThemeSettingsChatPreviewItemNode?
     private var item: MellowsgramPercentageSliderItem?
+    private var editingValue: Int32?
+    private var pendingValue: Int32?
     private var valueTextRightInset: CGFloat = 16.0
     private var sliderFrame: CGRect = .zero
     private var previewFrame: CGRect = .zero
@@ -1155,16 +1176,11 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
         sliderView.interactionEnded = { [weak self] in
             self?.sliderEditingEnded()
         }
-        let previewView = MellowsgramSliderPreviewView()
-        previewView.isUserInteractionEnabled = false
-        previewView.frame = self.previewFrame
-        self.view.addSubview(previewView)
-        self.previewView = previewView
         self.view.addSubview(sliderView)
         self.sliderView = sliderView
         if let item = self.item {
+            self.updatePreview(item: item, params: nil, value: self.displayedValue(for: item))
             self.updateSliderView(sliderView, item: item, themeUpdated: true)
-            self.updatePreviewView(previewView, item: item, value: item.value)
         }
     }
 
@@ -1180,6 +1196,10 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
                     return
                 }
                 self.item = item
+                if self.pendingValue == item.value {
+                    self.pendingValue = nil
+                }
+                let value = self.displayedValue(for: item)
                 let separatorHeight = UIScreenPixel
                 let hasCorners = itemListHasRoundedBlockLayout(params)
                 let hasTopCorners: Bool
@@ -1219,7 +1239,7 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
                 let secondaryColor = item.theme.list.itemSecondaryTextColor
                 self.titleTextNode.attributedText = NSAttributedString(string: item.title, font: Font.regular(15.0), textColor: item.theme.list.itemPrimaryTextColor)
                 self.minimumTextNode.attributedText = NSAttributedString(string: item.limits.minimum, font: Font.regular(12.0), textColor: secondaryColor)
-                self.valueTextNode.attributedText = NSAttributedString(string: "\(item.value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
+                self.valueTextNode.attributedText = NSAttributedString(string: "\(value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
                 self.maximumTextNode.attributedText = NSAttributedString(string: item.limits.maximum, font: Font.regular(12.0), textColor: secondaryColor)
                 let titleSize = self.titleTextNode.updateLayout(CGSize(width: max(0.0, params.width - params.leftInset - params.rightInset - 112.0), height: 24.0))
                 let minimumSize = self.minimumTextNode.updateLayout(CGSize(width: max(0.0, params.width * 0.5), height: 20.0))
@@ -1234,18 +1254,33 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
                 self.sliderFrame = CGRect(x: params.leftInset + 16.0, y: 34.0, width: params.width - params.leftInset - params.rightInset - 32.0, height: 40.0)
                 self.sliderHitTestRightInset = -(params.rightInset + 16.0)
                 self.previewFrame = CGRect(x: 0.0, y: 104.0, width: params.width, height: item.previewHeight)
-                if let previewView = self.previewView {
-                    previewView.frame = self.previewFrame
-                    self.updatePreviewView(previewView, item: item, value: item.value)
-                }
+                self.updatePreview(item: item, params: params, value: value)
                 if let sliderView = self.sliderView {
-                    self.updateSliderView(sliderView, item: item, themeUpdated: themeUpdated)
+                    self.updateSliderView(sliderView, item: item, value: value, themeUpdated: themeUpdated)
                 }
             })
         }
     }
 
-    private func updateSliderView(_ sliderView: TGPhotoEditorSliderView, item: MellowsgramPercentageSliderItem, themeUpdated: Bool) {
+    private func displayedValue(for item: MellowsgramPercentageSliderItem) -> Int32 {
+        return self.editingValue ?? self.pendingValue ?? item.value
+    }
+
+    private func sliderPosition(for value: Int32, key: MellowsgramSliderKey) -> CGFloat {
+        if key == .deletedMessageOpacity {
+            return CGFloat(value - 30) / 70.0
+        }
+        return CGFloat(value) / 100.0
+    }
+
+    private func percentage(for position: CGFloat, key: MellowsgramSliderKey) -> Int32 {
+        if key == .deletedMessageOpacity {
+            return min(100, max(30, Int32((30.0 + position * 70.0).rounded())))
+        }
+        return min(100, max(0, Int32((position * 100.0).rounded())))
+    }
+
+    private func updateSliderView(_ sliderView: TGPhotoEditorSliderView, item: MellowsgramPercentageSliderItem, value: Int32, themeUpdated: Bool) {
         if themeUpdated || sliderView.backgroundColor == nil {
             sliderView.backgroundColor = item.theme.list.itemBlocksBackgroundColor
             sliderView.backColor = item.theme.list.itemSwitchColors.frameColor
@@ -1253,45 +1288,98 @@ private final class MellowsgramPercentageSliderItemNode: ListViewItemNode {
             sliderView.trackColor = item.theme.list.itemAccentColor
             sliderView.knobImage = PresentationResourcesItemList.knobImage(item.theme)
         }
-        sliderView.minimumValue = item.key == .deletedMessageOpacity ? 0.3 : 0.0
+        sliderView.minimumValue = 0.0
         sliderView.maximumValue = 1.0
-        sliderView.value = CGFloat(item.value) / 100.0
+        if !sliderView.isTracking {
+            sliderView.value = self.sliderPosition(for: value, key: item.key)
+        }
         sliderView.accessibilityLabel = item.title
-        sliderView.accessibilityValue = "\(item.value)%"
+        sliderView.accessibilityValue = "\(value)%"
         sliderView.frame = self.sliderFrame
         sliderView.hitTestEdgeInsets = UIEdgeInsets(top: -sliderView.frame.minY, left: 0.0, bottom: 0.0, right: self.sliderHitTestRightInset)
     }
 
-    private func updatePreviewView(_ previewView: MellowsgramSliderPreviewView, item: MellowsgramPercentageSliderItem, value: Int32) {
-        previewView.update(
-            key: item.key,
-            value: value,
-            sampleText: item.sampleText,
-            textColor: item.theme.list.itemPrimaryTextColor,
-            separatorColor: item.theme.list.itemBlocksSeparatorColor
-        )
+    private func updatePreview(item: MellowsgramPercentageSliderItem, params: ListViewItemLayoutParams?, value: Int32) {
+        if item.key == .deletedMessageOpacity, let context = item.chatPreviewContext, let presentationData = item.chatPreviewPresentationData {
+            self.previewView?.removeFromSuperview()
+            self.previewView = nil
+            let previewNode: ThemeSettingsChatPreviewItemNode
+            if let current = self.chatPreviewNode {
+                previewNode = current
+            } else {
+                previewNode = ThemeSettingsChatPreviewItemNode()
+                previewNode.isUserInteractionEnabled = false
+                self.addSubnode(previewNode)
+                self.chatPreviewNode = previewNode
+            }
+            if let params {
+                let languageCode = presentationData.strings.primaryComponent.languageCode
+                let previewItem = ThemeSettingsChatPreviewItem(
+                    context: context,
+                    systemStyle: .glass,
+                    theme: presentationData.theme,
+                    componentTheme: presentationData.theme,
+                    strings: presentationData.strings,
+                    sectionId: item.sectionId,
+                    fontSize: presentationData.chatFontSize,
+                    chatBubbleCorners: presentationData.chatBubbleCorners,
+                    wallpaper: presentationData.chatWallpaper,
+                    dateTimeFormat: presentationData.dateTimeFormat,
+                    nameDisplayOrder: presentationData.nameDisplayOrder,
+                    messageItems: [
+                        ChatPreviewMessageItem(outgoing: false, reply: nil, text: mellowsgramText("Hi! How are you?", "Привет! Как дела?", languageCode: languageCode), nameColor: .preset(.blue), backgroundEmojiId: nil, deleted: true),
+                        ChatPreviewMessageItem(outgoing: true, reply: nil, text: mellowsgramText("Hi! Not bad, how about you?", "Привет! Неплохо, а у тебя?", languageCode: languageCode), nameColor: .preset(.blue), backgroundEmojiId: nil)
+                    ],
+                    deletedMessageOpacity: value,
+                    isPreview: false
+                )
+                let (layout, apply) = previewNode.asyncLayout()(previewItem, params, ItemListNeighbors(top: .sameSection(alwaysPlain: false), bottom: .sameSection(alwaysPlain: false)))
+                previewNode.contentSize = layout.contentSize
+                previewNode.insets = layout.insets
+                previewNode.frame = CGRect(x: 0.0, y: self.previewFrame.minY, width: params.width, height: min(item.previewHeight, layout.contentSize.height))
+                apply()
+            }
+            previewNode.setDeletedMessageOpacity(value)
+        } else {
+            self.chatPreviewNode?.removeFromSupernode()
+            self.chatPreviewNode = nil
+            let previewView: MellowsgramSliderPreviewView
+            if let current = self.previewView {
+                previewView = current
+            } else {
+                previewView = MellowsgramSliderPreviewView()
+                previewView.isUserInteractionEnabled = false
+                self.view.addSubview(previewView)
+                self.previewView = previewView
+            }
+            previewView.frame = self.previewFrame
+            previewView.update(key: item.key, value: value, sampleText: item.sampleText, textColor: item.theme.list.itemPrimaryTextColor, separatorColor: item.theme.list.itemBlocksSeparatorColor)
+        }
     }
 
     @objc private func sliderValueChanged() {
         guard let sliderView = self.sliderView, let item = self.item else {
             return
         }
-        let value = min(100, max(item.key == .deletedMessageOpacity ? 30 : 0, Int32((sliderView.value * 100.0).rounded())))
+        let value = self.percentage(for: sliderView.value, key: item.key)
+        self.editingValue = value
         self.valueTextNode.attributedText = NSAttributedString(string: "\(value)%", font: Font.semibold(14.0), textColor: item.theme.list.itemPrimaryTextColor)
         let valueSize = self.valueTextNode.updateLayout(CGSize(width: 84.0, height: 24.0))
         self.valueTextNode.frame = CGRect(x: self.bounds.width - self.valueTextRightInset - valueSize.width, y: 10.0, width: valueSize.width, height: valueSize.height)
         sliderView.accessibilityLabel = self.item?.title ?? "Slider"
         sliderView.accessibilityValue = "\(value)%"
-        if let item = self.item, let previewView = self.previewView {
-            self.updatePreviewView(previewView, item: item, value: value)
-        }
+        self.chatPreviewNode?.setDeletedMessageOpacity(value)
+        self.previewView?.update(key: item.key, value: value, sampleText: item.sampleText, textColor: item.theme.list.itemPrimaryTextColor, separatorColor: item.theme.list.itemBlocksSeparatorColor)
     }
 
     @objc private func sliderEditingEnded() {
-        guard let sliderView = self.sliderView else {
+        guard let sliderView = self.sliderView, let item = self.item else {
             return
         }
-        self.item?.updated(Int32((sliderView.value * 100.0).rounded()))
+        let value = self.percentage(for: sliderView.value, key: item.key)
+        self.editingValue = nil
+        self.pendingValue = value
+        item.updated(value)
     }
 }
 
@@ -1387,22 +1475,20 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
     }
 
     let globalKeys = MellowsgramGlobalSettingKey.allCases.filter { key in
-        key != .liveContainerNotificationLinks && !key.isGlobalGhostPolicyKey && key.mellowsgramCategory == category && (onlySetting == nil || onlySetting == key)
+        key != .hideTabBar && key != .liveContainerNotificationLinks && !key.isGlobalGhostPolicyKey && key.mellowsgramCategory == category && (onlySetting == nil || onlySetting == key)
     }
     if !globalKeys.isEmpty {
-        if category == .appearance && onlySetting == nil {
-            entries.removeLast()
-        }
-        if category != .appearance || onlySetting != nil {
-            entries.append(.globalSettingsHeader(category.title(languageCode: languageCode)))
-        }
-        entries.append(contentsOf: globalKeys.map { key in
+        var lastGroupTitle: String?
+        for key in globalKeys {
+            let groupTitle = key.mellowsgramGroupTitle(languageCode: languageCode)
+            if groupTitle != lastGroupTitle {
+                entries.append(.globalGroupHeader(key, groupTitle))
+                lastGroupTitle = groupTitle
+            }
             let enabled: Bool
             switch key {
             case .barkAllAccounts:
                 enabled = snapshot.global.bool(for: .barkNotificationsEnabled)
-            case .showContactsTab, .showCallsTab, .showTabNames, .searchButton, .wideTabBar:
-                enabled = !snapshot.global.bool(for: .hideTabBar)
             case .swipeToDeleteChat:
                 enabled = snapshot.global.bool(for: .chatListSwipeOptions)
             case .cameraPreviewInGallery:
@@ -1412,8 +1498,8 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             default:
                 enabled = true
             }
-            return .globalSetting(key, snapshot.value(for: key), enabled)
-        })
+            entries.append(.globalSetting(key, snapshot.value(for: key), enabled))
+        }
     }
 
     if category == .backgroundNotifications && onlySetting == nil {
@@ -1425,7 +1511,7 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
             switch entry {
             case .globalSetting(let key, _, _):
                 return key == onlySetting
-            case .globalSettingsHeader:
+            case .globalGroupHeader:
                 return true
             default:
                 return false
