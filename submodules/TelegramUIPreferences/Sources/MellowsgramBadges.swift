@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import UIKit
 import AppBundle
+import Display
 import TelegramCore
 import SwiftSignalKit
 
@@ -131,18 +132,23 @@ private func mellowsgramDrawBadgeGlyph(_ badge: MellowsgramBadge, in rect: CGRec
         if let masks = mellowsgramVerifiedBadgeMasks,
            let backgroundMask = masks.background.cgImage,
            let foregroundMask = masks.foreground.cgImage,
-           let context = UIGraphicsGetCurrentContext() {
-            context.saveGState()
-            context.clip(to: rect, mask: backgroundMask)
-            context.setFillColor(background.cgColor)
-            context.fill(rect)
-            context.restoreGState()
+           let nativeImage = generateImage(rect.size, contextGenerator: { size, context in
+               let imageRect = CGRect(origin: .zero, size: size)
+               context.clear(imageRect)
+               context.saveGState()
+               context.clip(to: imageRect, mask: backgroundMask)
+               context.setFillColor(background.cgColor)
+               context.fill(imageRect)
+               context.restoreGState()
 
-            context.saveGState()
-            context.clip(to: rect, mask: foregroundMask)
-            context.setFillColor(foreground.cgColor)
-            context.fill(rect)
-            context.restoreGState()
+               context.saveGState()
+               context.setBlendMode(.copy)
+               context.clip(to: imageRect, mask: foregroundMask)
+               context.setFillColor(foreground.cgColor)
+               context.fill(imageRect)
+               context.restoreGState()
+           }, opaque: false) {
+            nativeImage.draw(in: rect)
         } else {
             let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 8)
             background.setFill()
