@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import UIKit
+import AppBundle
 import TelegramCore
 import SwiftSignalKit
 
@@ -39,6 +40,13 @@ private struct MellowsgramBadgeEnvelope: Decodable, Encodable {
 }
 
 private let mellowsgramBadgeImageCache = NSCache<NSString, UIImage>()
+private let mellowsgramVerifiedBadgeMasks: (background: UIImage, foreground: UIImage)? = {
+    guard let background = UIImage(bundleImageName: "Chat List/PeerVerifiedIconBackground"),
+          let foreground = UIImage(bundleImageName: "Chat List/PeerVerifiedIconForeground") else {
+        return nil
+    }
+    return (background, foreground)
+}()
 
 private func mellowsgramBadgeColor(_ value: String, fallback: UIColor) -> UIColor {
     var hex = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -118,20 +126,37 @@ private func mellowsgramDrawBadgeGlyph(_ badge: MellowsgramBadge, in rect: CGRec
 
     switch iconId {
     case "verified", "official", "check":
-        // Telegram's official badge is an icon-only eight-point rosette. The
-        // manifest controls both colors; blue is only a server-side default.
-        let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 8)
-        background.setFill()
-        backgroundPath.fill()
-        let check = UIBezierPath()
-        check.move(to: CGPoint(x: rect.minX + rect.width * 0.27, y: rect.midY))
-        check.addLine(to: CGPoint(x: rect.minX + rect.width * 0.45, y: rect.minY + rect.height * 0.66))
-        check.addLine(to: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.34))
-        check.lineWidth = max(1.4, rect.width * 0.11)
-        check.lineCapStyle = .round
-        check.lineJoinStyle = .round
-        foreground.setStroke()
-        check.stroke()
+        // Use Telegram's own verified badge masks, colored by the signed
+        // manifest, so the shape matches a native verified peer exactly.
+        if let masks = mellowsgramVerifiedBadgeMasks,
+           let backgroundMask = masks.background.cgImage,
+           let foregroundMask = masks.foreground.cgImage,
+           let context = UIGraphicsGetCurrentContext() {
+            context.saveGState()
+            context.clip(to: rect, mask: backgroundMask)
+            context.setFillColor(background.cgColor)
+            context.fill(rect)
+            context.restoreGState()
+
+            context.saveGState()
+            context.clip(to: rect, mask: foregroundMask)
+            context.setFillColor(foreground.cgColor)
+            context.fill(rect)
+            context.restoreGState()
+        } else {
+            let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 8)
+            background.setFill()
+            backgroundPath.fill()
+            let check = UIBezierPath()
+            check.move(to: CGPoint(x: rect.minX + rect.width * 0.27, y: rect.midY))
+            check.addLine(to: CGPoint(x: rect.minX + rect.width * 0.45, y: rect.minY + rect.height * 0.66))
+            check.addLine(to: CGPoint(x: rect.minX + rect.width * 0.76, y: rect.minY + rect.height * 0.34))
+            check.lineWidth = max(1.4, rect.width * 0.11)
+            check.lineCapStyle = .round
+            check.lineJoinStyle = .round
+            foreground.setStroke()
+            check.stroke()
+        }
     case "bot", "star":
         let backgroundPath = mellowsgramStarburstPath(center: center, outerRadius: rect.width * 0.48, innerRadius: rect.width * 0.39, points: 8)
         background.setFill()
@@ -207,7 +232,7 @@ public func mellowsgramBadgeImage(_ badges: [MellowsgramBadge], size: CGFloat = 
             )
             mellowsgramDrawBadgeGlyph(badge, in: rect)
         }
-    }
+    }.withRenderingMode(.alwaysOriginal)
     mellowsgramBadgeImageCache.setObject(image, forKey: key as NSString)
     return image
 }

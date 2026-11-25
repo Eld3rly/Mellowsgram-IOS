@@ -591,6 +591,8 @@ public final class ChatTitleComponent: Component {
         private var credibilityIcon: ComponentView<Empty>?
         private var verifiedIcon: ComponentView<Empty>?
         private var statusIcon: ComponentView<Empty>?
+        private var mellowsgramBadgeView: UIImageView?
+        private let mellowsgramBadgeDisposable = MetaDisposable()
         
         private var presenceManager: PeerPresenceStatusManager?
         
@@ -613,6 +615,16 @@ public final class ChatTitleComponent: Component {
                 }
                 self.state?.updated(transition: .spring(duration: 0.4))
             })
+
+            var isInitialBadgeValue = true
+            self.mellowsgramBadgeDisposable.set((MellowsgramBadgeRuntime.shared.signal
+            |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+                if isInitialBadgeValue {
+                    isInitialBadgeValue = false
+                    return
+                }
+                self?.state?.updated(transition: .immediate)
+            }))
             
             let recognizer = TapLongTapOrDoubleTapGestureRecognizer(target: self, action: #selector(self.onTapGesture(_:)))
             recognizer.tapActionAtPoint = { _ in
@@ -631,6 +643,7 @@ public final class ChatTitleComponent: Component {
         
         deinit {
             self.agentSelectionDisposable.dispose()
+            self.mellowsgramBadgeDisposable.dispose()
         }
         
         private func observeAgentSelection(peerId: EnginePeer.Id) {
@@ -682,6 +695,7 @@ public final class ChatTitleComponent: Component {
             var titleCredibilityIcon: ChatTitleCredibilityIcon = .none
             var titleVerifiedIcon: ChatTitleCredibilityIcon = .none
             var titleStatusIcon: ChatTitleCredibilityIcon = .none
+            var mellowsgramBadges: [MellowsgramBadge] = []
             var hidesGlass = false
             var isEnabled = true
             switch component.content {
@@ -754,6 +768,10 @@ public final class ChatTitleComponent: Component {
                         // A topic's title (its own, with the peer's status hidden) is not the peer's name: its marks don't apply.
                         let isTopicTitle = customTitle != nil && hidePeerStatus
                         if peer.id != component.context.account.peerId, !isTopicTitle {
+                            mellowsgramBadges = MellowsgramBadgeRuntime.shared.badges(
+                                peerNamespace: peer.id.namespace._internalGetInt32Value(),
+                                peerId: peer.id.id._internalGetInt64Value()
+                            )
                             let premiumConfiguration = PremiumConfiguration.with(appConfiguration: component.context.currentAppConfiguration.with({ $0 }))
                             if peer.isFake {
                                 titleCredibilityIcon = .fake
@@ -1408,6 +1426,8 @@ public final class ChatTitleComponent: Component {
                     })
                 }
             }
+
+            let mellowsgramBadge = mellowsgramBadgeImage(mellowsgramBadges, size: 20.0)
             
             let subtitleNode: ChatTitleActivityNode
             if let current = self.subtitleNode {
@@ -1428,6 +1448,9 @@ public final class ChatTitleComponent: Component {
             }
             
             var titleRightIconsWidth: CGFloat = 0.0
+            if let mellowsgramBadge {
+                titleRightIconsWidth += mellowsgramBadge.size.width + statusIconsSpacing
+            }
             if let rightIconSize {
                 titleRightIconsWidth += rightIconSize.width + rightTitleIconSpacing
             }
@@ -1438,7 +1461,7 @@ public final class ChatTitleComponent: Component {
                 titleRightIconsWidth += statusIconSize.width + statusIconsSpacing
             }
             
-            let maxTitleWidth = availableSize.width - titleLeftIconsWidth - titleRightIconsWidth - containerSideInset * 2.0
+            let maxTitleWidth = max(0.0, availableSize.width - titleLeftIconsWidth - titleRightIconsWidth - containerSideInset * 2.0)
             
             let titleSize = self.title.update(
                 transition: transition,
@@ -1542,6 +1565,31 @@ public final class ChatTitleComponent: Component {
             }
             
             var nextRightIconX: CGFloat = titleFrame.maxX
+
+            if let mellowsgramBadge {
+                let badgeView: UIImageView
+                if let current = self.mellowsgramBadgeView {
+                    badgeView = current
+                } else {
+                    badgeView = UIImageView()
+                    badgeView.contentMode = .scaleAspectFit
+                    badgeView.isUserInteractionEnabled = false
+                    self.mellowsgramBadgeView = badgeView
+                    self.contentContainer.addSubview(badgeView)
+                }
+                badgeView.image = mellowsgramBadge
+                let badgeFrame = CGRect(
+                    x: nextRightIconX + statusIconsSpacing,
+                    y: floorToScreenPixels(titleFrame.midY - mellowsgramBadge.size.height * 0.5),
+                    width: mellowsgramBadge.size.width,
+                    height: mellowsgramBadge.size.height
+                )
+                transition.setFrame(view: badgeView, frame: badgeFrame)
+                nextRightIconX = badgeFrame.maxX
+            } else if let badgeView = self.mellowsgramBadgeView {
+                self.mellowsgramBadgeView = nil
+                badgeView.removeFromSuperview()
+            }
             
             if let credibilityIconSize, let credibilityIconView = self.credibilityIcon?.view {
                 let credibilityIconFrame = CGRect(origin: CGPoint(x: nextRightIconX + statusIconsSpacing, y: titleFrame.minY), size: credibilityIconSize)
