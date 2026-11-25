@@ -114,6 +114,7 @@ jobs:
           python3 -m py_compile ci/mellowsgram_configuration.py
           python3 -m py_compile ci/mellowsgram_sideload.py
           python3 -m py_compile ci/publish_testsource.py
+          python3 -m py_compile ci/verify_monocraft_ipa.py
           python3 build-system/Make/PostboxImportCheck.py
           swiftc_path="$(xcrun --find swiftc)"
           for source in \
@@ -194,6 +195,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s build/mellowsgram-simulator-artifacts/Telegram.ipa
+          python3 ci/verify_monocraft_ipa.py build/mellowsgram-simulator-artifacts/Telegram.ipa
           unzip -l build/mellowsgram-simulator-artifacts/Telegram.ipa | head -40
           shasum -a 256 build/mellowsgram-simulator-artifacts/Telegram.ipa
 
@@ -204,6 +206,7 @@ jobs:
           set -euo pipefail
           ipa=build/mellowsgram-device-artifacts/Telegram.ipa
           test -s "$ipa"
+          python3 ci/verify_monocraft_ipa.py "$ipa"
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
           unzip -q "$ipa" -d "$work"

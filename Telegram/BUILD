@@ -1889,6 +1889,18 @@ plist_fragment(
     <array>
         <string>AremacFS-Regular.otf</string>
         <string>AremacFS-Semibold.otf</string>
+        <string>Monocraft.ttf</string>
+        <string>Monocraft-ExtraLight.ttf</string>
+        <string>Monocraft-ExtraLight-Italic.ttf</string>
+        <string>Monocraft-Light.ttf</string>
+        <string>Monocraft-Light-Italic.ttf</string>
+        <string>Monocraft-Italic.ttf</string>
+        <string>Monocraft-SemiBold.ttf</string>
+        <string>Monocraft-SemiBold-Italic.ttf</string>
+        <string>Monocraft-Bold.ttf</string>
+        <string>Monocraft-Bold-Italic.ttf</string>
+        <string>Monocraft-Black.ttf</string>
+        <string>Monocraft-Black-Italic.ttf</string>
     </array>
     <key>UIApplicationSceneManifest</key>
     <dict>
