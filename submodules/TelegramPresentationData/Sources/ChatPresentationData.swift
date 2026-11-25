@@ -70,7 +70,8 @@ public final class ChatPresentationData {
     }
 
     public static func messageTextFonts(serif: Bool, baseFontSize: CGFloat) -> ChatMessageTextFonts? {
-        if !serif {
+        // The app-wide font takes precedence over the optional New York message style.
+        if !serif || Font.applicationStyle == .monocraft {
             return nil
         }
         return ChatMessageTextFonts.newYork(baseFontSize: baseFontSize)

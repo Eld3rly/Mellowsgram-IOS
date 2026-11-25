@@ -1,4 +1,5 @@
 import Foundation
+import Display
 import TelegramCore
 import SwiftSignalKit
 import UIKitRuntimeUtils
@@ -52,6 +53,7 @@ public struct MellowsgramGlobalGhostModeSettings: Codable, Equatable {
 /// Telegram preference model are intentionally not stored here.
 public enum MellowsgramGlobalSettingKey: String, CaseIterable {
     // Appearance: chat, channels, tabs, folders, list and stories.
+    case appFont
     case accountColorsSaturation
     case stickerSize
     case showStickerTimestamp
@@ -162,6 +164,8 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
             return "true"
         case .translationService, .transcriptionService:
             return "telegram"
+        case .appFont:
+            return "system"
         case .allChatsTitle:
             return "default"
         case .downloadBoost:
@@ -296,6 +300,8 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
             return nil
         }
         switch setting {
+        case .appFont:
+            return ["system": 0, "monocraft": 1][value]
         case .allChatsTitle:
             return ["default": 0, "short": 1, "long": 2][value]
         case .translationService:
@@ -317,6 +323,8 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
             return integer == 0 ? "false" : "true"
         }
         switch setting {
+        case .appFont:
+            return integer == 1 ? "monocraft" : "system"
         case .allChatsTitle:
             return ["default", "short", "long"].dropFirst(max(0, Int(integer))).first ?? setting.defaultValue
         case .translationService:
@@ -412,6 +420,9 @@ public final class MellowsgramGlobalSettingsRuntime {
     public func update(_ settings: MellowsgramGlobalSettings, nativeValues: [MellowsgramGlobalSettingKey: String] = [:]) {
         _ = self.settings.swap(settings)
         _ = self.nativeValues.swap(Dictionary(uniqueKeysWithValues: nativeValues.map { ($0.key.rawValue, $0.value) }))
+        let appFont = Font.ApplicationStyle(rawValue: settings.value(for: .appFont)) ?? .system
+        Font.setApplicationStyle(appFont)
+        UserDefaults.standard.set(appFont.rawValue, forKey: "mellowsgram.global.appFont")
         // TelegramCore cannot depend on TelegramUIPreferences without creating
         // a module cycle. These two values are mirrored for its network layer;
         // AccountManager remains the persistence source of truth.

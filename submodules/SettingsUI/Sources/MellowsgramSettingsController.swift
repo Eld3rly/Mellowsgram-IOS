@@ -124,7 +124,7 @@ private extension MellowsgramGlobalSettingKey {
 
     var mellowsgramCategory: MellowsgramSettingsCategory {
         switch self {
-        case .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
+        case .appFont, .accountColorsSaturation, .stickerSize, .showStickerTimestamp, .wideChannelPosts, .channelBottomPanel,
              .showTabNames, .searchButton, .wideTabBar, .showContactsTab, .showCallsTab,
              .foldersAtBottom, .hideAllChats, .smallerFolderSpacing, .allChatsTitle, .openLastFolder,
              .compactChatList, .compactMessagePreview, .chatListSwipeOptions, .swipeToDeleteChat,
@@ -152,6 +152,8 @@ private extension MellowsgramGlobalSettingKey {
 
     func mellowsgramGroupTitle(languageCode: String) -> String {
         switch self {
+        case .appFont:
+            return mellowsgramText("Typography", "Шрифт", languageCode: languageCode)
         case .accountColorsSaturation, .stickerSize, .showStickerTimestamp:
             return mellowsgramText("Colors & Stickers", "Цвета и стикеры", languageCode: languageCode)
         case .wideChannelPosts, .channelBottomPanel:
@@ -195,6 +197,7 @@ private extension MellowsgramGlobalSettingKey {
 
     func mellowsgramTitle(languageCode: String) -> String {
         switch self {
+        case .appFont: return mellowsgramText("App Font", "Шрифт приложения", languageCode: languageCode)
         case .accountColorsSaturation: return mellowsgramText("Account Colors Saturation", "Насыщенность цветов аккаунтов", languageCode: languageCode)
         case .stickerSize: return mellowsgramText("Stickers and Emoji Size", "Размер стикеров и эмодзи", languageCode: languageCode)
         case .showStickerTimestamp: return mellowsgramText("Show Timestamp", "Показывать время", languageCode: languageCode)
@@ -274,7 +277,7 @@ private extension MellowsgramGlobalSettingKey {
 
     var mellowsgramIsChoice: Bool {
         switch self {
-        case .allChatsTitle, .translationService, .transcriptionService, .downloadBoost:
+        case .appFont, .allChatsTitle, .translationService, .transcriptionService, .downloadBoost:
             return true
         default:
             return false
@@ -305,6 +308,7 @@ private extension MellowsgramGlobalSettingKey {
 
     func mellowsgramChoices(languageCode: String) -> [(String, String)] {
         switch self {
+        case .appFont: return [("system", mellowsgramText("System", "Системный", languageCode: languageCode)), ("monocraft", "Monocraft (Minecraft)")]
         case .allChatsTitle: return [("default", mellowsgramText("Default", "По умолчанию", languageCode: languageCode)), ("short", mellowsgramText("All", "Все", languageCode: languageCode)), ("long", mellowsgramText("All Chats", "Все чаты", languageCode: languageCode))]
         case .translationService:
             var values: [(String, String)] = [("telegram", "Telegram"), ("google", mellowsgramText("Google Translate", "Google Переводчик", languageCode: languageCode))]
@@ -659,6 +663,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
     case appearanceFooter
     case globalGroupHeader(MellowsgramGlobalSettingKey, String)
     case globalSetting(MellowsgramGlobalSettingKey, String, Bool)
+    case fontPreview(String)
 
     var section: ItemListSectionId {
         return MellowsgramCategorySection.settings.rawValue
@@ -713,9 +718,11 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         case .appearanceFooter:
             return 25
         case let .globalGroupHeader(key, _):
-            return 39 + 2 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
+            return 39 + 3 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
         case let .globalSetting(key, _, _):
-            return 40 + 2 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
+            return 40 + 3 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: key) ?? 0)
+        case .fontPreview:
+            return 41 + 3 * Int32(MellowsgramGlobalSettingKey.allCases.firstIndex(of: .appFont) ?? 0)
         }
     }
 
@@ -848,6 +855,22 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: key.mellowsgramTitle(languageCode: languageCode), value: value == "true", enabled: enabled, sectionId: self.section, style: .blocks, updated: { updatedValue in
                 arguments.updateGlobalSetting(key, updatedValue ? "true" : "false")
             })
+        case let .fontPreview(value):
+            let font: UIFont
+            if value == "monocraft" {
+                font = UIFont(name: "Monocraft", size: 17.0) ?? UIFont.systemFont(ofSize: 17.0)
+            } else {
+                font = UIFont.systemFont(ofSize: 17.0)
+            }
+            let preview = NSMutableAttributedString(string: "Привет, как дела?\nHello, how are you?", attributes: [
+                .font: font,
+                .foregroundColor: presentationData.theme.list.itemPrimaryTextColor
+            ])
+            preview.append(NSAttributedString(string: "\n\n" + mellowsgramText("Reopen Mellowsgram to apply the font to screens already open.", "Откройте Mellowsgram заново, чтобы обновить шрифт на уже открытых экранах.", languageCode: languageCode), attributes: [
+                .font: Font.regular(13.0),
+                .foregroundColor: presentationData.theme.list.itemSecondaryTextColor
+            ]))
+            return ItemListTextItem(presentationData: presentationData, text: .custom(context: arguments.context, string: preview), sectionId: self.section)
         }
     }
 }
@@ -1499,6 +1522,9 @@ private func mellowsgramCategoryControllerEntries(category: MellowsgramSettingsC
                 enabled = true
             }
             entries.append(.globalSetting(key, snapshot.value(for: key), enabled))
+            if key == .appFont && onlySetting == nil {
+                entries.append(.fontPreview(snapshot.value(for: key)))
+            }
         }
     }
 

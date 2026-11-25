@@ -2,6 +2,11 @@ import Foundation
 import UIKit
 
 public struct Font {
+    public enum ApplicationStyle: String {
+        case system
+        case monocraft
+    }
+
     public enum Design {
         case regular
         case serif
@@ -135,6 +140,9 @@ public struct Font {
     private final class Cache {
         private var lock: pthread_rwlock_t
         private var fonts: [String: UIFont] = [:]
+        private var selectedApplicationStyle: ApplicationStyle = ApplicationStyle(
+            rawValue: UserDefaults.standard.string(forKey: "mellowsgram.global.appFont") ?? ""
+        ) ?? .system
         
         init() {
             self.lock = pthread_rwlock_t()
@@ -155,15 +163,61 @@ public struct Font {
             self.fonts[key] = font
             pthread_rwlock_unlock(&self.lock)
         }
+
+        func applicationStyle() -> ApplicationStyle {
+            pthread_rwlock_rdlock(&self.lock)
+            let style = self.selectedApplicationStyle
+            pthread_rwlock_unlock(&self.lock)
+            return style
+        }
+
+        func setApplicationStyle(_ style: ApplicationStyle) {
+            pthread_rwlock_wrlock(&self.lock)
+            self.selectedApplicationStyle = style
+            pthread_rwlock_unlock(&self.lock)
+        }
     }
 
     private static let cache = Cache()
+
+    public static var applicationStyle: ApplicationStyle {
+        return self.cache.applicationStyle()
+    }
+
+    public static func setApplicationStyle(_ style: ApplicationStyle) {
+        self.cache.setApplicationStyle(style)
+    }
+
+    private static func monocraft(size: CGFloat, weight: Weight, italic: Bool) -> UIFont? {
+        let name: String
+        switch (weight, italic) {
+        case (.thin, false): name = "Monocraft-ExtraLight"
+        case (.thin, true): name = "Monocraft-ExtraLight-Italic"
+        case (.light, false): name = "Monocraft-Light"
+        case (.light, true): name = "Monocraft-Light-Italic"
+        case (.regular, false): name = "Monocraft"
+        case (.regular, true): name = "Monocraft-Italic"
+        case (.medium, false), (.semibold, false): name = "Monocraft-SemiBold"
+        case (.medium, true), (.semibold, true): name = "Monocraft-SemiBold-Italic"
+        case (.bold, false): name = "Monocraft-Bold"
+        case (.bold, true): name = "Monocraft-Bold-Italic"
+        case (.heavy, false): name = "Monocraft-Black"
+        case (.heavy, true): name = "Monocraft-Black-Italic"
+        }
+        return UIFont(name: name, size: size)
+    }
     
     public static func with(size: CGFloat, design: Design = .regular, weight: Weight = .regular, width: Width = .standard, traits: Traits = []) -> UIFont {
-        let key = "\(size)_\(design.key)_\(weight.key)_\(width.key)_\(traits.rawValue)"
+        let applicationStyle = self.applicationStyle
+        let key = "\(applicationStyle.rawValue)_\(size)_\(design.key)_\(weight.key)_\(width.key)_\(traits.rawValue)"
         
         if let cachedFont = self.cache.get(key) {
             return cachedFont
+        }
+        if applicationStyle == .monocraft && (design == .regular || design == .round),
+           let font = self.monocraft(size: size, weight: weight, italic: traits.contains(.italic)) {
+            self.cache.set(font, key: key)
+            return font
         }
         if #available(iOS 13.0, *), design != .camera {
             let descriptor: UIFontDescriptor
@@ -289,18 +343,30 @@ public struct Font {
     }
     
     public static func regular(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size)
+        }
         return UIFont.systemFont(ofSize: size)
     }
     
     public static func medium(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .medium)
+        }
         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.medium)
     }
     
     public static func semibold(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .semibold)
+        }
         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.semibold)
     }
     
     public static func bold(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .bold)
+        }
         if #available(iOS 8.2, *) {
             return UIFont.boldSystemFont(ofSize: size)
         } else {
@@ -313,10 +379,16 @@ public struct Font {
     }
     
     public static func light(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .light)
+        }
         return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.light)
     }
     
     public static func semiboldItalic(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .semibold, traits: .italic)
+        }
         if let descriptor = UIFont.systemFont(ofSize: size).fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]) {
             return UIFont(descriptor: descriptor, size: size)
         } else {
@@ -325,6 +397,9 @@ public struct Font {
     }
     
     public static func mediumItalic(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, weight: .medium, traits: .italic)
+        }
         if let descriptor = UIFont.systemFont(ofSize: size, weight: .medium).fontDescriptor.withSymbolicTraits([.traitItalic]) {
             return UIFont(descriptor: descriptor, size: size)
         } else {
@@ -349,6 +424,9 @@ public struct Font {
     }
     
     public static func italic(_ size: CGFloat) -> UIFont {
+        if self.applicationStyle == .monocraft {
+            return self.with(size: size, traits: .italic)
+        }
         return UIFont.italicSystemFont(ofSize: size)
     }
 }

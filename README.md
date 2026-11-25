@@ -77,7 +77,7 @@ The **Mellowsgram** entry is placed above **My Profile** in Telegram Settings. I
 
 - **Spy&Ghost** — Ghost Mode, deleted-message and edit-history archives, and story behavior;
 - **Background Notifications** — Telegram Web Push registration routed to Bark;
-- **Appearance** — deleted-message opacity, account-color saturation, sticker size and timestamps, channel layout, tabs, folders, and chat-list layout;
+- **Appearance** — system or Monocraft (Minecraft-style) app font with Latin and Cyrillic preview, deleted-message opacity, account-color saturation, sticker size and timestamps, channel layout, tabs, folders, and chat-list layout;
 - **Profiles & Calls** — profile and chat details, call confirmation, and phone visibility;
 - **Media & Voice** — outgoing photo quality and HD photos, camera and PiP behavior, transfer boosts, translation, and voice transcription;
 - **Messages & Context** — context-menu actions, message behavior, and input controls.

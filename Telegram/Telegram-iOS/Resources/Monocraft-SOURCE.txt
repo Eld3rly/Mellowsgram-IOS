@@ -1,0 +1,8 @@
+Monocraft v4.2.1 by Idrees Hassan
+https://github.com/IdreesInc/Monocraft/releases/tag/v4.2.1
+
+Source archive: Monocraft-ttf.zip
+SHA-256: 897faffbef8cc27fadd0d5aa51872ab5f908e22a89bb8fa5b191366025d503e0
+
+The bundled font files are unmodified. See Monocraft-LICENSE.txt for the
+SIL Open Font License 1.1 and copyright notice.
