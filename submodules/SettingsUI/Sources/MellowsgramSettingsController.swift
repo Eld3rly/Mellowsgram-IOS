@@ -858,7 +858,7 @@ private enum MellowsgramCategoryControllerEntry: ItemListNodeEntry {
         case let .fontPreview(value):
             let font: UIFont
             if value == "monocraft" {
-                font = UIFont(name: "Monocraft", size: 17.0) ?? UIFont.systemFont(ofSize: 17.0)
+                font = Font.monocraftPreview(size: 17.0)
             } else {
                 font = UIFont.systemFont(ofSize: 17.0)
             }

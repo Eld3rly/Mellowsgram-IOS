@@ -188,6 +188,14 @@ public struct Font {
         self.cache.setApplicationStyle(style)
     }
 
+    // Monocraft's cap height is about 78% of its em, compared with about 71%
+    // for the system font. Match the visible letter height at each UI size.
+    private static let monocraftPointSizeScale: CGFloat = 0.90
+
+    public static func monocraftPreview(size: CGFloat) -> UIFont {
+        return self.monocraft(size: size, weight: .regular, italic: false) ?? UIFont.systemFont(ofSize: size)
+    }
+
     private static func monocraft(size: CGFloat, weight: Weight, italic: Bool) -> UIFont? {
         let name: String
         switch (weight, italic) {
@@ -204,7 +212,7 @@ public struct Font {
         case (.heavy, false): name = "Monocraft-Black"
         case (.heavy, true): name = "Monocraft-Black-Italic"
         }
-        return UIFont(name: name, size: size)
+        return UIFont(name: name, size: size * self.monocraftPointSizeScale)
     }
     
     public static func with(size: CGFloat, design: Design = .regular, weight: Weight = .regular, width: Width = .standard, traits: Traits = []) -> UIFont {
