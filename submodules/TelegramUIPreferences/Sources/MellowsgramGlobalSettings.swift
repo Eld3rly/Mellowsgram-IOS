@@ -182,7 +182,9 @@ public enum MellowsgramGlobalSettingKey: String, CaseIterable {
              .emojiTabFirst, .standardEmojisFirst, .foldersAtBottom,
              .ghostGlobalMode:
             return "false"
-        case .barkNotificationsEnabled, .barkAllAccounts, .liveContainerNotificationLinks:
+        case .barkAllAccounts:
+            return "true"
+        case .barkNotificationsEnabled, .liveContainerNotificationLinks:
             return "false"
         case .uploadBoost:
             return "true"
@@ -218,6 +220,12 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
             // Retain the legacy key for decoding old settings, but never hide
             // the only navigation bar after removing its control from the UI.
             return "false"
+        }
+        if key == .barkAllAccounts && self.values[Self.barkAllAccountsExplicitKey] != "true" {
+            // Older installations stored the former default (false) without
+            // recording whether the user selected it. Migrate them to all
+            // accounts once, while preserving later explicit choices.
+            return "true"
         }
         return self.values[key.rawValue] ?? key.defaultValue
     }
@@ -257,6 +265,9 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
         }
         var values = self.values
         values[key.rawValue] = value
+        if key == .barkAllAccounts {
+            values[Self.barkAllAccountsExplicitKey] = "true"
+        }
         return MellowsgramGlobalSettings(values: values)
     }
 
@@ -288,6 +299,7 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
     }
 
     private static let legacyValuesKey = "values"
+    private static let barkAllAccountsExplicitKey = "barkAllAccountsExplicit"
     private static let lastFolderAccountKeysKey = "lastFolderAccountKeys"
     private static let lastFolderIdsKey = "lastFolderIds"
 
@@ -360,6 +372,10 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
             }
             values[key.rawValue] = Self.decodedValue(for: key.rawValue, integer: integer)
         }
+        if let codingKey = CodingKeyValue(stringValue: Self.barkAllAccountsExplicitKey),
+           let explicit = try container.decodeIfPresent(Int32.self, forKey: codingKey), explicit == 1 {
+            values[Self.barkAllAccountsExplicitKey] = "true"
+        }
         if let accountKeysCodingKey = CodingKeyValue(stringValue: Self.lastFolderAccountKeysKey),
            let folderIdsCodingKey = CodingKeyValue(stringValue: Self.lastFolderIdsKey),
            let accountKeys = try container.decodeIfPresent([String].self, forKey: accountKeysCodingKey),
@@ -382,6 +398,10 @@ public struct MellowsgramGlobalSettings: Codable, Equatable {
                 continue
             }
             try container.encode(integer, forKey: codingKey)
+        }
+        if self.values[Self.barkAllAccountsExplicitKey] == "true",
+           let codingKey = CodingKeyValue(stringValue: Self.barkAllAccountsExplicitKey) {
+            try container.encode(Int32(1), forKey: codingKey)
         }
 
         let lastFolderEntries = self.values

@@ -283,31 +283,39 @@ public final class MellowsgramBarkNotificationManager {
         contexts.merge(self.removedAccounts) { current, _ in current }
         let storedIds = Set(storedRegistration?.registeredAccountIds ?? [])
         let allIds = Set(contexts.keys).union(self.registeredTokens.keys)
+        let activeContexts = Array(self.accounts.values)
+        let selectedContexts = desiredAccountIds.compactMap { self.accounts[$0] }
         var operations: [Signal<(AccountRecordId, Data?), NoError>] = []
 
-        for accountId in allIds {
+        for accountId in allIds.sorted(by: { $0.int64 < $1.int64 }) {
             guard let context = contexts[accountId] else {
                 continue
             }
+            let otherCurrentUserIds = activeContexts
+                .filter { $0.account.testingEnvironment == context.account.testingEnvironment && $0.account.peerId.id != context.account.peerId.id }
+                .map { $0.account.peerId.id }
+            let otherSelectedUserIds = selectedContexts
+                .filter { $0.account.testingEnvironment == context.account.testingEnvironment && $0.account.peerId.id != context.account.peerId.id }
+                .map { $0.account.peerId.id }
             let oldToken = self.registeredTokens[accountId] ?? (storedIds.contains(accountId.int64) ? storedRegistration?.token : nil)
             let shouldRegister = desiredAccountIds.contains(accountId)
             if shouldRegister, let token {
                 if self.registeredTokens[accountId] == token {
                     operations.append(.single((accountId, token)))
                 } else {
-                    let registerOperation = context.engine.accountData.registerNotificationToken(token: token, type: .webPush, sandbox: false, otherAccountUserIds: [], excludeMutedChats: true)
+                    let registerOperation = context.engine.accountData.registerNotificationToken(token: token, type: .webPush, sandbox: false, otherAccountUserIds: otherSelectedUserIds, excludeMutedChats: true)
                     |> map { registered -> (AccountRecordId, Data?) in
                         return (accountId, registered ? token : nil)
                     }
                     if let oldToken, oldToken != token {
-                        let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
+                        let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: otherCurrentUserIds)
                         operations.append(mellowsgramThenAfterCompletion(unregisterOperation, registerOperation))
                     } else {
                         operations.append(registerOperation)
                     }
                 }
             } else if let oldToken {
-                let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: [])
+                let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: otherCurrentUserIds)
                 operations.append(mellowsgramThenAfterCompletion(unregisterOperation, .single((accountId, nil))))
             } else {
                 operations.append(.single((accountId, nil)))
@@ -366,7 +374,14 @@ public final class MellowsgramBarkNotificationManager {
                 }
                 .sorted()
             let liveContainerNotificationLinks = mellowsgramIsRunningInLiveContainer()
-            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks, generation: generation)
+            self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks, generation: generation) { [weak self] success in
+                guard let self, generation == self.reconcileGeneration else {
+                    return
+                }
+                if !success {
+                    self.scheduleReconcile(after: Self.registrationRetryDelay)
+                }
+            }
             _ = MellowsgramBarkCredentialStore.updateRegistration(MellowsgramBarkStoredRegistration(
                 barkDeviceKey: barkKey,
                 token: token,
