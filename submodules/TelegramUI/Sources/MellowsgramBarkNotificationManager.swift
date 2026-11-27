@@ -911,6 +911,7 @@ public final class MellowsgramBarkNotificationManager {
         let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000.0))
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5.0)
         request.httpMethod = method
+        request.httpBody = body
         if active {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
