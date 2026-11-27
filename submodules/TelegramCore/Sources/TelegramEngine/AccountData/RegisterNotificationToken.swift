@@ -42,10 +42,17 @@ func _internal_registerNotificationToken(account: Account, token: Data, type: No
             flags |= 1 << 0
         }
         return account.network.request(Api.functions.account.registerDevice(flags: flags, tokenType: 10, token: tokenString, appSandbox: .boolFalse, secret: Buffer(data: Data()), otherUids: otherAccountUserIds.map({ $0._internalGetInt64Value() })))
-        |> map { _ -> Bool in
-            return true
+        |> map { result -> Bool in
+            if case .boolTrue = result {
+                return true
+            }
+            Logger.shared.log("MellowsgramBark", "Telegram web push registerDevice returned false")
+            return false
         }
-        |> `catch` { _ -> Signal<Bool, NoError> in
+        |> `catch` { error -> Signal<Bool, NoError> in
+            let description = error.errorDescription ?? "UNKNOWN"
+            let category = description.range(of: "^[A-Z0-9_]{1,64}$", options: .regularExpression) != nil ? description : "OTHER"
+            Logger.shared.log("MellowsgramBark", "Telegram web push registerDevice failed with code \(error.errorCode): \(category)")
             return .single(false)
         }
     }

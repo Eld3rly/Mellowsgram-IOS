@@ -22,6 +22,22 @@ private func mellowsgramThenAfterCompletion<T>(_ signal: Signal<Never, NoError>,
     }
 }
 
+private func mellowsgramFallbackOnEmpty<T>(_ signal: Signal<T, NoError>, fallback: T) -> Signal<T, NoError> {
+    return Signal { subscriber in
+        var emitted = false
+        return (signal |> deliverOnMainQueue).start(next: { value in
+            emitted = true
+            subscriber.putNext(value)
+        }, completed: {
+            if !emitted {
+                Logger.shared.log("MellowsgramBark", "Telegram notification token operation completed without a result")
+                subscriber.putNext(fallback)
+            }
+            subscriber.putCompletion()
+        })
+    }
+}
+
 /// Registers Telegram Web Push tokens for the Bark relay. While the app is
 /// active, it keeps a short-lived presence marker on the relay so the relay
 /// can suppress Bark notifications instead of forwarding them back to the
@@ -33,6 +49,7 @@ public final class MellowsgramBarkNotificationManager {
     private static let relayBaseURL = "https://push.mellowsgram.cc"
     private static let registrationDebounce: Double = 0.8
     private static let registrationRetryDelay: Double = 30.0
+    private static let tokenOperationTimeout: Double = 20.0
     private static let registrationRefreshInterval: Double = 23.0 * 60.0 * 60.0
     private static let foregroundPresenceInterval: Double = 30.0
     private static let avatarRefreshInterval: Double = 10.0 * 60.0
@@ -81,6 +98,7 @@ public final class MellowsgramBarkNotificationManager {
     private var primaryAccountId: AccountRecordId?
     private var globalSettings = MellowsgramGlobalSettings.defaultSettings
     private var hasLoadedSettings = false
+    private var hasReceivedAccounts = false
     private var registeredTokens: [AccountRecordId: Data] = [:]
     /// Invalidates callbacks from a reconcile that started under an older
     /// Bark setting. Without this guard a late Web Push registration could
@@ -212,6 +230,15 @@ public final class MellowsgramBarkNotificationManager {
 
     private func updateAccounts(_ activeAccounts: (primary: AccountContext?, accounts: [(AccountRecordId, AccountContext, Int32)], currentAuth: UnauthorizedAccount?)) {
         let updatedAccounts = Dictionary(uniqueKeysWithValues: activeAccounts.accounts.map { ($0.0, $0.1) })
+        let updatedPrimaryAccountId = activeAccounts.primary?.account.id
+        let hadReceivedAccounts = self.hasReceivedAccounts
+        self.hasReceivedAccounts = true
+        if hadReceivedAccounts,
+           self.primaryAccountId == updatedPrimaryAccountId,
+           self.accounts.count == updatedAccounts.count,
+           updatedAccounts.allSatisfy({ entry in self.accounts[entry.key] === entry.value }) {
+            return
+        }
         let removedIds = Set(self.accounts.keys).subtracting(updatedAccounts.keys)
         for accountId in removedIds {
             if let context = self.accounts[accountId] {
@@ -219,7 +246,7 @@ public final class MellowsgramBarkNotificationManager {
             }
         }
         self.accounts = updatedAccounts
-        self.primaryAccountId = activeAccounts.primary?.account.id
+        self.primaryAccountId = updatedPrimaryAccountId
         self.lastAvatarScanTimestamp = 0.0
         self.scheduleReconcile()
     }
@@ -229,7 +256,7 @@ public final class MellowsgramBarkNotificationManager {
     }
 
     private func scheduleReconcile(after delay: Double) {
-        guard self.hasLoadedSettings else {
+        guard self.hasLoadedSettings, self.hasReceivedAccounts else {
             return
         }
         self.reconcileTimer?.invalidate()
@@ -299,9 +326,10 @@ public final class MellowsgramBarkNotificationManager {
                 .map { $0.account.peerId.id }
             let oldToken = self.registeredTokens[accountId] ?? (storedIds.contains(accountId.int64) ? storedRegistration?.token : nil)
             let shouldRegister = desiredAccountIds.contains(accountId)
+            let operation: Signal<(AccountRecordId, Data?), NoError>
             if shouldRegister, let token {
                 if self.registeredTokens[accountId] == token {
-                    operations.append(.single((accountId, token)))
+                    operation = .single((accountId, token))
                 } else {
                     let registerOperation = context.engine.accountData.registerNotificationToken(token: token, type: .webPush, sandbox: false, otherAccountUserIds: otherSelectedUserIds, excludeMutedChats: true)
                     |> map { registered -> (AccountRecordId, Data?) in
@@ -309,17 +337,25 @@ public final class MellowsgramBarkNotificationManager {
                     }
                     if let oldToken, oldToken != token {
                         let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: otherCurrentUserIds)
-                        operations.append(mellowsgramThenAfterCompletion(unregisterOperation, registerOperation))
+                        operation = mellowsgramThenAfterCompletion(unregisterOperation, registerOperation)
                     } else {
-                        operations.append(registerOperation)
+                        operation = registerOperation
                     }
                 }
             } else if let oldToken {
                 let unregisterOperation = context.engine.accountData.unregisterNotificationToken(token: oldToken, type: .webPush, otherAccountUserIds: otherCurrentUserIds)
-                operations.append(mellowsgramThenAfterCompletion(unregisterOperation, .single((accountId, nil))))
+                operation = mellowsgramThenAfterCompletion(unregisterOperation, .single((accountId, nil)))
             } else {
-                operations.append(.single((accountId, nil)))
+                operation = .single((accountId, nil))
             }
+            // A disconnected secondary account must not hold back the relay
+            // registration for every other account indefinitely. Also handle
+            // an RPC that completes without emitting a result.
+            let boundedOperation = operation |> take(1) |> timeout(Self.tokenOperationTimeout, queue: .mainQueue(), alternate: deferred {
+                Logger.shared.log("MellowsgramBark", "Telegram notification token operation timed out")
+                return Signal<(AccountRecordId, Data?), NoError>.single((accountId, nil))
+            })
+            operations.append(mellowsgramFallbackOnEmpty(boundedOperation, fallback: (accountId, nil)))
         }
 
         let operationSignal: Signal<[(AccountRecordId, Data?)], NoError>
@@ -373,6 +409,7 @@ public final class MellowsgramBarkNotificationManager {
                     entry.value == token ? entry.key.int64 : nil
                 }
                 .sorted()
+            Logger.shared.log("MellowsgramBark", "Telegram Web Push registered for \(registeredIds.count)/\(desiredAccountIds.count) accounts")
             let liveContainerNotificationLinks = mellowsgramIsRunningInLiveContainer()
             self.updateRelayClientRegistration(active: !registeredIds.isEmpty, token: token, liveContainerNotificationLinks: liveContainerNotificationLinks, generation: generation) { [weak self] success in
                 guard let self, generation == self.reconcileGeneration else {
@@ -885,11 +922,15 @@ public final class MellowsgramBarkNotificationManager {
             self.relayActivationTask?.cancel()
         }
         let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             let success = (response as? HTTPURLResponse).map { response in
                 // DELETE is idempotent: a route removed by an earlier retry
                 // is already in the desired state.
                 return (200 ..< 300).contains(response.statusCode) || (!active && response.statusCode == 404)
             } ?? false
+            if !success {
+                Logger.shared.log("MellowsgramBark", "relay \(method) failed with HTTP \(statusCode)")
+            }
             guard let completion else {
                 return
             }
